@@ -1,0 +1,70 @@
+{
+  "name": "melodybox",
+  "version": "1.0.0",
+  "description": "沉浸式桌面音乐播放系统 - 毕业设计",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "flask": "D:\\flask_env\\Scripts\\python.exe backend\\app.py",
+    "dev:all": "concurrently --kill-others \"npm run flask\" \"npm run dev\"",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "build:flask": "build-flask.bat",
+    "electron:build": "npm run build:flask && vite build && electron-builder",
+    "electron:build:quick": "vite build && electron-builder"
+  },
+  "build": {
+    "appId": "com.melodybox.player",
+    "productName": "MelodyBox",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "flask-dist",
+        "to": "flask-dist",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "runAfterFinish": true,
+      "shortcutName": "MelodyBox"
+    }
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.0",
+    "element-plus": "^2.5.0",
+    "gsap": "^3.12.0",
+    "pinia": "^2.1.0",
+    "vue": "^3.4.0",
+    "vue-router": "^4.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "concurrently": "^8.0.0",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.0.0",
+    "vite": "^5.0.0",
+    "wait-on": "^7.0.0"
+  }
+}

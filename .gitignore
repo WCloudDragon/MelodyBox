@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 数据库
+*.db
+
+# 打包产物
+build/
+dist/
+flask-dist/
+*.spec
+
+# 二进制
+bin/
+
+# 调试 & 日志
+.dbg/
+debug-*.md
+*.log
+*.txt
+
+# Node
+node_modules/
+
+# 环境
+.env
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/

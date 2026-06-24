@@ -1,0 +1,211 @@
+/* ==================== MiSans 可变字体 ==================== */
+@font-face {
+  font-family: 'MiSans VF';
+  src: url('../fonts/MiSansVF.ttf') format('truetype');
+  font-weight: 100 900;
+  font-stretch: 100%;
+  font-display: swap;
+}
+
+/* ==================== CSS 变量 ==================== */
+:root {
+  --bg-primary: #272727;
+  --bg-secondary: #202020;
+  --bg-tertiary: #242424;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --text-primary: #f5f5f5;
+  --text-secondary: #c0c0c0;
+  --text-tertiary: #777;
+  --accent-color: #6366f1;
+  --accent-bg: rgba(99, 102, 241, 0.12);
+  --hover-bg: rgba(255, 255, 255, 0.05);
+  --hover-bg-strong: rgba(255, 255, 255, 0.1);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);
+  --mask-color: rgba(0, 0, 0, 0.35);
+  --ripple-color: rgba(255, 255, 255, 0.14);
+}
+
+[data-theme='light'] {
+  --bg-primary: #f9f9f9;
+  --bg-secondary: #f3f3f3;
+  --bg-tertiary: #ededed;
+  --border-color: rgba(0, 0, 0, 0.1);
+  --text-primary: #111;
+  --text-secondary: #444;
+  --text-tertiary: #777;
+  --hover-bg: rgba(0, 0, 0, 0.05);
+  --hover-bg-strong: rgba(0, 0, 0, 0.1);
+  --scrollbar-thumb: rgba(0, 0, 0, 0.22);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.38);
+  --mask-color: rgba(255, 255, 255, 0.55);
+  --ripple-color: rgba(0, 0, 0, 0.14);
+}
+
+/* Element Plus 暗色模式适配 */
+html.dark {
+  color-scheme: dark;
+}
+[data-theme='light'] {
+  color-scheme: light;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'MiSans VF', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+/* ==================== Element Plus 主题覆盖 ==================== */
+
+/* 按钮 */
+.el-button--primary {
+  --el-button-bg-color: var(--accent-color);
+  --el-button-border-color: var(--accent-color);
+  --el-button-hover-bg-color: #5558e6;
+  --el-button-hover-border-color: #5558e6;
+}
+
+/* 输入框 */
+.el-input__wrapper {
+  background: var(--bg-tertiary) !important;
+  box-shadow: none !important;
+  border: 1px solid var(--border-color);
+  border-radius: 8px !important;
+}
+.el-input__wrapper:hover { border-color: rgba(255, 255, 255, 0.15); }
+.el-input__wrapper.is-focus { border-color: var(--accent-color) !important; }
+.el-input__inner { color: var(--text-primary) !important; }
+.el-input__inner::placeholder { color: var(--text-tertiary) !important; }
+
+/* 下拉框 */
+.el-select .el-input__wrapper { background: var(--bg-tertiary) !important; }
+.el-popper.is-dark {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+/* 对话框 */
+.el-dialog {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border-color);
+  border-radius: 12px !important;
+}
+.el-dialog__header { border-bottom: 1px solid var(--border-color); }
+.el-dialog__title { color: var(--text-primary) !important; }
+.el-dialog__body { color: var(--text-secondary); }
+
+/* 消息弹窗 */
+.el-message-box {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border-color) !important;
+}
+.el-message-box__title { color: var(--text-primary) !important; }
+.el-message-box__message { color: var(--text-secondary) !important; }
+.el-message-box__input .el-input__inner { color: var(--text-primary) !important; }
+
+/* 开关 */
+.el-switch.is-checked .el-switch__core {
+  background-color: var(--accent-color) !important;
+  border-color: var(--accent-color) !important;
+}
+
+/* 滑块 */
+.el-slider__bar { background-color: var(--accent-color) !important; }
+.el-slider__button { border-color: var(--accent-color) !important; }
+
+/* Radio Button */
+.el-radio-button__inner {
+  background: var(--bg-tertiary) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-secondary) !important;
+}
+.el-radio-button.is-active .el-radio-button__inner {
+  background: var(--accent-bg) !important;
+  color: var(--accent-color) !important;
+}
+
+/* 下拉菜单 */
+.el-dropdown-menu {
+  background: var(--bg-secondary) !important;
+  border: 1px solid var(--border-color) !important;
+}
+.el-dropdown-menu__item {
+  color: var(--text-secondary) !important;
+}
+.el-dropdown-menu__item:hover {
+  background: var(--bg-tertiary) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Loading 动画 */
+.is-loading {
+  animation: rotating 1.5s linear infinite;
+}
+
+@keyframes rotating {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 选中文本 */
+::selection {
+  background: var(--accent-bg);
+  color: var(--accent-color);
+}
+
+/* 全局滚动条 */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+/* ==================== 音质标签 ==================== */
+.quality-tag {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 17px;
+  letter-spacing: 0.3px;
+  text-align: center;
+  border: 1px solid;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.quality-tag--hq {
+  color: #8B5E3C;
+  border-color: #8B5E3C;
+}
+.quality-tag--cd {
+  color: #D2B48C;
+  border-color: #D2B48C;
+}
+.quality-tag--cd-plus {
+  color: #4FC3F7;
+  border-color: #4FC3F7;
+}
+.quality-tag--hires {
+  color: #1A1A1A;
+  background: #D4A017;
+  border-color: #D4A017;
+}
