@@ -27,9 +27,8 @@
               class="dl-line"
               :class="{ active: index === currentLineIndex, 'has-translation': line.translation }"
               :ref="el => setLineRef(el, index)"
-              :style="lineStyle(index)"
             >
-              <div class="dl-line__inner">
+              <div class="dl-line__inner" :style="lineStyle(index)">
                 <p class="dl-line__original">{{ line.original }}</p>
                 <p v-if="line.translation" class="dl-line__translation">{{ line.translation }}</p>
               </div>
@@ -86,12 +85,20 @@ function lineStyle(index) {
   const vl = desktopSettings.value.viewLines ?? 2
 
   // 硬裁剪：viewLines 范围外的行直接隐藏
-  if (dist < 0 || dist >= vl) return { opacity: 0 }
+  if (dist < 0 || dist >= vl) return { opacity: 0, transform: 'scale(1)' }
 
-  // 范围内：距活跃行越远越透明
+  // 连续透明度
   const t = Math.min(dist / 6, 1)
   const opacity = Math.max(0.3, 1 - t * 0.7)
-  return { opacity }
+
+  // 连续缩放：活跃行满 scale → 相邻行渐变回 1.0
+  const maxScale = desktopSettings.value.activeScale / 100
+  const scaleDist = Math.abs(dist)
+  const scale = scaleDist === 0
+    ? maxScale
+    : maxScale - (maxScale - 1) * Math.min(scaleDist, 1)
+
+  return { opacity, transform: `scale(${scale.toFixed(3)})` }
 }
 
 // ===== 窗口高度 =====
@@ -99,21 +106,22 @@ function computeWindowHeight() {
   const base = desktopSettings.value.fontSize
   const viewLines = desktopSettings.value.viewLines
   const activeScale = desktopSettings.value.activeScale / 100
+  const transBase = Math.round(base * desktopSettings.value.transScale / 100)
 
-  const activeLH = Math.round(base * activeScale * 1.55)
-  const normalLH = Math.round(base * 1.55)
-  const lineOverhead = 6
+  const activeOriginalLH = Math.round(base * activeScale * 1.55)
+  const activeTransLH = Math.round(transBase * activeScale * 1.4)
+  const normalOriginalLH = Math.round(base * 1.55)
+  const normalTransLH = Math.round(transBase * 1.4)
+  const lineOverhead = 6   // padding + gap
+  const gap = 2
 
-  let contentH = activeLH + lineOverhead
+  // 每行预留原文+翻译高度，避免翻译文本被裁切
+  let contentH = activeOriginalLH + activeTransLH + gap + lineOverhead
   if (viewLines >= 2) {
-    contentH += normalLH + lineOverhead
+    contentH += normalOriginalLH + normalTransLH + gap + lineOverhead
   }
 
   const wh = Math.max(60, Math.round(32 + contentH))
-  console.log('[DesktopLyrics] computeWindowHeight', {
-    base, viewLines, activeScale: desktopSettings.value.activeScale,
-    activeLH, normalLH, contentH, windowHeight: wh
-  })
   return wh
 }
 
@@ -354,7 +362,6 @@ html, body {
   padding: 2px 0;
   flex-shrink: 0;
   overflow: hidden;
-  transition: opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 
 .dl-line__inner {
@@ -362,6 +369,9 @@ html, body {
   flex-direction: column;
   gap: 2px;
   align-items: center;
+  will-change: transform, opacity;
+  transition: transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 
 .dl-line__original {
@@ -370,6 +380,7 @@ html, body {
   line-height: var(--dl-lh-original, 38px);
   font-weight: 700;
   color: rgba(255, 255, 255, 0.35);
+  -webkit-text-stroke: 1px rgba(0, 0, 0, 0.3);
   max-width: 760px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -382,6 +393,7 @@ html, body {
   line-height: var(--dl-lh-trans, 20px);
   font-weight: 700;
   color: rgba(255, 255, 255, 0.22);
+  -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.2);
   max-width: 760px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -390,12 +402,11 @@ html, body {
 
 .dl-line.active .dl-line__original {
   color: #fff;
-  font-size: var(--dl-active-original, 29px);
-  text-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+  -webkit-text-stroke: 1px rgba(0, 0, 0, 0.4);
 }
 
 .dl-line.active .dl-line__translation {
   color: rgba(255, 255, 255, 0.85);
-  font-size: var(--dl-active-trans, 17px);
+  -webkit-text-stroke: 0.5px rgba(0, 0, 0, 0.3);
 }
 </style>
