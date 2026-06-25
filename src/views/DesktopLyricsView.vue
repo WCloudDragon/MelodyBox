@@ -137,12 +137,13 @@ async function onScrollEnd() {
   }
 }
 
-/** 新活跃行：先在「下一行」尺寸渲染，下一帧移除限制 → CSS transition 自然过渡到活跃行尺寸 */
+/** 新活跃行：先在「下一行」尺寸渲染，双 RAF 确保起始帧已画出 → CSS transition 自然过渡到活跃行尺寸 */
 function animateActiveLineIn(container) {
   if (!container) return
   const original = container.querySelector('.dl-line--active .dl-line__original')
   const translation = container.querySelector('.dl-line--active .dl-line__translation')
 
+  // 1. 强制设为下一行尺寸（inline 样式覆盖 CSS 规则）
   if (original) {
     original.style.fontSize = '24px'
     original.style.fontWeight = '700'
@@ -152,19 +153,20 @@ function animateActiveLineIn(container) {
     translation.style.fontSize = '14px'
     translation.style.opacity = '0.2'
   }
-  // 强制浏览器 commit 起始样式
-  if (original) void original.offsetHeight
 
+  // 2. 双 RAF：第一帧让浏览器画出起始态，第二帧清除 inline → transition 生效
   requestAnimationFrame(() => {
-    if (original) {
-      original.style.fontSize = ''
-      original.style.fontWeight = ''
-      original.style.opacity = ''
-    }
-    if (translation) {
-      translation.style.fontSize = ''
-      translation.style.opacity = ''
-    }
+    requestAnimationFrame(() => {
+      if (original) {
+        original.style.fontSize = ''
+        original.style.fontWeight = ''
+        original.style.opacity = ''
+      }
+      if (translation) {
+        translation.style.fontSize = ''
+        translation.style.opacity = ''
+      }
+    })
   })
 }
 
