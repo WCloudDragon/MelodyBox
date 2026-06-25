@@ -38,12 +38,16 @@ export function closeScanNotify(progress, onDone) {
   const deleted = progress.deleted || 0
 
   if (_scanId) {
-    let text = `扫描完成 · ${total} 首`
     const parts = []
     if (inserted > 0) parts.push(`新增 ${inserted} 首`)
     if (updated > 0) parts.push(`更新 ${updated} 首`)
     if (deleted > 0) parts.push(`移除 ${deleted} 首`)
-    if (parts.length > 0) text += `（${parts.join('，')}）`
+    let text
+    if (parts.length > 0) {
+      text = `扫描完成 · ${total} 首（${parts.join('，')}）`
+    } else {
+      text = '扫描完成 · 无变化'
+    }
     completeProgress(_scanId, text)
     _scanId = null
   }
