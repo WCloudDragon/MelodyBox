@@ -998,9 +998,13 @@ onBeforeUnmount(() => {
 .word-seg--singing::before {
   content: attr(data-word);
   position: absolute;
-  inset: 0;
+  left: 0;
+  top: 0;
   color: #fff;
-  clip-path: inset(0 calc((100 - var(--word-pct, 0)) * 1%) 0 0);
+  width: calc(var(--word-pct, 0) * 1%);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 8px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 8px), transparent 100%);
   pointer-events: none;
   white-space: pre;
 }

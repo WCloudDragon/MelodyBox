@@ -618,6 +618,8 @@ html, body {
   width: var(--kara-fill, 0%);
   overflow: hidden;
   white-space: pre;
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 8px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 8px), transparent 100%);
   text-shadow:
     -1px -1px 0 rgba(0, 0, 0, 0.4),
      1px -1px 0 rgba(0, 0, 0, 0.4),
