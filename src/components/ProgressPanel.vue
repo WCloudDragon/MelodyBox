@@ -6,10 +6,11 @@
     :style="panelStyle"
   >
     <div
-      v-for="item in items"
+      v-for="(item, index) in items"
       :key="item.id"
       class="progress-item"
       :class="itemClass(item)"
+      :style="{ zIndex: index }"
     >
       <!-- header -->
       <div class="progress-item__header">
@@ -86,6 +87,7 @@ function itemClass(item) {
 }
 
 .progress-item {
+  position: relative;
   background: var(--bg-primary, #1e1e2e);
   border: 1px solid var(--border-color, rgba(255,255,255,0.08));
   border-radius: 12px;
