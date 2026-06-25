@@ -52,7 +52,7 @@ const pendingData = ref(null)       // 动画进行中的待更新数据
 const animating = ref(false)
 const scrollRef = ref(null)
 const prevIndex = ref(-1)
-const SCROLL_PX = 0                   // 诊断：临时关闭滑动，纯测字号动画
+const GAP = 6                        // flex gap 间距
 
 onMounted(() => {
   if (window.electronAPI) {
@@ -140,18 +140,16 @@ async function performScroll(el, data, forward) {
     }
   }
 
-  // 4. 容器滑动 — 先注册 transition，再 force reflow，最后改 transform（避免跳变）
-  if (SCROLL_PX !== 0) {
-    el.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
-    // 强制浏览器在 transition 生效状态下记录当前位置
-    getComputedStyle(el).transform
-    el.style.transform = forward
-      ? `translate3d(0, ${-SCROLL_PX}px, 0)`
-      : `translate3d(0, ${SCROLL_PX}px, 0)`
-  } else {
-    // 无滑动 → 直接完成，等字号动画跑完
-    animating.value = false
-  }
+  // 4. 取活跃行实际高度作为滑动距离（有翻译行时更高）
+  const activeEl = el.querySelector('.dl-line--active')
+  const scrollPx = (activeEl ? activeEl.offsetHeight : 64) + GAP
+
+  // 5. 容器滑动 — 与字号动画同时启动
+  el.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
+  getComputedStyle(el).transform
+  el.style.transform = forward
+    ? `translate3d(0, ${-scrollPx}px, 0)`
+    : `translate3d(0, ${scrollPx}px, 0)`
 }
 
 /** 滑动结束 → 容器归位 + 链式下一个 */
