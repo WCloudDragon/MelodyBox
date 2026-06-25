@@ -11,15 +11,7 @@
         class="lyrics-content"
       >
         <template v-if="displayData">
-          <!-- 下一行（即将播放）— 在上方 -->
-          <div v-if="displayData.nextLine" class="dl-line dl-line--next">
-            <div class="dl-line__inner">
-              <p class="dl-line__original">{{ displayData.nextLine.original }}</p>
-              <p v-if="displayData.nextLine.translation" class="dl-line__translation">{{ displayData.nextLine.translation }}</p>
-            </div>
-          </div>
-
-          <!-- 当前行（活跃） -->
+          <!-- 当前行（活跃）— 在上方 -->
           <div
             class="dl-line dl-line--active"
             :class="{ 'is-word-level': displayData.activeLine?.wordLevel }"
@@ -35,6 +27,14 @@
               </p>
               <p v-else class="dl-line__original">{{ displayData.activeLine?.original || '' }}</p>
               <p v-if="displayData.activeLine?.translation" class="dl-line__translation">{{ displayData.activeLine.translation }}</p>
+            </div>
+          </div>
+
+          <!-- 下一行（即将播放）— 在下方 -->
+          <div v-if="displayData.nextLine" class="dl-line dl-line--next">
+            <div class="dl-line__inner">
+              <p class="dl-line__original">{{ displayData.nextLine.original }}</p>
+              <p v-if="displayData.nextLine.translation" class="dl-line__translation">{{ displayData.nextLine.translation }}</p>
             </div>
           </div>
         </template>
