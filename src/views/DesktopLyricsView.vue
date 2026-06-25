@@ -174,19 +174,20 @@ async function onScrollEnd() {
   const el = scrollRef.value
   if (!el) return
 
+  // 1. 先取消 Web Animation，清除 fill:forwards 样式污染
+  //    在 swap 数据前执行，避免旧动画样式短暂作用于新内容导致抖动
+  activeAnimations.forEach(a => a.cancel())
+  activeAnimations = []
+
+  // 2. 容器瞬间归位
   el.style.transition = 'none'
   el.style.transform = 'translate3d(0, 0, 0)'
 
-  // 动画完成，换上当前动画的目标数据
+  // 3. 换上当前动画的目标数据
   if (targetData) {
     displayData.value = targetData
     targetData = null
   }
-
-  // 取消旧元素上的 Animation，清除 fill:forwards 样式污染
-  // 让 Vue 更新文本后的元素恢复 CSS 规则控制（活跃行 34px，下一行 24px）
-  activeAnimations.forEach(a => a.cancel())
-  activeAnimations = []
 
   animating.value = false
 
