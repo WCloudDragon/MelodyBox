@@ -347,6 +347,9 @@ function createLyricsWindow() {
 
   console.log('[main] 创建新的歌词窗口')
 
+  // 标记窗口是否成功显示过（防止崩溃触发反馈循环）
+  let lyricsLoaded = false
+
   const { screen } = require('electron')
   const primaryDisplay = screen.getPrimaryDisplay()
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
@@ -383,6 +386,16 @@ function createLyricsWindow() {
   console.log('[lyrics] 加载页面:', url)
   lyricsWindow.loadURL(url)
 
+  // 开发模式下打开歌词窗口的 DevTools
+  if (!app.isPackaged) {
+    lyricsWindow.webContents.openDevTools({ mode: 'detach' })
+  }
+
+  // 捕获歌词窗口渲染器的控制台输出
+  lyricsWindow.webContents.on('console-message', (_event, level, message) => {
+    console.log(`[lyrics-renderer] ${message}`)
+  })
+
   // 渲染进程崩溃处理
   lyricsWindow.webContents.on('render-process-gone', (_event, details) => {
     console.error('[lyrics] 渲染进程崩溃:', details.reason, details.exitCode)
@@ -399,6 +412,7 @@ function createLyricsWindow() {
   lyricsWindow.once('ready-to-show', () => {
     if (lyricsWindow && !lyricsWindow.isDestroyed()) {
       lyricsWindow.show()
+      lyricsLoaded = true
       console.log('[lyrics] 歌词窗口已显示')
     } else {
       console.error('[lyrics] ready-to-show 时窗口已销毁')
@@ -406,9 +420,10 @@ function createLyricsWindow() {
   })
 
   lyricsWindow.on('closed', () => {
+    const wasLoaded = lyricsLoaded
     lyricsWindow = null
-    // 通知主窗口歌词窗口已关闭
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    // 只有窗口成功显示后才通知主窗口（防止崩溃反馈循环）
+    if (wasLoaded && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('lyrics:windowClosed')
     }
   })
