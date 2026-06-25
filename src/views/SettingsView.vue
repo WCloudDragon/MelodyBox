@@ -294,6 +294,22 @@
         </div>
         <div class="setting-row">
           <div class="setting-label">
+            <span class="setting-title">视口行数</span>
+            <span class="setting-desc">歌词窗口内同时显示的歌词行数（当前：<b>{{ settingsStore.desktopLyricsViewLines }} 句</b>）</span>
+          </div>
+          <div class="toggle-buttons">
+            <button
+              :class="['toggle-btn', { active: settingsStore.desktopLyricsViewLines === 1 }]"
+              @click="settingsStore.desktopLyricsViewLines = 1; settingsStore.saveSettingsImmediate()"
+            >1 句</button>
+            <button
+              :class="['toggle-btn', { active: settingsStore.desktopLyricsViewLines === 2 }]"
+              @click="settingsStore.desktopLyricsViewLines = 2; settingsStore.saveSettingsImmediate()"
+            >2 句</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-label">
             <span class="setting-title">恢复桌面歌词默认</span>
             <span class="setting-desc">字号 24px · 放大 120% · 翻译 60%</span>
           </div>
@@ -510,4 +526,18 @@ useScrollMemory('settings', () => document.querySelector('.main-content'))
 }
 .about-meta__row:not(:last-child) { border-bottom: 1px solid var(--border-color); }
 .about-meta__row span:first-child { color: var(--text-tertiary); font-weight: 500; }
+
+.toggle-buttons {
+  display: flex; gap: 8px;
+}
+.toggle-btn {
+  padding: 6px 20px; border-radius: 8px; border: 1px solid var(--border-color);
+  background: var(--bg-secondary); color: var(--text-secondary);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all 0.18s ease;
+}
+.toggle-btn.active {
+  background: var(--accent-color); color: #fff; border-color: var(--accent-color);
+}
+.toggle-btn:hover:not(.active) { background: var(--hover-bg); }
 </style>

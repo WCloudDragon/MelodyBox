@@ -14,6 +14,18 @@
         @transitionend="onScrollEnd"
       >
       <template v-if="displayData">
+        <!-- 无歌词行时：显示歌曲信息 -->
+        <template v-if="!displayData.activeLine && songInfo">
+          <div class="dl-line dl-line--active">
+            <div class="dl-line__inner">
+              <p class="dl-line__original">{{ songInfo.title || '...' }}</p>
+              <p v-if="songInfo.artist" class="dl-line__translation">{{ songInfo.artist }}</p>
+            </div>
+          </div>
+        </template>
+
+        <!-- 正常歌词行 -->
+        <template v-else>
         <!-- 当前行（活跃）— 在上方 -->
         <div
           class="dl-line dl-line--active"
@@ -52,6 +64,7 @@
             <p v-if="displayData.afterNextLine.translation" class="dl-line__translation">{{ displayData.afterNextLine.translation }}</p>
           </div>
         </div>
+        </template>
       </template>
     </div>
     </div>
@@ -66,6 +79,7 @@ import { ref, computed, onMounted, nextTick, watch } from 'vue'
 const displayData = ref(null)
 const pendingData = ref(null)       // 动画期间新到的排队数据（链式调用）
 let targetData = null               // 当前动画目标数据，结束后 swap
+let isLastLineScroll = false        // 当前动画是否为最后一行居中滚动
 const animating = ref(false)
 let activeAnimations = []            // 当前动画的 Animation 对象，结束后取消
 const scrollRef = ref(null)
@@ -84,7 +98,8 @@ const lineDuration = computed(() => {
 })
 
 // 桌面歌词设置（默认值，与后端一致）
-const desktopSettings = ref({ fontSize: 24, activeScale: 120, transScale: 60 })
+const desktopSettings = ref({ fontSize: 24, activeScale: 120, transScale: 60, viewLines: 2 })
+const songInfo = ref(null)
 
 // CSS 变量
 const desktopVars = computed(() => {
@@ -115,10 +130,15 @@ const animFontSizes = computed(() => {
 
 onMounted(() => {
   if (window.electronAPI) {
-    window.electronAPI.onLyricsData((data) => {
+    window.electronAPI.onLyricsData(async (data) => {
       // 更新设置（如果提供了）
       if (data?.settings) {
         desktopSettings.value = data.settings
+      }
+
+      // 存储歌曲信息（无歌词行时显示）
+      if (data?.songInfo) {
+        songInfo.value = data.songInfo
       }
 
       const newIdx = data?.activeIndex ?? -1
@@ -128,7 +148,21 @@ onMounted(() => {
       if (oldIdx < 0 || newIdx === oldIdx) {
         displayData.value = data
         prevIndex.value = newIdx
-        syncViewportHeight()
+        await syncViewportHeight()
+
+        // 首次加载时如果是最后一行且 2 句模式 → 居中
+        const vl = desktopSettings.value.viewLines ?? 2
+        const total = data?.totalLines ?? 0
+        if (vl === 2 && total > 0 && newIdx === total - 1) {
+          const el = scrollRef.value
+          if (el) {
+            const activeEl = el.querySelector('.dl-line--active')
+            const activeH = activeEl ? activeEl.offsetHeight : 64
+            el.style.transition = 'none'
+            el.style.transform = `translate3d(0, ${-Math.round(activeH / 2)}px, 0)`
+          }
+        }
+
         setupMarquee()
         return
       }
@@ -175,8 +209,8 @@ async function performScroll(el, data, forward) {
   if (oldActiveOrig) {
     const anim = oldActiveOrig.animate(
       [
-        { fontSize: activeStr, opacity: '1', fontWeight: '700' },
-        { fontSize: baseStr, opacity: '0.45', fontWeight: '700' }
+        { fontSize: activeStr, color: '#fff', fontWeight: '700' },
+        { fontSize: baseStr, color: '#999', fontWeight: '700' }
       ],
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
@@ -185,8 +219,8 @@ async function performScroll(el, data, forward) {
   if (oldActiveTrans) {
     const anim = oldActiveTrans.animate(
       [
-        { fontSize: transActiveStr, opacity: '1' },
-        { fontSize: transStr, opacity: '0.2' }
+        { fontSize: transActiveStr, color: '#fff' },
+        { fontSize: transStr, color: '#777' }
       ],
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
@@ -199,8 +233,8 @@ async function performScroll(el, data, forward) {
   if (oldNextOrig) {
     const anim = oldNextOrig.animate(
       [
-        { fontSize: baseStr, opacity: '0.45', fontWeight: '700' },
-        { fontSize: activeStr, opacity: '1', fontWeight: '700' }
+        { fontSize: baseStr, color: '#999', fontWeight: '700' },
+        { fontSize: activeStr, color: '#fff', fontWeight: '700' }
       ],
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
@@ -209,8 +243,8 @@ async function performScroll(el, data, forward) {
   if (oldNextTrans) {
     const anim = oldNextTrans.animate(
       [
-        { fontSize: transStr, opacity: '0.2' },
-        { fontSize: transActiveStr, opacity: '1' }
+        { fontSize: transStr, color: '#777' },
+        { fontSize: transActiveStr, color: '#fff' }
       ],
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
@@ -222,7 +256,24 @@ async function performScroll(el, data, forward) {
 
   // 4. 取活跃行实际高度作为滑动距离
   const activeEl = el.querySelector('.dl-line--active')
-  const scrollPx = (activeEl ? activeEl.offsetHeight : 64) + GAP
+  const activeH = (activeEl ? activeEl.offsetHeight : 64)
+  const vl = desktopSettings.value.viewLines ?? 2
+  const total = displayData.value?.totalLines ?? 0
+  const toIdx = data?.activeIndex ?? -1
+  const isLastLineTarget = vl === 2 && total > 0 && toIdx === total - 1
+
+  let scrollPx
+  if (vl === 1) {
+    scrollPx = activeH + GAP
+  } else if (isLastLineTarget) {
+    // 最后一句 → 只滚动半行到视口中央
+    scrollPx = Math.round(activeH / 2) + GAP / 2
+  } else {
+    scrollPx = activeH + GAP
+  }
+
+  // 标记本次是否为最后一行居中滚动
+  isLastLineScroll = isLastLineTarget
 
   // 5. 容器滑动 — 与字号动画同时启动
   el.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
@@ -247,15 +298,25 @@ async function onScrollEnd() {
   el.style.transform = 'translate3d(0, 0, 0)'
 
   // 3. 换上当前动画的目标数据
+  const wasLastLineScroll = isLastLineScroll
   if (targetData) {
     displayData.value = targetData
     targetData = null
   }
+  isLastLineScroll = false
 
   animating.value = false
 
   // 4. 同步视口高度（字号可能变化）
-  syncViewportHeight()
+  await syncViewportHeight()
+
+  // 4.5 最后一行居中：swap 后重新计算偏移让活跃行居中
+  if (wasLastLineScroll) {
+    const activeEl = el.querySelector('.dl-line--active')
+    const activeH = activeEl ? activeEl.offsetHeight : 64
+    el.style.transition = 'none'
+    el.style.transform = `translate3d(0, ${-Math.round(activeH / 2)}px, 0)`
+  }
 
   // 5. 检查是否需要跑马灯
   setupMarquee()
@@ -279,7 +340,7 @@ function handleClose() {
   }
 }
 
-/** 同步视口高度 = 活跃行 + 下一行实际高度 + gap */
+/** 同步视口高度 */
 async function syncViewportHeight() {
   await nextTick()
   const vp = viewportRef.value
@@ -287,8 +348,20 @@ async function syncViewportHeight() {
   const activeEl = vp.querySelector('.dl-line--active')
   const nextEl = vp.querySelector('.dl-line--next')
   const activeH = activeEl ? activeEl.offsetHeight : 64
-  const nextH = nextEl ? nextEl.offsetHeight : 0
-  vp.style.height = (activeH + GAP + nextH) + 'px'
+
+  const vl = desktopSettings.value.viewLines ?? 2
+  const isLast = displayData.value && displayData.value.activeIndex >= 0 &&
+    displayData.value.totalLines > 0 && displayData.value.activeIndex === displayData.value.totalLines - 1
+
+  if (vl === 2 && isLast) {
+    // 最后一句 → 视口高度为 2 倍活跃行高，让活跃行居中
+    vp.style.height = (activeH * 2) + 'px'
+  } else if (vl === 1) {
+    vp.style.height = activeH + 'px'
+  } else {
+    const nextH = nextEl ? nextEl.offsetHeight : 0
+    vp.style.height = (activeH + GAP + nextH) + 'px'
+  }
 }
 
 /** 启动横向跑马灯：文本溢出容器时根据该句时长自动滚动 */
@@ -329,6 +402,14 @@ async function setupMarquee() {
 // 设置变化时重新计算视口高度
 watch(desktopSettings, () => {
   syncViewportHeight()
+  // 从 2 句切换到 1 句时，重置容器偏移
+  if ((desktopSettings.value.viewLines ?? 2) === 1) {
+    const el = scrollRef.value
+    if (el) {
+      el.style.transition = 'none'
+      el.style.transform = 'translate3d(0, 0, 0)'
+    }
+  }
 }, { deep: true })
 </script>
 
@@ -415,13 +496,11 @@ html, body {
   font-size: var(--dl-base-original, 24px);
   line-height: var(--dl-lh-original, 38px);
   font-weight: 700;
-  color: #fff;
-  opacity: 0.35;
+  color: #999;
   max-width: 760px;
   transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               font-size 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              font-weight 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+              font-weight 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -432,12 +511,10 @@ html, body {
   font-size: var(--dl-base-trans, 14px);
   line-height: var(--dl-lh-trans, 20px);
   font-weight: 700;
-  color: #fff;
-  opacity: 0.18;
+  color: #777;
   max-width: 760px;
   transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              font-size 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+              font-size 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -449,12 +526,11 @@ html, body {
   padding: 2px 0;
 }
 .dl-line--active .dl-line__original {
-  opacity: 1;
+  color: #fff;
   font-size: var(--dl-active-original, 29px);
   max-width: 760px;
 }
 .dl-line--active .dl-line__translation {
-  opacity: 1;
   color: #fff;
   font-size: var(--dl-active-trans, 17px);
 }
@@ -473,22 +549,22 @@ html, body {
 
 /* 下一行 */
 .dl-line--next .dl-line__original {
-  opacity: 0.45;
+  color: #999;
   font-size: var(--dl-base-original, 24px);
 }
 .dl-line--next .dl-line__translation {
-  opacity: 0.2;
+  color: #777;
   font-size: var(--dl-base-trans, 14px);
   line-height: 1.1;
 }
 
 /* 下下行 — 视口外，样式与下一行一致 */
 .dl-line--future .dl-line__original {
-  opacity: 0.45;
+  color: #999;
   font-size: var(--dl-base-original, 24px);
 }
 .dl-line--future .dl-line__translation {
-  opacity: 0.2;
+  color: #777;
   font-size: var(--dl-base-trans, 14px);
   line-height: 1.1;
 }
@@ -503,13 +579,11 @@ html, body {
 }
 .word-seg {
   display: inline-block;
-  color: #fff;
-  opacity: 0.35;
+  color: #999;
   transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              transform 0.04s linear,
-              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+              transform 0.04s linear;
 }
 .dl-line--active .word-seg {
-  opacity: 1;
+  color: #fff;
 }
 </style>

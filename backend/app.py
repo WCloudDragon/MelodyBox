@@ -217,6 +217,7 @@ def init_db(app):
             desktop_lyrics_font_size INTEGER DEFAULT 24,
             desktop_lyrics_active_scale INTEGER DEFAULT 120,
             desktop_lyrics_trans_scale INTEGER DEFAULT 60,
+            desktop_lyrics_view_lines INTEGER DEFAULT 2,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -228,6 +229,7 @@ def init_db(app):
         'ALTER TABLE settings ADD COLUMN desktop_lyrics_font_size INTEGER DEFAULT 24',
         'ALTER TABLE settings ADD COLUMN desktop_lyrics_active_scale INTEGER DEFAULT 120',
         'ALTER TABLE settings ADD COLUMN desktop_lyrics_trans_scale INTEGER DEFAULT 60',
+        'ALTER TABLE settings ADD COLUMN desktop_lyrics_view_lines INTEGER DEFAULT 2',
     ]:
         try: db.executescript(mig)
         except Exception: pass

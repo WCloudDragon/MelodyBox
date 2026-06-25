@@ -15,6 +15,7 @@ const SNAKE_TO_CAMEL = {
   desktop_lyrics_font_size: 'desktopLyricsFontSize',
   desktop_lyrics_active_scale: 'desktopLyricsActiveScale',
   desktop_lyrics_trans_scale: 'desktopLyricsTransScale',
+  desktop_lyrics_view_lines: 'desktopLyricsViewLines',
 }
 const CAMEL_TO_SNAKE = Object.fromEntries(
   Object.entries(SNAKE_TO_CAMEL).map(([k, v]) => [v, k])
@@ -47,6 +48,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const desktopLyricsFontSize = ref(24)
   const desktopLyricsActiveScale = ref(120)
   const desktopLyricsTransScale = ref(60)
+  const desktopLyricsViewLines = ref(2)
 
   let _loaded = false
   let _saveTimer = null
@@ -73,6 +75,7 @@ export const useSettingsStore = defineStore('settings', () => {
       desktopLyricsFontSize.value = data.desktopLyricsFontSize ?? 24
       desktopLyricsActiveScale.value = data.desktopLyricsActiveScale ?? 120
       desktopLyricsTransScale.value = data.desktopLyricsTransScale ?? 60
+      desktopLyricsViewLines.value = data.desktopLyricsViewLines ?? 2
       _loaded = true
     } catch {}
   }
@@ -101,6 +104,7 @@ export const useSettingsStore = defineStore('settings', () => {
         body.desktopLyricsFontSize = desktopLyricsFontSize.value
         body.desktopLyricsActiveScale = desktopLyricsActiveScale.value
         body.desktopLyricsTransScale = desktopLyricsTransScale.value
+        body.desktopLyricsViewLines = desktopLyricsViewLines.value
         await fetch(API_BASE, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -133,7 +137,7 @@ export const useSettingsStore = defineStore('settings', () => {
     lyricsTransScale, lyricsActiveScale,
     enableLyricsBlur, enableDominoScroll, enableWordLift, wordAnimFps,
     autoScan, language,
-    desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale,
+    desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale, desktopLyricsViewLines,
     loadSettings, saveSettings, resetLyricsDefaults
   }
 })
