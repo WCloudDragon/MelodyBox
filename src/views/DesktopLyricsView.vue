@@ -316,12 +316,12 @@ async function setupMarquee() {
 
   marqueeAnim = textEl.animate([
     { transform: 'translateX(0px)', offset: 0 },
-    { transform: 'translateX(0px)', offset: 0.12 },
-    { transform: `translateX(${dist}px)`, offset: 0.82 },
-    { transform: 'translateX(0px)', offset: 1 }
+    { transform: 'translateX(0px)', offset: 0.1 },
+    { transform: `translateX(${dist}px)`, offset: 1 }
   ], {
     duration: dur,
-    iterations: Infinity,
+    iterations: 1,
+    fill: 'forwards',
     easing: 'linear'
   })
 }
@@ -468,7 +468,7 @@ html, body {
 }
 .dl-marquee__text {
   display: inline-block;
-  white-space: nowrap;
+  white-space: pre;
 }
 
 /* 下一行 */
