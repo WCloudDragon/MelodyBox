@@ -41,5 +41,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 桌面歌词数据接收（歌词窗口使用）
   onLyricsData: (callback) => {
     ipcRenderer.on('lyrics:data', (_event, data) => callback(data))
-  }
+  },
+  lyricsResize: (width, height) => ipcRenderer.send('lyrics:resize', { width, height })
 })

@@ -138,6 +138,6 @@ export const useSettingsStore = defineStore('settings', () => {
     enableLyricsBlur, enableDominoScroll, enableWordLift, wordAnimFps,
     autoScan, language,
     desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale, desktopLyricsViewLines,
-    loadSettings, saveSettings, resetLyricsDefaults
+    loadSettings, saveSettings, saveSettingsImmediate, resetLyricsDefaults
   }
 })

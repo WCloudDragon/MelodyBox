@@ -539,6 +539,11 @@ ipcMain.handle('audio:getPort', () => audioServerPort)
 ipcMain.on('lyrics:open', () => createLyricsWindow())
 ipcMain.on('lyrics:close', () => closeLyricsWindow())
 ipcMain.on('lyrics:update', (_event, data) => updateLyricsData(data))
+ipcMain.on('lyrics:resize', (_event, { width, height }) => {
+  if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    lyricsWindow.setSize(width, height)
+  }
+})
 
 // ==================== Windows 主题色 ====================
 

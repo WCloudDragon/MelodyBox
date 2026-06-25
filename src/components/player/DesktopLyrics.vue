@@ -64,90 +64,24 @@ const nextLine = computed(() => {
   if (idx < 0 || idx >= parsedLyrics.value.length) return null
   return parsedLyrics.value[idx]
 })
-const afterNextLine = computed(() => {
-  const idx = currentLineIndex.value + 2
-  if (idx < 0 || idx >= parsedLyrics.value.length) return null
-  return parsedLyrics.value[idx]
-})
-
 // 构建发送给独立窗口的数据
 const lyricsPayload = computed(() => {
   const idx = currentLineIndex.value
   const total = parsedLyrics.value.length
   const track = currentTrack.value
 
-  // 歌曲开头、第一句歌词时间戳未覆盖时：注入歌名信息为活跃行
-  if (idx < 0 && total > 0) {
-    return {
-      activeIndex: -1,
-      activeLineTime: 0,
-      activeLine: {
-        original: track?.title || '',
-        translation: track?.artist || null,
-        wordLevel: false,
-        segments: null
-      },
-      nextLineTime: parsedLyrics.value[0]?.time ?? 0,
-      nextLine: {
-        original: parsedLyrics.value[0]?.original || '',
-        translation: parsedLyrics.value[0]?.translation || null
-      },
-      afterNextLine: total > 1 ? {
-        original: parsedLyrics.value[1]?.original || '',
-        translation: parsedLyrics.value[1]?.translation || null
-      } : null,
-      totalLines: total,
-      songInfo: null,
-      settings: {
-        fontSize: desktopLyricsFontSize.value,
-        activeScale: desktopLyricsActiveScale.value,
-        transScale: desktopLyricsTransScale.value,
-        viewLines: desktopLyricsViewLines.value
-      }
-    }
-  }
-
-  // 无歌词 → 独立显示歌曲信息
-  if (total === 0) {
-    return {
-      activeIndex: -1,
-      activeLineTime: 0,
-      activeLine: null,
-      nextLineTime: 0,
-      nextLine: null,
-      afterNextLine: null,
-      totalLines: 0,
-      songInfo: track ? { title: track.title || '', artist: track.artist || '' } : null,
-      settings: {
-        fontSize: desktopLyricsFontSize.value,
-        activeScale: desktopLyricsActiveScale.value,
-        transScale: desktopLyricsTransScale.value,
-        viewLines: desktopLyricsViewLines.value
-      }
-    }
-  }
-
-  // 正常歌词显示
   return {
-    activeIndex: idx,
-    activeLineTime: activeLine.value?.time ?? 0,
-    activeLine: activeLine.value ? {
-      original: activeLine.value.original,
-      translation: activeLine.value.translation || null,
-      wordLevel: activeLine.value.wordLevel || false,
-      segments: activeLine.value.segments || null
-    } : null,
-    nextLineTime: nextLine.value?.time ?? 0,
-    nextLine: nextLine.value ? {
-      original: nextLine.value.original,
-      translation: nextLine.value.translation || null
-    } : null,
-    afterNextLine: afterNextLine.value ? {
-      original: afterNextLine.value.original,
-      translation: afterNextLine.value.translation || null
-    } : null,
-    totalLines: total,
-    songInfo: null,
+    parsedLyrics: parsedLyrics.value.map(line => ({
+      time: line.time,
+      original: line.original,
+      translation: line.translation || null,
+      wordLevel: line.wordLevel || false,
+      segments: line.segments || null
+    })),
+    currentLineIndex: idx,
+    songInfo: track && (total === 0 || idx < 0)
+      ? { title: track.title || '...', artist: track.artist || '' }
+      : null,
     settings: {
       fontSize: desktopLyricsFontSize.value,
       activeScale: desktopLyricsActiveScale.value,
