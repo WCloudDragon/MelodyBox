@@ -14,7 +14,7 @@
         <!-- 当前行（活跃）— 在上方 -->
         <div
           class="dl-line dl-line--active"
-          :class="{ 'is-word-level': displayData.activeLine?.wordLevel }"
+          :class="{ 'has-translation': displayData.activeLine?.translation, 'is-word-level': displayData.activeLine?.wordLevel }"
         >
           <div class="dl-line__inner">
             <p v-if="displayData.activeLine?.wordLevel && displayData.activeLine?.segments" class="dl-line__original word-level">
@@ -113,8 +113,11 @@ async function onScrollEnd() {
     displayData.value = data
   }
 
-  // 3. 等下一帧：如果在动画期间已有新数据排队，立即再动画一次
+  // 3. 新数据渲染后，让活跃行从「下一行」尺寸过渡到「活跃行」尺寸（模拟全屏歌词的自然放大）
   await nextTick()
+  animateActiveLineIn(el)
+
+  // 4. 如果在动画期间已有新数据排队，立即再动画一次
   if (pendingData.value) {
     const newIdx = pendingData.value.activeIndex ?? -1
     const curIdx = displayData.value?.activeIndex ?? -1
@@ -132,6 +135,37 @@ async function onScrollEnd() {
       pendingData.value = null
     }
   }
+}
+
+/** 新活跃行：先在「下一行」尺寸渲染，下一帧移除限制 → CSS transition 自然过渡到活跃行尺寸 */
+function animateActiveLineIn(container) {
+  if (!container) return
+  const original = container.querySelector('.dl-line--active .dl-line__original')
+  const translation = container.querySelector('.dl-line--active .dl-line__translation')
+
+  if (original) {
+    original.style.fontSize = '24px'
+    original.style.fontWeight = '700'
+    original.style.opacity = '0.45'
+  }
+  if (translation) {
+    translation.style.fontSize = '14px'
+    translation.style.opacity = '0.2'
+  }
+  // 强制浏览器 commit 起始样式
+  if (original) void original.offsetHeight
+
+  requestAnimationFrame(() => {
+    if (original) {
+      original.style.fontSize = ''
+      original.style.fontWeight = ''
+      original.style.opacity = ''
+    }
+    if (translation) {
+      translation.style.fontSize = ''
+      translation.style.opacity = ''
+    }
+  })
 }
 
 function handleClose() {
@@ -250,6 +284,9 @@ html, body {
 /* 活跃行 */
 .dl-line--active {
   padding: 5px 0;
+}
+.dl-line--active.has-translation {
+  padding: 4px 0;
 }
 .dl-line--active .dl-line__original {
   opacity: 1;
