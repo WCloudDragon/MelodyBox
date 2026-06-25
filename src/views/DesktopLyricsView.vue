@@ -48,7 +48,8 @@
 import { ref, onMounted, nextTick } from 'vue'
 
 const displayData = ref(null)
-const pendingData = ref(null)       // 动画进行中的待更新数据
+const pendingData = ref(null)       // 动画期间新到的排队数据（链式调用）
+let targetData = null               // 当前动画目标数据，结束后 swap
 const animating = ref(false)
 const scrollRef = ref(null)
 const prevIndex = ref(-1)
@@ -83,22 +84,39 @@ onMounted(() => {
 })
 
 /**
- * 核心滚动：数据交换后同时启动容器滑动 + 活跃行缩放动画
- * 两者同时长同缓动，形成连贯的「位移 + 放大」效果
+ * 核心滚动：先对旧元素做字号动画 + 容器滑动，过渡结束后再 swap 数据
+ * 保证旧词在动画全程可见
  */
 async function performScroll(el, data, forward) {
   if (!el) return
 
-  // 1. 新数据上屏
-  displayData.value = data
-  await nextTick()
+  // 1. 对当前活跃行（旧词）做缩小动画
+  const oldActiveOrig = el.querySelector('.dl-line--active .dl-line__original')
+  const oldActiveTrans = el.querySelector('.dl-line--active .dl-line__translation')
+  if (oldActiveOrig) {
+    oldActiveOrig.animate(
+      [
+        { fontSize: '34px', opacity: '1', fontWeight: '700' },
+        { fontSize: '24px', opacity: '0.45', fontWeight: '700' }
+      ],
+      { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
+    )
+  }
+  if (oldActiveTrans) {
+    oldActiveTrans.animate(
+      [
+        { fontSize: '20px', opacity: '0.5' },
+        { fontSize: '14px', opacity: '0.2' }
+      ],
+      { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
+    )
+  }
 
-  // 2. 新活跃行：从下一行尺寸 → 活跃行尺寸（element.animate 立即开始）
-  const activeOrig = el.querySelector('.dl-line--active .dl-line__original')
-  const activeTrans = el.querySelector('.dl-line--active .dl-line__translation')
-
-  if (activeOrig) {
-    activeOrig.animate(
+  // 2. 对当前下一行（旧词）做放大动画 — 变成新的活跃行
+  const oldNextOrig = el.querySelector('.dl-line--next .dl-line__original')
+  const oldNextTrans = el.querySelector('.dl-line--next .dl-line__translation')
+  if (oldNextOrig) {
+    oldNextOrig.animate(
       [
         { fontSize: '24px', opacity: '0.45', fontWeight: '700' },
         { fontSize: '34px', opacity: '1', fontWeight: '700' }
@@ -106,8 +124,8 @@ async function performScroll(el, data, forward) {
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
   }
-  if (activeTrans) {
-    activeTrans.animate(
+  if (oldNextTrans) {
+    oldNextTrans.animate(
       [
         { fontSize: '14px', opacity: '0.2' },
         { fontSize: '20px', opacity: '0.5' }
@@ -116,31 +134,10 @@ async function performScroll(el, data, forward) {
     )
   }
 
-  // 3. 新下一行（曾是活跃行）：活跃行尺寸 → 下一行尺寸 (仅前进时)
-  if (forward) {
-    const nextOrig = el.querySelector('.dl-line--next .dl-line__original')
-    const nextTrans = el.querySelector('.dl-line--next .dl-line__translation')
-    if (nextOrig) {
-      nextOrig.animate(
-        [
-          { fontSize: '34px', opacity: '1', fontWeight: '700' },
-          { fontSize: '24px', opacity: '0.45', fontWeight: '700' }
-        ],
-        { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
-      )
-    }
-    if (nextTrans) {
-      nextTrans.animate(
-        [
-          { fontSize: '20px', opacity: '0.5' },
-          { fontSize: '14px', opacity: '0.2' }
-        ],
-        { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
-      )
-    }
-  }
+  // 3. 缓存新数据，动画结束后 swap
+  targetData = data
 
-  // 4. 取活跃行实际高度作为滑动距离（有翻译行时更高）
+  // 4. 取活跃行实际高度作为滑动距离
   const activeEl = el.querySelector('.dl-line--active')
   const scrollPx = (activeEl ? activeEl.offsetHeight : 64) + GAP
 
@@ -152,7 +149,7 @@ async function performScroll(el, data, forward) {
     : `translate3d(0, ${scrollPx}px, 0)`
 }
 
-/** 滑动结束 → 容器归位 + 链式下一个 */
+/** 滑动结束 → 容器归位 + 数据 swap + 链式下一个 */
 async function onScrollEnd() {
   const el = scrollRef.value
   if (!el) return
@@ -160,19 +157,23 @@ async function onScrollEnd() {
   el.style.transition = 'none'
   el.style.transform = 'translate3d(0, 0, 0)'
 
+  // 动画完成，换上当前动画的目标数据
+  if (targetData) {
+    displayData.value = targetData
+    targetData = null
+  }
+
   animating.value = false
 
-  // 如果动画期间有新数据排队，立即启动下一轮
+  // 检查动画期间是否有新一轮排队数据
   if (pendingData.value) {
     const next = pendingData.value
+    pendingData.value = null
     const newIdx = next?.activeIndex ?? -1
     const curIdx = displayData.value?.activeIndex ?? -1
     if (newIdx !== curIdx) {
       animating.value = true
       performScroll(el, next, newIdx > curIdx)
-      pendingData.value = null
-    } else {
-      pendingData.value = null
     }
   }
 }
