@@ -113,7 +113,7 @@ function onPanelEnter() {
 
 .queue-card {
   position: absolute;
-  right: 10px; top: 46px; bottom: 10px;
+  right: 10px; top: 46px; bottom: 82px;
   width: 420px; max-width: 100vw;
   background: var(--bg-primary);
   border-radius: 14px;
