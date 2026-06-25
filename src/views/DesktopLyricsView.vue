@@ -4,12 +4,14 @@
     @dblclick="handleClose"
     title="双击关闭桌面歌词"
   >
-    <!-- 滚动容器 — translate3d 模拟全屏歌词滚动 -->
-    <div
-      ref="scrollRef"
-      class="scroll-container"
-      @transitionend="onScrollEnd"
-    >
+    <!-- 视口裁剪器 — 只显示 2 行，第三行在视口外 -->
+    <div class="scroll-viewport">
+      <!-- 滚动容器 — translate3d 模拟全屏歌词滚动 -->
+      <div
+        ref="scrollRef"
+        class="scroll-container"
+        @transitionend="onScrollEnd"
+      >
       <template v-if="displayData">
         <!-- 当前行（活跃）— 在上方 -->
         <div
@@ -37,7 +39,16 @@
             <p v-if="displayData.nextLine.translation" class="dl-line__translation">{{ displayData.nextLine.translation }}</p>
           </div>
         </div>
+
+        <!-- 下下行 — 视口外，滚动动画时滑入 -->
+        <div v-if="displayData.afterNextLine" class="dl-line dl-line--future">
+          <div class="dl-line__inner">
+            <p class="dl-line__original">{{ displayData.afterNextLine.original }}</p>
+            <p v-if="displayData.afterNextLine.translation" class="dl-line__translation">{{ displayData.afterNextLine.translation }}</p>
+          </div>
+        </div>
       </template>
+    </div>
     </div>
 
     <div v-if="!displayData" class="dl-empty">桌面歌词</div>
@@ -51,6 +62,7 @@ const displayData = ref(null)
 const pendingData = ref(null)       // 动画期间新到的排队数据（链式调用）
 let targetData = null               // 当前动画目标数据，结束后 swap
 const animating = ref(false)
+let activeAnimations = []            // 当前动画的 Animation 对象，结束后取消
 const scrollRef = ref(null)
 const prevIndex = ref(-1)
 const GAP = 6                        // flex gap 间距
@@ -90,48 +102,56 @@ onMounted(() => {
 async function performScroll(el, data, forward) {
   if (!el) return
 
+  // 取消可能残留的旧动画
+  activeAnimations.forEach(a => a.cancel())
+  activeAnimations = []
+
   // 1. 对当前活跃行（旧词）做缩小动画
   const oldActiveOrig = el.querySelector('.dl-line--active .dl-line__original')
   const oldActiveTrans = el.querySelector('.dl-line--active .dl-line__translation')
   if (oldActiveOrig) {
-    oldActiveOrig.animate(
+    const anim = oldActiveOrig.animate(
       [
         { fontSize: '34px', opacity: '1', fontWeight: '700' },
         { fontSize: '24px', opacity: '0.45', fontWeight: '700' }
       ],
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
+    activeAnimations.push(anim)
   }
   if (oldActiveTrans) {
-    oldActiveTrans.animate(
+    const anim = oldActiveTrans.animate(
       [
         { fontSize: '20px', opacity: '0.5' },
         { fontSize: '14px', opacity: '0.2' }
       ],
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
+    activeAnimations.push(anim)
   }
 
   // 2. 对当前下一行（旧词）做放大动画 — 变成新的活跃行
   const oldNextOrig = el.querySelector('.dl-line--next .dl-line__original')
   const oldNextTrans = el.querySelector('.dl-line--next .dl-line__translation')
   if (oldNextOrig) {
-    oldNextOrig.animate(
+    const anim = oldNextOrig.animate(
       [
         { fontSize: '24px', opacity: '0.45', fontWeight: '700' },
         { fontSize: '34px', opacity: '1', fontWeight: '700' }
       ],
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
+    activeAnimations.push(anim)
   }
   if (oldNextTrans) {
-    oldNextTrans.animate(
+    const anim = oldNextTrans.animate(
       [
         { fontSize: '14px', opacity: '0.2' },
         { fontSize: '20px', opacity: '0.5' }
       ],
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
+    activeAnimations.push(anim)
   }
 
   // 3. 缓存新数据，动画结束后 swap
@@ -162,6 +182,11 @@ async function onScrollEnd() {
     displayData.value = targetData
     targetData = null
   }
+
+  // 取消旧元素上的 Animation，清除 fill:forwards 样式污染
+  // 让 Vue 更新文本后的元素恢复 CSS 规则控制（活跃行 34px，下一行 24px）
+  activeAnimations.forEach(a => a.cancel())
+  activeAnimations = []
 
   animating.value = false
 
@@ -218,13 +243,19 @@ html, body {
   position: relative;
 }
 
+.scroll-viewport {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
 .scroll-container {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 6px;
   width: 100%;
+  margin-top: -12px; /* 上移使 2 行居中视口，第三行自然裁切 */
   /* 初始无过渡，滚动时由 JS 注入 */
   transition: none;
 }
@@ -317,6 +348,16 @@ html, body {
   font-size: 24px;
 }
 .dl-line--next .dl-line__translation {
+  opacity: 0.2;
+  font-size: 14px;
+}
+
+/* 下下行 — 视口外，样式与下一行一致 */
+.dl-line--future .dl-line__original {
+  opacity: 0.45;
+  font-size: 24px;
+}
+.dl-line--future .dl-line__translation {
   opacity: 0.2;
   font-size: 14px;
 }

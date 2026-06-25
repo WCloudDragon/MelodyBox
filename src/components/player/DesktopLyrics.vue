@@ -63,6 +63,11 @@ const nextLine = computed(() => {
   if (idx < 0 || idx >= parsedLyrics.value.length) return null
   return parsedLyrics.value[idx]
 })
+const afterNextLine = computed(() => {
+  const idx = currentLineIndex.value + 2
+  if (idx < 0 || idx >= parsedLyrics.value.length) return null
+  return parsedLyrics.value[idx]
+})
 
 // 构建发送给独立窗口的数据
 const lyricsPayload = computed(() => {
@@ -77,6 +82,10 @@ const lyricsPayload = computed(() => {
     nextLine: nextLine.value ? {
       original: nextLine.value.original,
       translation: nextLine.value.translation || null
+    } : null,
+    afterNextLine: afterNextLine.value ? {
+      original: afterNextLine.value.original,
+      translation: afterNextLine.value.translation || null
     } : null
   }
 })
