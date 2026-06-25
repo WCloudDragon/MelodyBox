@@ -51,7 +51,7 @@ export function closeScanNotify(progress, onDone) {
     completeProgress(_scanId, text)
     _scanId = null
   }
-  if (total > 0 || inserted > 0 || updated > 0) {
+  if (inserted > 0 || updated > 0) {
     startThumbPoll(onDone)
   } else if (onDone) {
     onDone()

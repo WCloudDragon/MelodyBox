@@ -434,6 +434,10 @@ def _reconnect_orphaned_play_stats(cursor, song_id, fingerprint):
 
 def scan_and_store(db_conn, dir_paths, progress_callback=None):
     """扫描目录并存储到 SQLite 数据库，同时填充 artists/albums/song_artist/song_album 表"""
+    # 重置缩略图进度（避免上次扫描的残留数据影响本次）
+    global _thumb_progress
+    _thumb_progress = {'scanning': False, 'current': 0, 'total': 0, 'path': ''}
+
     # 确保相关表存在
     _ensure_tables(db_conn)
 
