@@ -10,7 +10,7 @@
       :key="item.id"
       class="progress-item"
       :class="itemClass(item)"
-      :style="{ zIndex: index }"
+      :style="{ zIndex: items.length - 1 - index }"
     >
       <!-- header -->
       <div class="progress-item__header">
