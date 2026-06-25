@@ -140,8 +140,10 @@ async function performScroll(el, data, forward) {
     }
   }
 
-  // 4. 容器滑动 — 与全屏歌词 CSS transition 参数完全一致
+  // 4. 容器滑动 — 先注册 transition，再 force reflow，最后改 transform（避免跳变）
   el.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
+  // 强制浏览器在 transition 生效状态下记录当前位置
+  getComputedStyle(el).transform
   el.style.transform = forward
     ? `translate3d(0, ${-SCROLL_PX}px, 0)`
     : `translate3d(0, ${SCROLL_PX}px, 0)`
@@ -237,6 +239,8 @@ html, body {
   letter-spacing: 1px;
   max-width: 100%;
   padding: 6px 0;
+  flex-shrink: 0;
+  overflow: hidden;
   transition: padding 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               min-height 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
