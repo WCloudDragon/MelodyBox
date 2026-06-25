@@ -253,7 +253,7 @@ html, body {
 .dl-line__original {
   margin: 0;
   font-size: 28px;
-  line-height: 1.4;
+  line-height: 48px;
   font-weight: 700;
   color: #fff;
   opacity: 0.35;
@@ -271,7 +271,7 @@ html, body {
 .dl-line__translation {
   margin: 0;
   font-size: 17px;
-  line-height: 1.3;
+  line-height: 26px;
   font-weight: 700;
   color: #fff;
   opacity: 0.18;
