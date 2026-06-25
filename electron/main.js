@@ -337,11 +337,15 @@ function getLyricsWindowUrl() {
 }
 
 function createLyricsWindow() {
+  console.log('[main] createLyricsWindow 调用, lyricsWindow:', lyricsWindow ? 'exists' : 'null')
   if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    console.log('[main] 歌词窗口已存在，显示并聚焦')
     lyricsWindow.show()
     lyricsWindow.focus()
     return
   }
+
+  console.log('[main] 创建新的歌词窗口')
 
   const { screen } = require('electron')
   const primaryDisplay = screen.getPrimaryDisplay()
@@ -535,8 +539,14 @@ ipcMain.handle('music:pathToUrl', async (_event, filePath) => {
 ipcMain.handle('audio:getPort', () => audioServerPort)
 
 // 桌面歌词窗口 IPC
-ipcMain.on('lyrics:open', () => createLyricsWindow())
-ipcMain.on('lyrics:close', () => closeLyricsWindow())
+ipcMain.on('lyrics:open', () => {
+  console.log('[main] 收到 lyrics:open IPC')
+  createLyricsWindow()
+})
+ipcMain.on('lyrics:close', () => {
+  console.log('[main] 收到 lyrics:close IPC')
+  closeLyricsWindow()
+})
 ipcMain.on('lyrics:update', (_event, data) => updateLyricsData(data))
 
 // ==================== Windows 主题色 ====================

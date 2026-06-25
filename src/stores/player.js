@@ -284,7 +284,9 @@ export const usePlayerStore = defineStore('player', () => {
 
   // 切换桌面歌词
   function toggleDesktopLyrics() {
+    console.log('[player] toggleDesktopLyrics 调用, 当前值:', showDesktopLyrics.value)
     showDesktopLyrics.value = !showDesktopLyrics.value
+    console.log('[player] toggleDesktopLyrics 切换后:', showDesktopLyrics.value)
   }
 
   // 切换播放模式: sequential → repeat-one → shuffle → repeat → ...

@@ -86,12 +86,18 @@ function pushToLyricsWindow() {
 
 // Electron 模式下：监听开关状态，控制独立窗口
 watch(showDesktopLyrics, (val) => {
-  if (!isElectron.value) return
+  console.log('[DesktopLyrics] watch 触发, val:', val, 'isElectron:', isElectron.value)
+  if (!isElectron.value) {
+    console.log('[DesktopLyrics] 非 Electron 环境，跳过')
+    return
+  }
   if (val) {
+    console.log('[DesktopLyrics] 打开歌词窗口')
     window.electronAPI.lyricsOpen()
     // 立即推送当前数据
     pushToLyricsWindow()
   } else {
+    console.log('[DesktopLyrics] 关闭歌词窗口')
     window.electronAPI.lyricsClose()
   }
 }, { immediate: true })
