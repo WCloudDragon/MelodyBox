@@ -381,16 +381,6 @@ function createLyricsWindow() {
   const url = getLyricsWindowUrl()
   lyricsWindow.loadURL(url)
 
-  // 开发模式下打开歌词窗口的 DevTools
-  if (!app.isPackaged) {
-    lyricsWindow.webContents.openDevTools({ mode: 'detach' })
-  }
-
-  // 捕获歌词窗口渲染器的控制台输出
-  lyricsWindow.webContents.on('console-message', (_event, level, message) => {
-    console.log(`[lyrics-renderer] ${message}`)
-  })
-
   // 渲染进程崩溃处理
   lyricsWindow.webContents.on('render-process-gone', (_event, details) => {
     console.error('[lyrics] 渲染进程崩溃:', details.reason, details.exitCode)

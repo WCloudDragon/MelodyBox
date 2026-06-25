@@ -5,29 +5,35 @@
     title="双击关闭桌面歌词"
   >
     <template v-if="displayData">
-      <!-- 当前行（活跃） -->
-      <div class="dl-line dl-line--active" :class="{ 'has-translation': displayData.activeLine?.translation, 'is-word-level': displayData.activeLine?.wordLevel }">
-        <div class="dl-line__inner">
-          <p v-if="displayData.activeLine?.wordLevel && displayData.activeLine?.segments" class="dl-line__original word-level">
-            <span
-              v-for="(seg, si) in displayData.activeLine.segments"
-              :key="si"
-              class="word-seg"
-              :data-word="seg.text"
-            >{{ seg.text }}</span>
-          </p>
-          <p v-else class="dl-line__original">{{ displayData.activeLine?.original || '' }}</p>
-          <p v-if="displayData.activeLine?.translation" class="dl-line__translation">{{ displayData.activeLine.translation }}</p>
-        </div>
-      </div>
-
-      <!-- 下一行（即将播放） -->
+      <!-- 下一行（即将播放）— 显示在上方 -->
       <div v-if="displayData.nextLine" class="dl-line dl-line--next" :class="{ 'has-translation': displayData.nextLine.translation }">
         <div class="dl-line__inner">
           <p class="dl-line__original">{{ displayData.nextLine.original }}</p>
           <p v-if="displayData.nextLine.translation" class="dl-line__translation">{{ displayData.nextLine.translation }}</p>
         </div>
       </div>
+
+      <!-- 当前行（活跃）— 带切换动画 -->
+      <Transition name="dl-switch" mode="out-in">
+        <div
+          :key="displayData.activeLine?.original || 'empty'"
+          class="dl-line dl-line--active"
+          :class="{ 'has-translation': displayData.activeLine?.translation, 'is-word-level': displayData.activeLine?.wordLevel }"
+        >
+          <div class="dl-line__inner">
+            <p v-if="displayData.activeLine?.wordLevel && displayData.activeLine?.segments" class="dl-line__original word-level">
+              <span
+                v-for="(seg, si) in displayData.activeLine.segments"
+                :key="si"
+                class="word-seg"
+                :data-word="seg.text"
+              >{{ seg.text }}</span>
+            </p>
+            <p v-else class="dl-line__original">{{ displayData.activeLine?.original || '' }}</p>
+            <p v-if="displayData.activeLine?.translation" class="dl-line__translation">{{ displayData.activeLine.translation }}</p>
+          </div>
+        </div>
+      </Transition>
     </template>
 
     <div v-else class="dl-empty">桌面歌词</div>
@@ -35,7 +41,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted } from 'vue'
 
 const displayData = ref(null)
 
@@ -98,28 +104,34 @@ html, body {
   text-align: center;
   user-select: none;
   letter-spacing: 1px;
-  transition: opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
   max-width: 100%;
+  padding: 6px 0;
+  transition: padding 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              min-height 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              transform 0.12s ease;
 }
 
 .dl-line__inner {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   align-items: center;
 }
 
 .dl-line__original {
   margin: 0;
   font-size: 28px;
-  line-height: 1.3;
+  line-height: 1.4;
   font-weight: 700;
   color: #fff;
   opacity: 0.35;
   max-width: 760px;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7), 0 1px 8px rgba(0, 0, 0, 0.4);
-  transition: font-size 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              font-size 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              font-weight 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -128,20 +140,27 @@ html, body {
 .dl-line__translation {
   margin: 0;
   font-size: 17px;
-  line-height: 1.2;
+  line-height: 1.3;
   font-weight: 700;
   color: #fff;
   opacity: 0.18;
   max-width: 760px;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
-  transition: font-size 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              font-size 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 /* 活跃行 */
+.dl-line--active {
+  padding: 5px 0;
+}
+.dl-line--active.has-translation {
+  padding: 4px 0;
+}
 .dl-line--active .dl-line__original {
   opacity: 1;
   font-size: 34px;
@@ -176,10 +195,31 @@ html, body {
   color: #fff;
   opacity: 0.35;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7), 0 1px 8px rgba(0, 0, 0, 0.4);
-  transition: opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              transform 0.04s linear,
+              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .dl-line--active .word-seg {
   opacity: 1;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8), 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* ===== 当前行切换动画（逐句切换） ===== */
+.dl-switch-enter-active {
+  transition: opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.dl-switch-enter-from {
+  opacity: 0;
+  transform: translateY(18px);
+}
+.dl-switch-leave-active {
+  transition: opacity 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  position: absolute;
+}
+.dl-switch-leave-to {
+  opacity: 0;
+  transform: translateY(-12px);
 }
 </style>
