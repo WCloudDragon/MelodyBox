@@ -94,7 +94,6 @@ function itemClass(item) {
   backdrop-filter: blur(12px);
   box-shadow: 0 8px 32px rgba(0,0,0,0.4);
   transition: border-color 0.3s ease, box-shadow 0.3s ease;
-  will-change: transform;
 }
 
 .progress-item.is-done    { border-color: rgba(34,197,94,0.3); }
