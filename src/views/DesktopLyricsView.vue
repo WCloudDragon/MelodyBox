@@ -4,70 +4,135 @@
     @dblclick="handleClose"
     title="双击关闭桌面歌词"
   >
-    <!-- 滚动动画容器 — 模拟全屏歌词 translate3d 滚动 -->
-    <Transition :name="scrollTransitionName" mode="out-in">
-      <div
-        :key="displayData?.activeIndex ?? -1"
-        class="lyrics-content"
-      >
-        <template v-if="displayData">
-          <!-- 当前行（活跃）— 在上方 -->
-          <div
-            class="dl-line dl-line--active"
-            :class="{ 'is-word-level': displayData.activeLine?.wordLevel }"
-          >
-            <div class="dl-line__inner">
-              <p v-if="displayData.activeLine?.wordLevel && displayData.activeLine?.segments" class="dl-line__original word-level">
-                <span
-                  v-for="(seg, si) in displayData.activeLine.segments"
-                  :key="si"
-                  class="word-seg"
-                  :data-word="seg.text"
-                >{{ seg.text }}</span>
-              </p>
-              <p v-else class="dl-line__original">{{ displayData.activeLine?.original || '' }}</p>
-              <p v-if="displayData.activeLine?.translation" class="dl-line__translation">{{ displayData.activeLine.translation }}</p>
-            </div>
+    <!-- 滚动容器 — translate3d 模拟全屏歌词滚动 -->
+    <div
+      ref="scrollRef"
+      class="scroll-container"
+      @transitionend="onScrollEnd"
+    >
+      <template v-if="displayData">
+        <!-- 当前行（活跃）— 在上方 -->
+        <div
+          class="dl-line dl-line--active"
+          :class="{ 'is-word-level': displayData.activeLine?.wordLevel }"
+        >
+          <div class="dl-line__inner">
+            <p v-if="displayData.activeLine?.wordLevel && displayData.activeLine?.segments" class="dl-line__original word-level">
+              <span
+                v-for="(seg, si) in displayData.activeLine.segments"
+                :key="si"
+                class="word-seg"
+                :data-word="seg.text"
+              >{{ seg.text }}</span>
+            </p>
+            <p v-else class="dl-line__original">{{ displayData.activeLine?.original || '' }}</p>
+            <p v-if="displayData.activeLine?.translation" class="dl-line__translation">{{ displayData.activeLine.translation }}</p>
           </div>
+        </div>
 
-          <!-- 下一行（即将播放）— 在下方 -->
-          <div v-if="displayData.nextLine" class="dl-line dl-line--next">
-            <div class="dl-line__inner">
-              <p class="dl-line__original">{{ displayData.nextLine.original }}</p>
-              <p v-if="displayData.nextLine.translation" class="dl-line__translation">{{ displayData.nextLine.translation }}</p>
-            </div>
+        <!-- 下一行（即将播放）— 在下方 -->
+        <div v-if="displayData.nextLine" class="dl-line dl-line--next">
+          <div class="dl-line__inner">
+            <p class="dl-line__original">{{ displayData.nextLine.original }}</p>
+            <p v-if="displayData.nextLine.translation" class="dl-line__translation">{{ displayData.nextLine.translation }}</p>
           </div>
-        </template>
-      </div>
-    </Transition>
+        </div>
+      </template>
+    </div>
 
     <div v-if="!displayData" class="dl-empty">桌面歌词</div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 
 const displayData = ref(null)
+const pendingData = ref(null)       // 动画进行中的待更新数据
+const animating = ref(false)
+const scrollRef = ref(null)
 const prevIndex = ref(-1)
-
-// 根据 index 变化方向决定过渡动画名称
-const scrollTransitionName = computed(() => {
-  const cur = displayData.value?.activeIndex ?? -1
-  const dir = cur >= prevIndex.value ? 'dl-scroll-forward' : 'dl-scroll-backward'
-  return dir
-})
+const SCROLL_PX = 52                  // 单行滚动量
 
 onMounted(() => {
   if (window.electronAPI) {
     window.electronAPI.onLyricsData((data) => {
-      // 记录方向
+      const newIdx = data?.activeIndex ?? -1
       const oldIdx = displayData.value?.activeIndex ?? -1
-      prevIndex.value = oldIdx
-      displayData.value = data
+
+      // 首次加载 / 首次出现歌词 / index 相同 → 直接更新
+      if (oldIdx < 0 || newIdx === oldIdx) {
+        displayData.value = data
+        prevIndex.value = newIdx
+        return
+      }
+
+      // 动画进行中 → 缓存最新数据，动画结束后应用
+      if (animating.value) {
+        pendingData.value = data
+        prevIndex.value = newIdx
+        return
+      }
+
+      // → 启动滚动动画
+      const forward = newIdx > oldIdx
+      animating.value = true
+      pendingData.value = data
+      prevIndex.value = newIdx
+
+      const el = scrollRef.value
+      if (!el) {
+        displayData.value = data
+        animating.value = false
+        return
+      }
+
+      // 与全屏歌词 CSS transition 滚动参数完全一致
+      el.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
+      el.style.transform = forward
+        ? `translate3d(0, ${-SCROLL_PX}px, 0)`
+        : `translate3d(0, ${SCROLL_PX}px, 0)`
     })
   }
 })
+
+/** 滚动动画结束 */
+async function onScrollEnd() {
+  const el = scrollRef.value
+  if (!el) return
+
+  // 1. 停掉 transition，避免重置 transform 时触发另一次过渡
+  el.style.transition = 'none'
+  el.style.transform = 'translate3d(0, 0, 0)'
+
+  // 2. 换上最新数据
+  const data = pendingData.value
+  pendingData.value = null
+  animating.value = false
+  if (data) {
+    displayData.value = data
+  }
+
+  // 3. 等下一帧：如果在动画期间已有新数据排队，立即再动画一次
+  await nextTick()
+  if (pendingData.value) {
+    const newIdx = pendingData.value.activeIndex ?? -1
+    const curIdx = displayData.value?.activeIndex ?? -1
+    if (newIdx !== curIdx) {
+      const forward = newIdx > curIdx
+      prevIndex.value = newIdx
+      animating.value = true
+      el.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
+      el.style.transform = forward
+        ? `translate3d(0, ${-SCROLL_PX}px, 0)`
+        : `translate3d(0, ${SCROLL_PX}px, 0)`
+      displayData.value = pendingData.value
+      pendingData.value = null
+    } else {
+      pendingData.value = null
+    }
+  }
+}
 
 function handleClose() {
   if (window.electronAPI) {
@@ -109,13 +174,15 @@ html, body {
   position: relative;
 }
 
-.lyrics-content {
+.scroll-container {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 6px;
   width: 100%;
+  /* 初始无过渡，滚动时由 JS 注入 */
+  transition: none;
 }
 
 .dl-empty {
@@ -225,50 +292,5 @@ html, body {
 .dl-line--active .word-seg {
   opacity: 1;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8), 0 2px 12px rgba(0, 0, 0, 0.5);
-}
-
-/* ============================ */
-/*  滚动过渡动画 — 模拟全屏歌词 translate3d 滚动  */
-/*  与全屏歌词一致的参数: 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0) */
-/* ============================ */
-
-/* 前进 (歌词向下滚动，文字向上滑动) */
-.dl-scroll-forward-enter-active {
-  transition: opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-}
-.dl-scroll-forward-enter-from {
-  opacity: 0;
-  transform: translateY(52px);
-}
-.dl-scroll-forward-leave-active {
-  transition: opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-  position: absolute;
-  width: calc(100% - 48px);
-}
-.dl-scroll-forward-leave-to {
-  opacity: 0;
-  transform: translateY(-52px);
-}
-
-/* 后退 (歌词向上滚动，文字向下滑动) */
-.dl-scroll-backward-enter-active {
-  transition: opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-}
-.dl-scroll-backward-enter-from {
-  opacity: 0;
-  transform: translateY(-52px);
-}
-.dl-scroll-backward-leave-active {
-  transition: opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-  position: absolute;
-  width: calc(100% - 48px);
-}
-.dl-scroll-backward-leave-to {
-  opacity: 0;
-  transform: translateY(52px);
 }
 </style>
