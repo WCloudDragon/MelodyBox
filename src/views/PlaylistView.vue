@@ -201,7 +201,7 @@ async function handleDelete() {
 }
 .playlist-info h1 { font-size: 28px; font-weight: 700; margin: 0 0 8px; }
 .playlist-info p { color: var(--text-tertiary); margin: 0 0 2px; font-size: 14px; }
-.playlist-actions { display: flex; gap: 8px; margin-top: 16px; }
+.playlist-actions { display: flex; gap: 8px; margin-top: 16px; align-items: center; }
 
 /* 列表视图（对齐 LibraryView） */
 .track-table-header {

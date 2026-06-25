@@ -76,12 +76,43 @@ html, body {
 
 /* ==================== Element Plus 主题覆盖 ==================== */
 
-/* 按钮 */
+/* 按钮 - 默认 */
+.el-button {
+  --el-button-bg-color: var(--bg-tertiary);
+  --el-button-border-color: var(--border-color);
+  --el-button-text-color: var(--text-secondary);
+  --el-button-hover-bg-color: var(--hover-bg-strong);
+  --el-button-hover-border-color: var(--border-color);
+  --el-button-hover-text-color: var(--text-primary);
+  --el-button-active-bg-color: var(--hover-bg-strong);
+  --el-button-active-border-color: var(--border-color);
+  border-radius: 8px;
+}
+
+/* 按钮 - 主要 */
 .el-button--primary {
   --el-button-bg-color: var(--accent-color);
   --el-button-border-color: var(--accent-color);
+  --el-button-text-color: #fff;
   --el-button-hover-bg-color: #5558e6;
   --el-button-hover-border-color: #5558e6;
+  --el-button-hover-text-color: #fff;
+}
+
+/* 按钮 - 危险（纯文字） */
+.el-button--danger.is-plain {
+  --el-button-bg-color: transparent;
+  --el-button-border-color: transparent;
+  --el-button-text-color: #ef4444;
+  --el-button-hover-bg-color: rgba(239, 68, 68, 0.1);
+  --el-button-hover-border-color: transparent;
+  --el-button-hover-text-color: #f87171;
+}
+
+/* 按钮 - 文字类型 */
+.el-button.is-text {
+  --el-button-text-color: var(--text-secondary);
+  --el-button-hover-text-color: var(--text-primary);
 }
 
 /* 输入框 */
