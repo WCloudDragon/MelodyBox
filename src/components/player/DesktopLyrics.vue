@@ -67,6 +67,7 @@ const nextLine = computed(() => {
 // 构建发送给独立窗口的数据
 const lyricsPayload = computed(() => {
   return {
+    activeIndex: currentLineIndex.value,
     activeLine: activeLine.value ? {
       original: activeLine.value.original,
       translation: activeLine.value.translation || null,
