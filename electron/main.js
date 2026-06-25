@@ -359,7 +359,7 @@ function createLyricsWindow() {
     transparent: true,
     alwaysOnTop: true,
     skipTaskbar: true,
-    resizable: false,
+    resizable: true,
     hasShadow: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -380,6 +380,9 @@ function createLyricsWindow() {
 
   const url = getLyricsWindowUrl()
   lyricsWindow.loadURL(url)
+
+  // 调试：自动打开歌词窗口的 DevTools
+  lyricsWindow.webContents.openDevTools({ mode: 'detach' })
 
   // 渲染进程崩溃处理
   lyricsWindow.webContents.on('render-process-gone', (_event, details) => {
@@ -541,7 +544,16 @@ ipcMain.on('lyrics:close', () => closeLyricsWindow())
 ipcMain.on('lyrics:update', (_event, data) => updateLyricsData(data))
 ipcMain.on('lyrics:resize', (_event, { width, height }) => {
   if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    const before = lyricsWindow.getSize()
+    console.log('[main] lyrics:resize before:', before, '-> target:', width, height)
     lyricsWindow.setSize(width, height)
+    // 锁定垂直高度，仅允许左右拖动调整宽度
+    lyricsWindow.setMinimumSize(200, height)
+    lyricsWindow.setMaximumSize(10000, height)
+    const after = lyricsWindow.getSize()
+    console.log('[main] lyrics:resize after:', after)
+  } else {
+    console.log('[main] lyrics:resize skipped - window not available')
   }
 })
 

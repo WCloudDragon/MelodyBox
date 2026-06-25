@@ -102,7 +102,6 @@ function computeWindowHeight() {
 
   const activeLH = Math.round(base * activeScale * 1.55)
   const normalLH = Math.round(base * 1.55)
-  // .dl-line padding 2+2 + .dl-line__inner gap 2
   const lineOverhead = 6
 
   let contentH = activeLH + lineOverhead
@@ -110,20 +109,26 @@ function computeWindowHeight() {
     contentH += normalLH + lineOverhead
   }
 
-  // .lyrics-window padding 16px * 2 = 32px
-  return Math.max(60, Math.round(32 + contentH))
+  const wh = Math.max(60, Math.round(32 + contentH))
+  console.log('[DesktopLyrics] computeWindowHeight', {
+    base, viewLines, activeScale: desktopSettings.value.activeScale,
+    activeLH, normalLH, contentH, windowHeight: wh
+  })
+  return wh
 }
 
 let _resizeTimer = null
 function requestResize() {
   clearTimeout(_resizeTimer)
   const h = computeWindowHeight()
+  console.log('[DesktopLyrics] requestResize ->', h)
   if (window.electronAPI?.lyricsResize) {
     window.electronAPI.lyricsResize(300, h)
   }
   // 等待窗口 resize 完成后重新对齐滚动位置
   _resizeTimer = setTimeout(() => {
     const idx = currentLineIndex.value
+    console.log('[DesktopLyrics] resize timer fire, re-scroll to', idx, 'viewportH=', viewportHeight.value)
     if (idx >= 0) {
       scrollToLine(idx, false)
     }
@@ -134,54 +139,83 @@ function requestResize() {
 let currentScrollY = 0
 let currentScrollTarget = 0
 
+// 视口高度：从设置参数直接算出，不依赖 DOM 测量
+const viewportHeight = computed(() => computeWindowHeight() - 32)
+
 function scrollToLine(index, animate = true) {
-  if (index < 0 || !scrollRef.value || !mainRef.value) return
+  if (index < 0 || !scrollRef.value || !mainRef.value) {
+    console.log('[DesktopLyrics] scrollToLine skip', { index, scrollRef: !!scrollRef.value, mainRef: !!mainRef.value })
+    return
+  }
   const lineEl = lineRefs.value[index]
-  if (!lineEl) return
-
-  const containerHeight = mainRef.value.clientHeight
-  const vl = desktopSettings.value.viewLines ?? 2
-  const total = parsedLyrics.value.length
-  const isLast = index >= total - 1
-
-  // 2 行模式且非最后一行：活跃行偏上（33%），为下一行留空间
-  // 1 行模式 / 最后一行：活跃行居中（50%）
-  const ratio = (vl >= 2 && !isLast) ? 0.33 : 0.5
-  const targetScroll = lineEl.offsetTop - containerHeight * ratio + lineEl.offsetHeight / 2
-
-  if (!animate) {
-    scrollRef.value.style.transition = 'none'
-    scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
-    currentScrollY = -targetScroll
+  if (!lineEl) {
+    console.log('[DesktopLyrics] scrollToLine lineEl not found for index', index, 'available keys:', Object.keys(lineRefs.value).slice(0, 10))
     return
   }
 
-  const absScrollDelta = Math.abs(targetScroll - currentScrollTarget)
-  currentScrollTarget = targetScroll
+  // 用 rAF 确保 DOM 布局已完成再读取 offsetTop
+  requestAnimationFrame(() => {
+    if (!lineEl || !scrollRef.value || !mainRef.value) return
 
-  if (absScrollDelta > containerHeight) {
-    // 大跨度：Web Animation
-    const anim = scrollRef.value.animate(
-      [
-        { transform: `translate3d(0, ${currentScrollY}px, 0)` },
-        { transform: `translate3d(0, ${-targetScroll}px, 0)` }
-      ],
-      { duration: 800, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
-    )
-    anim.onfinish = () => {
+    const containerHeight = viewportHeight.value
+    const vl = desktopSettings.value.viewLines ?? 2
+    const total = parsedLyrics.value.length
+    const isLast = index >= total - 1
+
+    const ratio = (vl >= 2 && !isLast) ? 0.33 : 0.5
+    const targetScroll = lineEl.offsetTop - containerHeight * ratio + lineEl.offsetHeight / 2
+
+    console.log('[DesktopLyrics] scrollToLine', {
+      index, animate,
+      offsetTop: lineEl.offsetTop,
+      offsetHeight: lineEl.offsetHeight,
+      containerHeight,
+      viewLines: vl,
+      ratio,
+      targetScroll,
+      translateY: -targetScroll,
+      viewportH: containerHeight,
+      lineOpacity: lineStyle(index),
+      nextLineOpacity: vl >= 2 && index + 1 < total ? lineStyle(index + 1) : 'N/A',
+      activeLineClass: lineEl.className
+    })
+
+    if (!animate) {
+      scrollRef.value.style.transition = 'none'
       scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
-      anim.cancel()
       currentScrollY = -targetScroll
+      return
     }
-  } else {
-    // 小跨度：CSS transition
-    scrollRef.value.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
-    scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
-    currentScrollY = -targetScroll
-    setTimeout(() => {
-      if (scrollRef.value) scrollRef.value.style.transition = ''
-    }, 550)
-  }
+
+    const absScrollDelta = Math.abs(targetScroll - currentScrollTarget)
+    currentScrollTarget = targetScroll
+
+    if (absScrollDelta > containerHeight) {
+      // 大跨度：Web Animation
+      const anim = scrollRef.value.animate(
+        [
+          { transform: `translate3d(0, ${currentScrollY}px, 0)` },
+          { transform: `translate3d(0, ${-targetScroll}px, 0)` }
+        ],
+        { duration: 800, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
+      )
+      anim.onfinish = () => {
+        if (scrollRef.value) {
+          scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
+          anim.cancel()
+        }
+        currentScrollY = -targetScroll
+      }
+    } else {
+      // 小跨度：CSS transition
+      scrollRef.value.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
+      scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
+      currentScrollY = -targetScroll
+      setTimeout(() => {
+        if (scrollRef.value) scrollRef.value.style.transition = ''
+      }, 550)
+    }
+  })
 }
 
 // ===== 重置 =====
@@ -198,11 +232,21 @@ function resetScroll() {
 onMounted(() => {
   if (window.electronAPI) {
     window.electronAPI.onLyricsData((data) => {
-      // 更新设置
+      console.log('[DesktopLyrics] onLyricsData received', {
+        hasSettings: !!data?.settings,
+        viewLines: data?.settings?.viewLines,
+        lyricsCount: data?.parsedLyrics?.length,
+        lineIndex: data?.currentLineIndex,
+        hasSongInfo: !!data?.songInfo
+      })
+
+      // 更新设置（只在设置真正变化时才调整窗口大小）
       if (data?.settings) {
+        const prevSettings = JSON.stringify(desktopSettings.value)
         desktopSettings.value = data.settings
-        // 字号/行数/缩放变动 → 调整窗口高度
-        nextTick(() => requestResize())
+        if (JSON.stringify(data.settings) !== prevSettings) {
+          nextTick(() => requestResize())
+        }
       }
 
       const newLyrics = data?.parsedLyrics || []
@@ -274,12 +318,11 @@ html, body {
   width: 100%;
   height: 100%;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   padding: 16px 24px;
   -webkit-app-region: drag;
   user-select: none;
-  background: transparent;
+  background: rgba(255, 0, 0, 0.3); /* DEBUG: 临时红色半透明背景 */
   overflow: hidden;
 }
 
@@ -288,6 +331,7 @@ html, body {
   width: 100%;
   overflow: hidden;
   min-height: 0;
+  position: relative;
 }
 
 .lyrics-scroll {
