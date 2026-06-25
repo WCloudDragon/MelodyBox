@@ -322,19 +322,65 @@ async function onScrollEnd() {
     delete lineEl.dataset.animLocked
   })
 
+  // 1.6 测量并重新锁定当前自然高度（swap 后内容变化时会产生高度突变）
+  const lockedLines = []
+  el.querySelectorAll('.dl-line--active, .dl-line--next').forEach(lineEl => {
+    const h = lineEl.offsetHeight
+    lineEl._lockedH = h
+    lockedLines.push(lineEl)
+    lineEl.style.transition = 'none'
+    lineEl.style.height = h + 'px'
+    lineEl.style.flexShrink = '0'
+  })
+
   // 2. 容器瞬间归位
   el.style.transition = 'none'
   el.style.transform = 'translate3d(0, 0, 0)'
 
-  // 3. 换上当前动画的目标数据
+  // 3. 换上当前动画的目标数据（此时高度被锁，内容变化不可见）
   const wasLastLineScroll = isLastLineScroll
   if (targetData) {
     displayData.value = targetData
     targetData = null
   }
   isLastLineScroll = false
-
   animating.value = false
+
+  // 3.5 等 Vue DOM 更新后，解锁 → 动画过渡到新自然高度
+  await nextTick()
+  await nextTick()  // 双重 nextTick 确保 Vue patch 完成
+
+  lockedLines.forEach(lineEl => {
+    // 读一次自然高度（解锁前）
+    lineEl.style.height = ''
+    lineEl.style.flexShrink = ''
+    const targetH = lineEl.offsetHeight
+    // 重新锁回旧高度
+    lineEl.style.height = lineEl._lockedH + 'px'
+    lineEl.style.flexShrink = '0'
+    // 存储目标高度
+    lineEl._targetH = targetH
+  })
+
+  // 启动 height 过渡
+  requestAnimationFrame(() => {
+    lockedLines.forEach(lineEl => {
+      lineEl.style.transition = 'height 0.25s ease'
+      lineEl.style.height = lineEl._targetH + 'px'
+      lineEl.style.flexShrink = ''
+    })
+  })
+
+  // 过渡结束后清理
+  setTimeout(() => {
+    lockedLines.forEach(lineEl => {
+      lineEl.style.transition = ''
+      lineEl.style.height = ''
+      lineEl.style.flexShrink = ''
+      delete lineEl._lockedH
+      delete lineEl._targetH
+    })
+  }, 300)
 
   // 4. 同步视口高度（字号可能变化）
   await syncViewportHeight()
@@ -489,6 +535,7 @@ html, body {
   width: 100%;
   /* 初始无过渡，滚动时由 JS 注入 */
   transition: none;
+  position: relative;
 }
 
 .dl-empty {
@@ -508,6 +555,7 @@ html, body {
   flex-shrink: 0;
   overflow: hidden;
   transition: padding 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              height 0.25s ease,
               min-height 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               transform 0.12s ease;
