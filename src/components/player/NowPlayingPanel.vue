@@ -60,7 +60,7 @@
                 @click="seekToLine(line.time)"
               >
                 <div class="lyric-line__inner">
-                  <p v-if="line.wordLevel && line.segments" class="lyric-line__original word-level">
+                  <p v-if="line.wordLevel && line.segments && Math.abs(index - currentLineIndex) <= 1" class="lyric-line__original word-level">
                     <span
                       v-for="(seg, si) in line.segments"
                       :key="si"
@@ -437,11 +437,9 @@ function startWordAnimLoop() {
       wordAnimRaf = null
       return
     }
-    // 首次进入该行时缓存 .word-seg 元素引用，避免每帧 querySelectorAll
-    if (!line._wordSegEls) {
-      const lineEl = lineRefs.value[idx]
-      line._wordSegEls = lineEl ? [...lineEl.querySelectorAll('.word-seg')] : []
-    }
+    // 重新缓存（word-seg 仅在活跃行渲染，切句后旧引用失效）
+    const lineEl = lineRefs.value[idx]
+    line._wordSegEls = lineEl ? [...lineEl.querySelectorAll('.word-seg')] : []
 
     const now = performance.now()
     const interval = 1000 / fpz
