@@ -52,7 +52,7 @@ const pendingData = ref(null)       // 动画进行中的待更新数据
 const animating = ref(false)
 const scrollRef = ref(null)
 const prevIndex = ref(-1)
-const SCROLL_PX = 52                  // 单行滚动量
+const SCROLL_PX = 64                  // 活跃行高(58px) + gap(6px)
 
 onMounted(() => {
   if (window.electronAPI) {
