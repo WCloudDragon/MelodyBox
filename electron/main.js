@@ -323,7 +323,80 @@ function stopAudioServer() {
 console.log('[main] 主进程启动')
 
 let mainWindow = null
+let lyricsWindow = null
 let _isFullScreen = false
+
+// ==================== 桌面歌词窗口 ====================
+
+function getLyricsWindowUrl() {
+  const isDev = !app.isPackaged
+  if (isDev) {
+    return 'http://localhost:5173/#/desktop-lyrics'
+  }
+  return `file://${path.join(__dirname, '..', 'dist', 'index.html')}#/desktop-lyrics`
+}
+
+function createLyricsWindow() {
+  if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    lyricsWindow.show()
+    lyricsWindow.focus()
+    return
+  }
+
+  const { screen } = require('electron')
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
+
+  lyricsWindow = new BrowserWindow({
+    width: 800,
+    height: 160,
+    x: Math.round((screenWidth - 800) / 2),
+    y: screenHeight - 200,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    hasShadow: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    },
+    backgroundColor: '#00000000',
+    show: false
+  })
+
+  lyricsWindow.setAlwaysOnTop(true, 'screen-saver')
+  lyricsWindow.setVisibleOnAllWorkspaces(true)
+
+  lyricsWindow.loadURL(getLyricsWindowUrl())
+
+  lyricsWindow.once('ready-to-show', () => {
+    lyricsWindow.show()
+  })
+
+  lyricsWindow.on('closed', () => {
+    lyricsWindow = null
+    // 通知主窗口歌词窗口已关闭
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('lyrics:windowClosed')
+    }
+  })
+}
+
+function closeLyricsWindow() {
+  if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    lyricsWindow.close()
+    lyricsWindow = null
+  }
+}
+
+function updateLyricsData(data) {
+  if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    lyricsWindow.webContents.send('lyrics:data', data)
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -436,6 +509,11 @@ ipcMain.handle('music:pathToUrl', async (_event, filePath) => {
 // 暴露音频服务器端口给渲染进程
 ipcMain.handle('audio:getPort', () => audioServerPort)
 
+// 桌面歌词窗口 IPC
+ipcMain.on('lyrics:open', () => createLyricsWindow())
+ipcMain.on('lyrics:close', () => closeLyricsWindow())
+ipcMain.on('lyrics:update', (_event, data) => updateLyricsData(data))
+
 // ==================== Windows 主题色 ====================
 
 ipcMain.handle('system:getAccentColor', async () => {
@@ -470,12 +548,14 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  closeLyricsWindow()
   stopFlask()
   stopAudioServer()
   if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('before-quit', () => {
+  closeLyricsWindow()
   stopFlask()
   stopAudioServer()
 })

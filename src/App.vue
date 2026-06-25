@@ -1,5 +1,11 @@
 <template>
-  <div id="melody-box" :class="{ 'is-electron': isElectron }">
+  <!-- 桌面歌词独立窗口：只渲染路由视图，无应用外壳 -->
+  <div v-if="isDesktopLyricsRoute" id="melody-box" class="lyrics-only">
+    <router-view />
+  </div>
+
+  <!-- 正常应用布局 -->
+  <div v-else id="melody-box" :class="{ 'is-electron': isElectron }">
     <TitleBar v-if="isElectron" :lyrics-visible="panelVisible" />
     <div class="app-body">
       <Sidebar />
@@ -29,6 +35,7 @@
 
 <script setup>
 import { ref, computed, onMounted, provide, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
 import { initMediaSession } from '@/utils/mediaSession'
@@ -41,6 +48,8 @@ import ProgressPanel from '@/components/ProgressPanel.vue'
 
 const playerStore = usePlayerStore()
 const settingsStore = useSettingsStore()
+const route = useRoute()
+const isDesktopLyricsRoute = computed(() => route.name === 'desktopLyrics')
 const currentTrack = computed(() => playerStore.currentTrack)
 const isElectron = computed(() => !!window.electronAPI)
 
@@ -195,6 +204,12 @@ onMounted(() => {
   overflow: hidden;
   background: var(--bg-primary);
   color: var(--text-primary);
+}
+
+/* 桌面歌词独立窗口：透明背景，无 flex 布局 */
+#melody-box.lyrics-only {
+  background: transparent;
+  color: #fff;
 }
 
 .app-body {

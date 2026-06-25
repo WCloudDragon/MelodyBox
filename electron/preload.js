@@ -28,5 +28,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAudioServerPort: () => ipcRenderer.invoke('audio:getPort'),
 
   // Windows 主题色
-  getAccentColor: () => ipcRenderer.invoke('system:getAccentColor')
+  getAccentColor: () => ipcRenderer.invoke('system:getAccentColor'),
+
+  // 桌面歌词窗口控制（主窗口使用）
+  lyricsOpen: () => ipcRenderer.send('lyrics:open'),
+  lyricsClose: () => ipcRenderer.send('lyrics:close'),
+  lyricsUpdate: (data) => ipcRenderer.send('lyrics:update', data),
+  onLyricsWindowClosed: (callback) => {
+    ipcRenderer.on('lyrics:windowClosed', () => callback())
+  },
+
+  // 桌面歌词数据接收（歌词窗口使用）
+  onLyricsData: (callback) => {
+    ipcRenderer.on('lyrics:data', (_event, data) => callback(data))
+  }
 })

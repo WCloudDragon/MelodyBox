@@ -66,6 +66,12 @@ const routes = [
     name: 'folders',
     component: () => import('@/views/FoldersView.vue'),
     meta: { title: '文件夹管理' }
+  },
+  {
+    path: '/desktop-lyrics',
+    name: 'desktopLyrics',
+    component: () => import('@/views/DesktopLyricsView.vue'),
+    meta: { title: '桌面歌词' }
   }
 ]
 
