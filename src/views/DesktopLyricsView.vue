@@ -5,8 +5,8 @@
     @dblclick="handleClose"
     title="双击关闭桌面歌词"
   >
-    <!-- 视口裁剪器 — 只显示 2 行，第三行在视口外 -->
-    <div class="scroll-viewport">
+    <!-- 视口裁剪器 — 高度由 JS 动态计算，保证只显示 2 行 -->
+    <div ref="viewportRef" class="scroll-viewport">
       <!-- 滚动容器 — translate3d 模拟全屏歌词滚动 -->
       <div
         ref="scrollRef"
@@ -33,7 +33,7 @@
           </div>
         </div>
 
-        <!-- 下一行（即将播放）— 在下方 -->
+        <!-- 下一行（即将播放）— 翻译词居上对齐 -->
         <div v-if="displayData.nextLine" class="dl-line dl-line--next">
           <div class="dl-line__inner">
             <p class="dl-line__original">{{ displayData.nextLine.original }}</p>
@@ -57,7 +57,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 
 const displayData = ref(null)
 const pendingData = ref(null)       // 动画期间新到的排队数据（链式调用）
@@ -65,6 +65,7 @@ let targetData = null               // 当前动画目标数据，结束后 swap
 const animating = ref(false)
 let activeAnimations = []            // 当前动画的 Animation 对象，结束后取消
 const scrollRef = ref(null)
+const viewportRef = ref(null)
 const prevIndex = ref(-1)
 const GAP = 2                        // flex gap 间距
 
@@ -113,6 +114,7 @@ onMounted(() => {
       if (oldIdx < 0 || newIdx === oldIdx) {
         displayData.value = data
         prevIndex.value = newIdx
+        syncViewportHeight()
         return
       }
 
@@ -164,7 +166,7 @@ async function performScroll(el, data, forward) {
   if (oldActiveTrans) {
     const anim = oldActiveTrans.animate(
       [
-        { fontSize: transActiveStr, opacity: '0.5' },
+        { fontSize: transActiveStr, opacity: '1' },
         { fontSize: transStr, opacity: '0.2' }
       ],
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
@@ -189,7 +191,7 @@ async function performScroll(el, data, forward) {
     const anim = oldNextTrans.animate(
       [
         { fontSize: transStr, opacity: '0.2' },
-        { fontSize: transActiveStr, opacity: '0.5' }
+        { fontSize: transActiveStr, opacity: '1' }
       ],
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
@@ -233,6 +235,9 @@ async function onScrollEnd() {
 
   animating.value = false
 
+  // 4. 同步视口高度（字号可能变化）
+  syncViewportHeight()
+
   // 检查动画期间是否有新一轮排队数据
   if (pendingData.value) {
     const next = pendingData.value
@@ -251,6 +256,23 @@ function handleClose() {
     window.electronAPI.lyricsClose()
   }
 }
+
+/** 同步视口高度 = 活跃行 + 下一行实际高度 + gap */
+async function syncViewportHeight() {
+  await nextTick()
+  const vp = viewportRef.value
+  if (!vp) return
+  const activeEl = vp.querySelector('.dl-line--active')
+  const nextEl = vp.querySelector('.dl-line--next')
+  const activeH = activeEl ? activeEl.offsetHeight : 64
+  const nextH = nextEl ? nextEl.offsetHeight : 0
+  vp.style.height = (activeH + GAP + nextH) + 'px'
+}
+
+// 设置变化时重新计算视口高度
+watch(desktopSettings, () => {
+  syncViewportHeight()
+}, { deep: true })
 </script>
 
 <style>
@@ -288,7 +310,7 @@ html, body {
 
 .scroll-viewport {
   width: 100%;
-  height: 100%;
+  /* 高度由 JS 动态计算 = active + next + gap */
   overflow: hidden;
 }
 
@@ -339,7 +361,12 @@ html, body {
   color: #fff;
   opacity: 0.35;
   max-width: 760px;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7), 0 1px 8px rgba(0, 0, 0, 0.4);
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.6),
+     1px -1px 0 rgba(0, 0, 0, 0.6),
+    -1px  1px 0 rgba(0, 0, 0, 0.6),
+     1px  1px 0 rgba(0, 0, 0, 0.6),
+    0 2px 6px rgba(0, 0, 0, 0.5);
   transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               font-size 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               font-weight 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
@@ -357,7 +384,12 @@ html, body {
   color: #fff;
   opacity: 0.18;
   max-width: 760px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.6),
+     1px -1px 0 rgba(0, 0, 0, 0.6),
+    -1px  1px 0 rgba(0, 0, 0, 0.6),
+     1px  1px 0 rgba(0, 0, 0, 0.6),
+    0 1px 4px rgba(0, 0, 0, 0.4);
   transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               font-size 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
@@ -375,10 +407,16 @@ html, body {
   opacity: 1;
   font-size: var(--dl-active-original, 29px);
   max-width: 760px;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8), 0 2px 12px rgba(0, 0, 0, 0.5);
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.7),
+     1px -1px 0 rgba(0, 0, 0, 0.7),
+    -1px  1px 0 rgba(0, 0, 0, 0.7),
+     1px  1px 0 rgba(0, 0, 0, 0.7),
+    0 2px 10px rgba(0, 0, 0, 0.5);
 }
 .dl-line--active .dl-line__translation {
-  opacity: 0.5;
+  opacity: 1;
+  color: #fff;
   font-size: var(--dl-active-trans, 17px);
 }
 
@@ -390,6 +428,7 @@ html, body {
 .dl-line--next .dl-line__translation {
   opacity: 0.2;
   font-size: var(--dl-base-trans, 14px);
+  line-height: 1.1;
 }
 
 /* 下下行 — 视口外，样式与下一行一致 */
@@ -400,6 +439,7 @@ html, body {
 .dl-line--future .dl-line__translation {
   opacity: 0.2;
   font-size: var(--dl-base-trans, 14px);
+  line-height: 1.1;
 }
 
 /* ===== 逐字歌词 ===== */
@@ -414,13 +454,23 @@ html, body {
   display: inline-block;
   color: #fff;
   opacity: 0.35;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7), 0 1px 8px rgba(0, 0, 0, 0.4);
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.6),
+     1px -1px 0 rgba(0, 0, 0, 0.6),
+    -1px  1px 0 rgba(0, 0, 0, 0.6),
+     1px  1px 0 rgba(0, 0, 0, 0.6),
+    0 2px 6px rgba(0, 0, 0, 0.5);
   transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               transform 0.04s linear,
               opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .dl-line--active .word-seg {
   opacity: 1;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8), 0 2px 12px rgba(0, 0, 0, 0.5);
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.7),
+     1px -1px 0 rgba(0, 0, 0, 0.7),
+    -1px  1px 0 rgba(0, 0, 0, 0.7),
+     1px  1px 0 rgba(0, 0, 0, 0.7),
+    0 2px 10px rgba(0, 0, 0, 0.5);
 }
 </style>
