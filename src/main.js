@@ -21,3 +21,12 @@ app.use(createPinia())
 app.use(router)
 app.use(ElementPlus, { locale: undefined })
 app.mount('#app')
+
+// 修复 Electron 下鼠标快速移出窗口时 :hover 状态残留的 Chromium bug
+window.addEventListener('mouseout', (e) => {
+  if (!e.relatedTarget || e.relatedTarget.nodeName === 'HTML') {
+    document.body.style.pointerEvents = 'none'
+    document.body.offsetHeight // 强制重排清空 hover
+    document.body.style.pointerEvents = ''
+  }
+})
