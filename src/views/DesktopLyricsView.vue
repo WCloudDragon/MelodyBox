@@ -137,37 +137,30 @@ async function onScrollEnd() {
   }
 }
 
-/** 新活跃行：先在「下一行」尺寸渲染，双 RAF 确保起始帧已画出 → CSS transition 自然过渡到活跃行尺寸 */
+/** 使用 Web Animations API 让新活跃行从「下一行」尺寸动画过渡到「活跃行」尺寸 */
 function animateActiveLineIn(container) {
   if (!container) return
   const original = container.querySelector('.dl-line--active .dl-line__original')
   const translation = container.querySelector('.dl-line--active .dl-line__translation')
 
-  // 1. 强制设为下一行尺寸（inline 样式覆盖 CSS 规则）
   if (original) {
-    original.style.fontSize = '24px'
-    original.style.fontWeight = '700'
-    original.style.opacity = '0.45'
+    original.animate(
+      [
+        { fontSize: '24px', opacity: '0.45', fontWeight: '700' },
+        { fontSize: '34px', opacity: '1', fontWeight: '700' }
+      ],
+      { duration: 800, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
+    )
   }
   if (translation) {
-    translation.style.fontSize = '14px'
-    translation.style.opacity = '0.2'
+    translation.animate(
+      [
+        { fontSize: '14px', opacity: '0.2' },
+        { fontSize: '20px', opacity: '0.5' }
+      ],
+      { duration: 800, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
+    )
   }
-
-  // 2. 双 RAF：第一帧让浏览器画出起始态，第二帧清除 inline → transition 生效
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      if (original) {
-        original.style.fontSize = ''
-        original.style.fontWeight = ''
-        original.style.opacity = ''
-      }
-      if (translation) {
-        translation.style.fontSize = ''
-        translation.style.opacity = ''
-      }
-    })
-  })
 }
 
 function handleClose() {
