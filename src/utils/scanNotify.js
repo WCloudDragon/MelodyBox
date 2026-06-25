@@ -36,7 +36,11 @@ export function closeScanNotify(total, onDone) {
     completeProgress(_scanId, `扫描完成 · ${total} 首`)
     _scanId = null
   }
-  startThumbPoll(onDone)
+  if (total > 0) {
+    startThumbPoll(onDone)
+  } else if (onDone) {
+    onDone()
+  }
 }
 
 // ==================== 缩略图进度 ====================
@@ -54,12 +58,15 @@ function startThumbPoll(onDone) {
       // 已全部完成 —— 仅 toast 通知
       addToast(`缩略图完成 · ${p.total} 张`, 'success')
       if (onDone) onDone()
-    } else {
-      // 还没开始，等 500ms 重试
+    } else if (p.scanning) {
+      // 后端刚开始，还没统计到数量 —— 等 500ms 重试
       setTimeout(() => {
         _thumbId = addProgress({ type: 'thumb', title: '正在生成缩略图...', current: 0, total: 0, path: '准备中...' })
         startThumbInterval(onDone)
       }, 500)
+    } else {
+      // scanning=false 且 total=0：无需生成缩略图
+      if (onDone) onDone()
     }
   }).catch(() => {
     setTimeout(() => startThumbInterval(onDone), 500)
@@ -87,8 +94,10 @@ async function pollThumbOnce(onDone) {
       stopThumbPoll()
       if (p.total > 0) {
         completeProgress(_thumbId, `缩略图完成 · ${p.total} 张`)
-        _thumbId = null
+      } else {
+        removeProgress(_thumbId)
       }
+      _thumbId = null
       if (onDone) onDone()
     }
   } catch { /* ignore */ }
