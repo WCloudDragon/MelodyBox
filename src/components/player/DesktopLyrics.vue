@@ -79,6 +79,7 @@ const lyricsPayload = computed(() => {
       segments: line.segments || null
     })),
     currentLineIndex: idx,
+    currentTime: currentTime.value,
     songInfo: track && (total === 0 || idx < 0)
       ? { title: track.title || '...', artist: track.artist || '' }
       : null,
