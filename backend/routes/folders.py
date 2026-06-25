@@ -6,7 +6,8 @@ import traceback
 folders_bp = Blueprint('folders', __name__, url_prefix='/api/folders')
 
 # 扫描进度（全局，单用户桌面应用无需加锁）
-_scan_progress = {'current': 0, 'total': 0, 'path': '', 'scanning': False}
+_scan_progress = {'current': 0, 'total': 0, 'path': '', 'scanning': False,
+                  'inserted': 0, 'updated': 0, 'deleted': 0}
 
 
 @folders_bp.before_request
@@ -42,7 +43,10 @@ def scan_progress():
         'scanning': _scan_progress['scanning'],
         'current': _scan_progress['current'],
         'total': _scan_progress['total'],
-        'path': os.path.basename(_scan_progress['path']) if _scan_progress['path'] else ''
+        'path': os.path.basename(_scan_progress['path']) if _scan_progress['path'] else '',
+        'inserted': _scan_progress.get('inserted', 0),
+        'updated': _scan_progress.get('updated', 0),
+        'deleted': _scan_progress.get('deleted', 0),
     })
 
 
@@ -179,7 +183,8 @@ def add_folder():
         def _scan_async(dir_path):
             global _scan_progress
             from services.scanner import scan_and_store
-            _scan_progress = {'current': 0, 'total': 0, 'path': '', 'scanning': True}
+            _scan_progress = {'current': 0, 'total': 0, 'path': '', 'scanning': True,
+                              'inserted': 0, 'updated': 0, 'deleted': 0}
 
             def _cb(current, total, file_path):
                 _scan_progress['current'] = current
@@ -189,8 +194,12 @@ def add_folder():
             try:
                 with flask_app.app_context():
                     db2 = get_db()
-                    scan_and_store(db2, [dir_path], progress_callback=_cb)
+                    result = scan_and_store(db2, [dir_path], progress_callback=_cb)
                     db2.close()
+                    if result:
+                        _scan_progress['inserted'] = result.get('inserted', 0)
+                        _scan_progress['updated'] = result.get('updated', 0)
+                        _scan_progress['deleted'] = result.get('deleted', 0)
             except Exception as e:
                 traceback.print_exc()
             finally:
@@ -272,7 +281,8 @@ def rescan_folder(id):
         def _rescan_async(dir_path):
             global _scan_progress
             from services.scanner import scan_and_store
-            _scan_progress = {'current': 0, 'total': 0, 'path': '', 'scanning': True}
+            _scan_progress = {'current': 0, 'total': 0, 'path': '', 'scanning': True,
+                              'inserted': 0, 'updated': 0, 'deleted': 0}
 
             def _cb(current, total, file_path):
                 _scan_progress['current'] = current
@@ -282,8 +292,12 @@ def rescan_folder(id):
             try:
                 with flask_app.app_context():
                     db2 = get_db()
-                    scan_and_store(db2, [dir_path], progress_callback=_cb)
+                    result = scan_and_store(db2, [dir_path], progress_callback=_cb)
                     db2.close()
+                    if result:
+                        _scan_progress['inserted'] = result.get('inserted', 0)
+                        _scan_progress['updated'] = result.get('updated', 0)
+                        _scan_progress['deleted'] = result.get('deleted', 0)
             except Exception as e:
                 traceback.print_exc()
             finally:

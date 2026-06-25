@@ -31,12 +31,23 @@ export function updateScanNotify(current, total, path) {
   })
 }
 
-export function closeScanNotify(total, onDone) {
+export function closeScanNotify(progress, onDone) {
+  const total = progress.total || 0
+  const inserted = progress.inserted || 0
+  const updated = progress.updated || 0
+  const deleted = progress.deleted || 0
+
   if (_scanId) {
-    completeProgress(_scanId, `扫描完成 · ${total} 首`)
+    let text = `扫描完成 · ${total} 首`
+    const parts = []
+    if (inserted > 0) parts.push(`新增 ${inserted} 首`)
+    if (updated > 0) parts.push(`更新 ${updated} 首`)
+    if (deleted > 0) parts.push(`移除 ${deleted} 首`)
+    if (parts.length > 0) text += `（${parts.join('，')}）`
+    completeProgress(_scanId, text)
     _scanId = null
   }
-  if (total > 0) {
+  if (total > 0 || inserted > 0 || updated > 0) {
     startThumbPoll(onDone)
   } else if (onDone) {
     onDone()

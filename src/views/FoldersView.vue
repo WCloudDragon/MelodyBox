@@ -108,7 +108,7 @@ function startPolling() {
         stopPolling()
         rescanning.value = null
         adding.value = false
-        closeScanNotify(p.total, async () => {
+        closeScanNotify(p, async () => {
           await loadFolders()
           libraryStore.loadFromApi()
         })

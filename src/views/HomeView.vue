@@ -108,7 +108,7 @@ watch(() => libraryStore.isScanning, (scanning) => {
 watch(() => libraryStore.scanProgress, (p) => {
   if (p.total > 0) updateScanNotify(p.current, p.total, p.path)
   if (!p.scanning) {
-    closeScanNotify(p.total || 0, () => libraryStore.loadFromApi())
+    closeScanNotify(p, () => libraryStore.loadFromApi())
   }
 })
 onBeforeUnmount(clearScanNotify)
