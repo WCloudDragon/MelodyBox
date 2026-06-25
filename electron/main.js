@@ -361,19 +361,44 @@ function createLyricsWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: false
     },
     backgroundColor: '#00000000',
     show: false
   })
 
   lyricsWindow.setAlwaysOnTop(true, 'screen-saver')
-  lyricsWindow.setVisibleOnAllWorkspaces(true)
 
-  lyricsWindow.loadURL(getLyricsWindowUrl())
+  // macOS: 所有工作区可见；Windows: 跳过
+  if (process.platform === 'darwin') {
+    lyricsWindow.setVisibleOnAllWorkspaces(true)
+  }
+
+  const url = getLyricsWindowUrl()
+  console.log('[lyrics] 加载页面:', url)
+  lyricsWindow.loadURL(url)
+
+  // 渲染进程崩溃处理
+  lyricsWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[lyrics] 渲染进程崩溃:', details.reason, details.exitCode)
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.close()
+    }
+    lyricsWindow = null
+  })
+
+  lyricsWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    console.error('[lyrics] 页面加载失败:', errorCode, errorDescription)
+  })
 
   lyricsWindow.once('ready-to-show', () => {
-    lyricsWindow.show()
+    if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+      lyricsWindow.show()
+      console.log('[lyrics] 歌词窗口已显示')
+    } else {
+      console.error('[lyrics] ready-to-show 时窗口已销毁')
+    }
   })
 
   lyricsWindow.on('closed', () => {
