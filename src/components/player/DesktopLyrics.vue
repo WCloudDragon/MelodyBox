@@ -37,6 +37,8 @@ const { currentTrack, currentTime, showDesktopLyrics } = storeToRefs(player)
 const { lyricsFontSize, lyricsFontWeight, lyricsTransScale, lyricsActiveScale } = storeToRefs(settings)
 
 const isElectron = computed(() => !!window.electronAPI)
+// 直接用 location.hash 判断，避免路由初始化时序导致 route.name 为 undefined
+const isInLyricsWindow = computed(() => window.location.hash === '#/desktop-lyrics')
 
 const currentLineIndex = ref(-1)
 const windowWidth = ref(window.innerWidth)
@@ -85,40 +87,34 @@ function pushToLyricsWindow() {
 }
 
 // Electron 模式下：监听开关状态，控制独立窗口
+// 注意：在歌词窗口内不执行 IPC 控制逻辑（此组件可能因路由初始化时序而被意外挂载）
 watch(showDesktopLyrics, (val) => {
-  console.log('[DesktopLyrics] watch 触发, val:', val, 'isElectron:', isElectron.value)
-  if (!isElectron.value) {
-    console.log('[DesktopLyrics] 非 Electron 环境，跳过')
-    return
-  }
+  if (!isElectron.value || isInLyricsWindow.value) return
   if (val) {
-    console.log('[DesktopLyrics] 打开歌词窗口')
     window.electronAPI.lyricsOpen()
-    // 立即推送当前数据
     pushToLyricsWindow()
   } else {
-    console.log('[DesktopLyrics] 关闭歌词窗口')
     window.electronAPI.lyricsClose()
   }
 }, { immediate: true })
 
 // 监听歌词行变化，推送数据
 watch(currentLineIndex, () => {
-  if (showDesktopLyrics.value && isElectron.value) {
+  if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
     pushToLyricsWindow()
   }
 })
 
 // 切歌时推送（歌词数据变化）
 watch(() => currentTrack.value?.path, () => {
-  if (showDesktopLyrics.value && isElectron.value) {
+  if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
     pushToLyricsWindow()
   }
 })
 
 // 监听独立窗口关闭事件，同步状态回 store
 onMounted(() => {
-  if (isElectron.value) {
+  if (isElectron.value && !isInLyricsWindow.value) {
     window.electronAPI.onLyricsWindowClosed(() => {
       if (showDesktopLyrics.value) {
         showDesktopLyrics.value = false

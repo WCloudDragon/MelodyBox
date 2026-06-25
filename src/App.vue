@@ -49,7 +49,10 @@ import ProgressPanel from '@/components/ProgressPanel.vue'
 const playerStore = usePlayerStore()
 const settingsStore = useSettingsStore()
 const route = useRoute()
-const isDesktopLyricsRoute = computed(() => route.name === 'desktopLyrics')
+// 直接用 location.hash 判断，避免路由初始化时序导致 route.name 为 undefined
+const isDesktopLyricsRoute = computed(() => {
+  return window.location.hash === '#/desktop-lyrics' || route.name === 'desktopLyrics'
+})
 const currentTrack = computed(() => playerStore.currentTrack)
 const isElectron = computed(() => !!window.electronAPI)
 

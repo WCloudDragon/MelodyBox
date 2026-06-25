@@ -337,15 +337,11 @@ function getLyricsWindowUrl() {
 }
 
 function createLyricsWindow() {
-  console.log('[main] createLyricsWindow 调用, lyricsWindow:', lyricsWindow ? 'exists' : 'null')
   if (lyricsWindow && !lyricsWindow.isDestroyed()) {
-    console.log('[main] 歌词窗口已存在，显示并聚焦')
     lyricsWindow.show()
     lyricsWindow.focus()
     return
   }
-
-  console.log('[main] 创建新的歌词窗口')
 
   // 标记窗口是否成功显示过（防止崩溃触发反馈循环）
   let lyricsLoaded = false
@@ -383,7 +379,6 @@ function createLyricsWindow() {
   }
 
   const url = getLyricsWindowUrl()
-  console.log('[lyrics] 加载页面:', url)
   lyricsWindow.loadURL(url)
 
   // 开发模式下打开歌词窗口的 DevTools
@@ -413,9 +408,6 @@ function createLyricsWindow() {
     if (lyricsWindow && !lyricsWindow.isDestroyed()) {
       lyricsWindow.show()
       lyricsLoaded = true
-      console.log('[lyrics] 歌词窗口已显示')
-    } else {
-      console.error('[lyrics] ready-to-show 时窗口已销毁')
     }
   })
 
@@ -554,14 +546,8 @@ ipcMain.handle('music:pathToUrl', async (_event, filePath) => {
 ipcMain.handle('audio:getPort', () => audioServerPort)
 
 // 桌面歌词窗口 IPC
-ipcMain.on('lyrics:open', () => {
-  console.log('[main] 收到 lyrics:open IPC')
-  createLyricsWindow()
-})
-ipcMain.on('lyrics:close', () => {
-  console.log('[main] 收到 lyrics:close IPC')
-  closeLyricsWindow()
-})
+ipcMain.on('lyrics:open', () => createLyricsWindow())
+ipcMain.on('lyrics:close', () => closeLyricsWindow())
 ipcMain.on('lyrics:update', (_event, data) => updateLyricsData(data))
 
 // ==================== Windows 主题色 ====================
