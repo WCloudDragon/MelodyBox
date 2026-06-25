@@ -35,6 +35,7 @@ const player = usePlayerStore()
 const settings = useSettingsStore()
 const { currentTrack, currentTime, showDesktopLyrics } = storeToRefs(player)
 const { lyricsFontSize, lyricsFontWeight, lyricsTransScale, lyricsActiveScale } = storeToRefs(settings)
+const { desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale } = storeToRefs(settings)
 
 const isElectron = computed(() => !!window.electronAPI)
 // 直接用 location.hash 判断，避免路由初始化时序导致 route.name 为 undefined
@@ -86,7 +87,12 @@ const lyricsPayload = computed(() => {
     afterNextLine: afterNextLine.value ? {
       original: afterNextLine.value.original,
       translation: afterNextLine.value.translation || null
-    } : null
+    } : null,
+    settings: {
+      fontSize: desktopLyricsFontSize.value,
+      activeScale: desktopLyricsActiveScale.value,
+      transScale: desktopLyricsTransScale.value
+    }
   }
 })
 
@@ -117,6 +123,13 @@ watch(currentLineIndex, () => {
 
 // 切歌时推送（歌词数据变化）
 watch(() => currentTrack.value?.path, () => {
+  if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
+    pushToLyricsWindow()
+  }
+})
+
+// 桌面歌词设置变化时推送
+watch([desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale], () => {
   if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
     pushToLyricsWindow()
   }

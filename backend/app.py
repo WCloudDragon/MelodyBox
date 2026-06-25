@@ -175,6 +175,7 @@ def init_db(app):
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     ''')
+
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_pl_user ON playlists(user_id)')
 
     # ========== 10. playlist_song ==========
@@ -213,11 +214,23 @@ def init_db(app):
             show_visualizer INTEGER DEFAULT 1,
             auto_scan INTEGER DEFAULT 0,
             language TEXT DEFAULT 'zh-CN',
+            desktop_lyrics_font_size INTEGER DEFAULT 24,
+            desktop_lyrics_active_scale INTEGER DEFAULT 120,
+            desktop_lyrics_trans_scale INTEGER DEFAULT 60,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     ''')
+
+    # 桌面歌词设置迁移（SQLite ALTER TABLE 不支持 IF NOT EXISTS，静默忽略错误）
+    for mig in [
+        'ALTER TABLE settings ADD COLUMN desktop_lyrics_font_size INTEGER DEFAULT 24',
+        'ALTER TABLE settings ADD COLUMN desktop_lyrics_active_scale INTEGER DEFAULT 120',
+        'ALTER TABLE settings ADD COLUMN desktop_lyrics_trans_scale INTEGER DEFAULT 60',
+    ]:
+        try: db.executescript(mig)
+        except Exception: pass
 
     # ========== 12. ai_api_config ==========
     cursor.execute('''

@@ -46,6 +46,20 @@
           </div>
           <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
         </button>
+        <button class="menu-item" @click="page = 'desktopLyric'">
+          <div class="menu-item__left">
+            <span class="menu-item__icon" style="background: rgba(168,85,247,0.15); color: #a855f7">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+              </svg>
+            </span>
+            <div class="menu-item__text">
+              <span class="menu-item__title">桌面歌词</span>
+              <span class="menu-item__desc">独立窗口字号、放大比例、翻译比例</span>
+            </div>
+          </div>
+          <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+        </button>
         <button class="menu-item" @click="page = 'system'">
           <div class="menu-item__left">
             <span class="menu-item__icon" style="background: rgba(148,163,184,0.15); color: #94a3b8">
@@ -224,6 +238,66 @@
             <span class="setting-desc">字号 32px · 字重 700 · 翻译 60% · 放大 115%</span>
           </div>
           <button class="reset-btn" @click="settingsStore.resetLyricsDefaults()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+            </svg>
+            恢复默认
+          </button>
+        </div>
+      </section>
+    </template>
+
+    <!-- 二级页：桌面歌词 -->
+    <template v-if="page === 'desktopLyric'">
+      <header class="sub-header">
+        <button class="sub-header__back" @click="page = 'menu'">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+        </button>
+        <h1 class="sub-header__title">桌面歌词</h1>
+      </header>
+      <section class="settings-section">
+        <div class="setting-row setting-row--slider">
+          <div class="setting-label">
+            <span class="setting-title">字号</span>
+            <span class="setting-desc">桌面歌词独立窗口基准字号（当前：<b>{{ settingsStore.desktopLyricsFontSize }}px</b>）</span>
+          </div>
+          <el-slider
+            v-model="settingsStore.desktopLyricsFontSize"
+            :min="16" :max="48" :step="1"
+            class="setting-slider"
+            @change="settingsStore.saveSettings()"
+          />
+        </div>
+        <div class="setting-row setting-row--slider">
+          <div class="setting-label">
+            <span class="setting-title">活跃行放大</span>
+            <span class="setting-desc">正在播放行相对基准字号的百分比（当前：<b>{{ settingsStore.desktopLyricsActiveScale }}%</b> → {{ Math.round(settingsStore.desktopLyricsFontSize * settingsStore.desktopLyricsActiveScale / 100) }}px）</span>
+          </div>
+          <el-slider
+            v-model="settingsStore.desktopLyricsActiveScale"
+            :min="100" :max="150" :step="5"
+            class="setting-slider"
+            @change="settingsStore.saveSettings()"
+          />
+        </div>
+        <div class="setting-row setting-row--slider">
+          <div class="setting-label">
+            <span class="setting-title">翻译词比例</span>
+            <span class="setting-desc">翻译词相对基准字号的百分比（当前：<b>{{ settingsStore.desktopLyricsTransScale }}%</b> → {{ Math.round(settingsStore.desktopLyricsFontSize * settingsStore.desktopLyricsTransScale / 100) }}px）</span>
+          </div>
+          <el-slider
+            v-model="settingsStore.desktopLyricsTransScale"
+            :min="40" :max="100" :step="5"
+            class="setting-slider"
+            @change="settingsStore.saveSettings()"
+          />
+        </div>
+        <div class="setting-row">
+          <div class="setting-label">
+            <span class="setting-title">恢复桌面歌词默认</span>
+            <span class="setting-desc">字号 24px · 放大 120% · 翻译 60%</span>
+          </div>
+          <button class="reset-btn" @click="settingsStore.desktopLyricsFontSize = 24; settingsStore.desktopLyricsActiveScale = 120; settingsStore.desktopLyricsTransScale = 60; settingsStore.saveSettingsImmediate()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
             </svg>

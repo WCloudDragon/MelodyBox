@@ -352,9 +352,9 @@ function createLyricsWindow() {
 
   lyricsWindow = new BrowserWindow({
     width: 800,
-    height: 160,
+    height: 180,
     x: Math.round((screenWidth - 800) / 2),
-    y: screenHeight - 200,
+    y: screenHeight - 220,
     frame: false,
     transparent: true,
     alwaysOnTop: true,

@@ -11,7 +11,10 @@ const SNAKE_TO_CAMEL = {
   lyrics_trans_scale: 'lyricsTransScale', lyrics_active_scale: 'lyricsActiveScale',
   enable_lyrics_blur: 'enableLyricsBlur', enable_domino_scroll: 'enableDominoScroll',
   enable_word_lift: 'enableWordLift', word_anim_fps: 'wordAnimFps',
-  show_visualizer: 'showVisualizer', auto_scan: 'autoScan'
+  show_visualizer: 'showVisualizer', auto_scan: 'autoScan',
+  desktop_lyrics_font_size: 'desktopLyricsFontSize',
+  desktop_lyrics_active_scale: 'desktopLyricsActiveScale',
+  desktop_lyrics_trans_scale: 'desktopLyricsTransScale',
 }
 const CAMEL_TO_SNAKE = Object.fromEntries(
   Object.entries(SNAKE_TO_CAMEL).map(([k, v]) => [v, k])
@@ -40,6 +43,11 @@ export const useSettingsStore = defineStore('settings', () => {
   const autoScan = ref(false)
   const language = ref('zh-CN')
 
+  // 桌面歌词设置
+  const desktopLyricsFontSize = ref(24)
+  const desktopLyricsActiveScale = ref(120)
+  const desktopLyricsTransScale = ref(60)
+
   let _loaded = false
   let _saveTimer = null
 
@@ -62,6 +70,9 @@ export const useSettingsStore = defineStore('settings', () => {
       wordAnimFps.value = data.wordAnimFps ?? 60
       autoScan.value = !!data.autoScan
       language.value = data.language ?? 'zh-CN'
+      desktopLyricsFontSize.value = data.desktopLyricsFontSize ?? 24
+      desktopLyricsActiveScale.value = data.desktopLyricsActiveScale ?? 120
+      desktopLyricsTransScale.value = data.desktopLyricsTransScale ?? 60
       _loaded = true
     } catch {}
   }
@@ -87,6 +98,9 @@ export const useSettingsStore = defineStore('settings', () => {
         body.wordAnimFps = wordAnimFps.value
         body.autoScan = autoScan.value ? 1 : 0
         body.language = language.value
+        body.desktopLyricsFontSize = desktopLyricsFontSize.value
+        body.desktopLyricsActiveScale = desktopLyricsActiveScale.value
+        body.desktopLyricsTransScale = desktopLyricsTransScale.value
         await fetch(API_BASE, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -119,6 +133,7 @@ export const useSettingsStore = defineStore('settings', () => {
     lyricsTransScale, lyricsActiveScale,
     enableLyricsBlur, enableDominoScroll, enableWordLift, wordAnimFps,
     autoScan, language,
+    desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale,
     loadSettings, saveSettings, resetLyricsDefaults
   }
 })

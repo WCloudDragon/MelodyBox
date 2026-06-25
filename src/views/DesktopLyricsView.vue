@@ -1,6 +1,7 @@
 <template>
   <div
     class="lyrics-window"
+    :style="desktopVars"
     @dblclick="handleClose"
     title="双击关闭桌面歌词"
   >
@@ -56,7 +57,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 
 const displayData = ref(null)
 const pendingData = ref(null)       // 动画期间新到的排队数据（链式调用）
@@ -65,11 +66,46 @@ const animating = ref(false)
 let activeAnimations = []            // 当前动画的 Animation 对象，结束后取消
 const scrollRef = ref(null)
 const prevIndex = ref(-1)
-const GAP = 6                        // flex gap 间距
+const GAP = 2                        // flex gap 间距
+
+// 桌面歌词设置（默认值，与后端一致）
+const desktopSettings = ref({ fontSize: 24, activeScale: 120, transScale: 60 })
+
+// CSS 变量
+const desktopVars = computed(() => {
+  const base = desktopSettings.value.fontSize
+  const trans = Math.round(base * desktopSettings.value.transScale / 100)
+  const active = desktopSettings.value.activeScale / 100
+  return {
+    '--dl-base-original': base + 'px',
+    '--dl-base-trans': trans + 'px',
+    '--dl-active-original': Math.round(base * active) + 'px',
+    '--dl-active-trans': Math.round(trans * active) + 'px',
+    '--dl-lh-original': Math.round(base * 1.55) + 'px',
+    '--dl-lh-trans': Math.round(trans * 1.4) + 'px'
+  }
+})
+
+// 动画用字号（保持响应式）
+const animFontSizes = computed(() => {
+  const base = desktopSettings.value.fontSize
+  const trans = Math.round(base * desktopSettings.value.transScale / 100)
+  const active = desktopSettings.value.activeScale / 100
+  return {
+    base, trans,
+    activeFont: Math.round(base * active),
+    transActiveFont: Math.round(trans * active)
+  }
+})
 
 onMounted(() => {
   if (window.electronAPI) {
     window.electronAPI.onLyricsData((data) => {
+      // 更新设置（如果提供了）
+      if (data?.settings) {
+        desktopSettings.value = data.settings
+      }
+
       const newIdx = data?.activeIndex ?? -1
       const oldIdx = displayData.value?.activeIndex ?? -1
 
@@ -106,14 +142,20 @@ async function performScroll(el, data, forward) {
   activeAnimations.forEach(a => a.cancel())
   activeAnimations = []
 
+  const { base, trans, activeFont, transActiveFont } = animFontSizes.value
+  const baseStr = base + 'px'
+  const transStr = trans + 'px'
+  const activeStr = activeFont + 'px'
+  const transActiveStr = transActiveFont + 'px'
+
   // 1. 对当前活跃行（旧词）做缩小动画
   const oldActiveOrig = el.querySelector('.dl-line--active .dl-line__original')
   const oldActiveTrans = el.querySelector('.dl-line--active .dl-line__translation')
   if (oldActiveOrig) {
     const anim = oldActiveOrig.animate(
       [
-        { fontSize: '34px', opacity: '1', fontWeight: '700' },
-        { fontSize: '24px', opacity: '0.45', fontWeight: '700' }
+        { fontSize: activeStr, opacity: '1', fontWeight: '700' },
+        { fontSize: baseStr, opacity: '0.45', fontWeight: '700' }
       ],
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
@@ -122,8 +164,8 @@ async function performScroll(el, data, forward) {
   if (oldActiveTrans) {
     const anim = oldActiveTrans.animate(
       [
-        { fontSize: '20px', opacity: '0.5' },
-        { fontSize: '14px', opacity: '0.2' }
+        { fontSize: transActiveStr, opacity: '0.5' },
+        { fontSize: transStr, opacity: '0.2' }
       ],
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
@@ -136,8 +178,8 @@ async function performScroll(el, data, forward) {
   if (oldNextOrig) {
     const anim = oldNextOrig.animate(
       [
-        { fontSize: '24px', opacity: '0.45', fontWeight: '700' },
-        { fontSize: '34px', opacity: '1', fontWeight: '700' }
+        { fontSize: baseStr, opacity: '0.45', fontWeight: '700' },
+        { fontSize: activeStr, opacity: '1', fontWeight: '700' }
       ],
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
@@ -146,8 +188,8 @@ async function performScroll(el, data, forward) {
   if (oldNextTrans) {
     const anim = oldNextTrans.animate(
       [
-        { fontSize: '14px', opacity: '0.2' },
-        { fontSize: '20px', opacity: '0.5' }
+        { fontSize: transStr, opacity: '0.2' },
+        { fontSize: transActiveStr, opacity: '0.5' }
       ],
       { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
@@ -254,9 +296,8 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   width: 100%;
-  margin-top: -12px; /* 上移使 2 行居中视口，第三行自然裁切 */
   /* 初始无过渡，滚动时由 JS 注入 */
   transition: none;
 }
@@ -274,7 +315,7 @@ html, body {
   user-select: none;
   letter-spacing: 1px;
   max-width: 100%;
-  padding: 6px 0;
+  padding: 2px 0;
   flex-shrink: 0;
   overflow: hidden;
   transition: padding 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
@@ -286,14 +327,14 @@ html, body {
 .dl-line__inner {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   align-items: center;
 }
 
 .dl-line__original {
   margin: 0;
-  font-size: 28px;
-  line-height: 48px;
+  font-size: var(--dl-base-original, 24px);
+  line-height: var(--dl-lh-original, 38px);
   font-weight: 700;
   color: #fff;
   opacity: 0.35;
@@ -310,8 +351,8 @@ html, body {
 
 .dl-line__translation {
   margin: 0;
-  font-size: 17px;
-  line-height: 26px;
+  font-size: var(--dl-base-trans, 14px);
+  line-height: var(--dl-lh-trans, 20px);
   font-weight: 700;
   color: #fff;
   opacity: 0.18;
@@ -325,42 +366,40 @@ html, body {
   white-space: nowrap;
 }
 
-/* 活跃行 */
-.dl-line--active {
-  padding: 5px 0;
-}
+/* 活跃行 — 与基础行 padding 一致 */
+.dl-line--active,
 .dl-line--active.has-translation {
-  padding: 4px 0;
+  padding: 2px 0;
 }
 .dl-line--active .dl-line__original {
   opacity: 1;
-  font-size: 34px;
+  font-size: var(--dl-active-original, 29px);
   max-width: 760px;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8), 0 2px 12px rgba(0, 0, 0, 0.5);
 }
 .dl-line--active .dl-line__translation {
   opacity: 0.5;
-  font-size: 20px;
+  font-size: var(--dl-active-trans, 17px);
 }
 
 /* 下一行 */
 .dl-line--next .dl-line__original {
   opacity: 0.45;
-  font-size: 24px;
+  font-size: var(--dl-base-original, 24px);
 }
 .dl-line--next .dl-line__translation {
   opacity: 0.2;
-  font-size: 14px;
+  font-size: var(--dl-base-trans, 14px);
 }
 
 /* 下下行 — 视口外，样式与下一行一致 */
 .dl-line--future .dl-line__original {
   opacity: 0.45;
-  font-size: 24px;
+  font-size: var(--dl-base-original, 24px);
 }
 .dl-line--future .dl-line__translation {
   opacity: 0.2;
-  font-size: 14px;
+  font-size: var(--dl-base-trans, 14px);
 }
 
 /* ===== 逐字歌词 ===== */

@@ -27,6 +27,9 @@ SNAKE_TO_CAMEL = {
     'show_visualizer': 'showVisualizer',
     'auto_scan': 'autoScan',
     'language': 'language',
+    'desktop_lyrics_font_size': 'desktopLyricsFontSize',
+    'desktop_lyrics_active_scale': 'desktopLyricsActiveScale',
+    'desktop_lyrics_trans_scale': 'desktopLyricsTransScale',
 }
 
 CAMEL_TO_SNAKE = {v: k for k, v in SNAKE_TO_CAMEL.items()}
@@ -49,6 +52,9 @@ DEFAULT_SETTINGS = {
     'show_visualizer': True,
     'auto_scan': False,
     'language': 'zh-CN',
+    'desktop_lyrics_font_size': 24,
+    'desktop_lyrics_active_scale': 120,
+    'desktop_lyrics_trans_scale': 60,
 }
 
 # SQLite 中所有 settings 列（不含 id）
