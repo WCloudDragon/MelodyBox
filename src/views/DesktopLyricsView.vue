@@ -75,91 +75,100 @@ onMounted(() => {
       }
 
       // → 启动滚动动画
-      const forward = newIdx > oldIdx
       animating.value = true
-      pendingData.value = data
       prevIndex.value = newIdx
-
-      const el = scrollRef.value
-      if (!el) {
-        displayData.value = data
-        animating.value = false
-        return
-      }
-
-      // 与全屏歌词 CSS transition 滚动参数完全一致
-      el.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
-      el.style.transform = forward
-        ? `translate3d(0, ${-SCROLL_PX}px, 0)`
-        : `translate3d(0, ${SCROLL_PX}px, 0)`
+      performScroll(scrollRef.value, data, newIdx > oldIdx)
     })
   }
 })
 
-/** 滚动动画结束 */
-async function onScrollEnd() {
-  const el = scrollRef.value
+/**
+ * 核心滚动：数据交换后同时启动容器滑动 + 活跃行缩放动画
+ * 两者同时长同缓动，形成连贯的「位移 + 放大」效果
+ */
+async function performScroll(el, data, forward) {
   if (!el) return
 
-  // 1. 停掉 transition，避免重置 transform 时触发另一次过渡
-  el.style.transition = 'none'
-  el.style.transform = 'translate3d(0, 0, 0)'
-
-  // 2. 换上最新数据
-  const data = pendingData.value
-  pendingData.value = null
-  animating.value = false
-  if (data) {
-    displayData.value = data
-  }
-
-  // 3. 新数据渲染后，让活跃行从「下一行」尺寸过渡到「活跃行」尺寸（模拟全屏歌词的自然放大）
+  // 1. 新数据上屏
+  displayData.value = data
   await nextTick()
-  animateActiveLineIn(el)
 
-  // 4. 如果在动画期间已有新数据排队，立即再动画一次
-  if (pendingData.value) {
-    const newIdx = pendingData.value.activeIndex ?? -1
-    const curIdx = displayData.value?.activeIndex ?? -1
-    if (newIdx !== curIdx) {
-      const forward = newIdx > curIdx
-      prevIndex.value = newIdx
-      animating.value = true
-      el.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
-      el.style.transform = forward
-        ? `translate3d(0, ${-SCROLL_PX}px, 0)`
-        : `translate3d(0, ${SCROLL_PX}px, 0)`
-      displayData.value = pendingData.value
-      pendingData.value = null
-    } else {
-      pendingData.value = null
-    }
-  }
-}
+  // 2. 新活跃行：从下一行尺寸 → 活跃行尺寸（element.animate 立即开始）
+  const activeOrig = el.querySelector('.dl-line--active .dl-line__original')
+  const activeTrans = el.querySelector('.dl-line--active .dl-line__translation')
 
-/** 使用 Web Animations API 让新活跃行从「下一行」尺寸动画过渡到「活跃行」尺寸 */
-function animateActiveLineIn(container) {
-  if (!container) return
-  const original = container.querySelector('.dl-line--active .dl-line__original')
-  const translation = container.querySelector('.dl-line--active .dl-line__translation')
-
-  if (original) {
-    original.animate(
+  if (activeOrig) {
+    activeOrig.animate(
       [
         { fontSize: '24px', opacity: '0.45', fontWeight: '700' },
         { fontSize: '34px', opacity: '1', fontWeight: '700' }
       ],
-      { duration: 800, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
+      { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
   }
-  if (translation) {
-    translation.animate(
+  if (activeTrans) {
+    activeTrans.animate(
       [
         { fontSize: '14px', opacity: '0.2' },
         { fontSize: '20px', opacity: '0.5' }
       ],
-      { duration: 800, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
+      { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
     )
+  }
+
+  // 3. 新下一行（曾是活跃行）：活跃行尺寸 → 下一行尺寸 (仅前进时)
+  if (forward) {
+    const nextOrig = el.querySelector('.dl-line--next .dl-line__original')
+    const nextTrans = el.querySelector('.dl-line--next .dl-line__translation')
+    if (nextOrig) {
+      nextOrig.animate(
+        [
+          { fontSize: '34px', opacity: '1', fontWeight: '700' },
+          { fontSize: '24px', opacity: '0.45', fontWeight: '700' }
+        ],
+        { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
+      )
+    }
+    if (nextTrans) {
+      nextTrans.animate(
+        [
+          { fontSize: '20px', opacity: '0.5' },
+          { fontSize: '14px', opacity: '0.2' }
+        ],
+        { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
+      )
+    }
+  }
+
+  // 4. 容器滑动 — 与全屏歌词 CSS transition 参数完全一致
+  el.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
+  el.style.transform = forward
+    ? `translate3d(0, ${-SCROLL_PX}px, 0)`
+    : `translate3d(0, ${SCROLL_PX}px, 0)`
+}
+
+/** 滑动结束 → 容器归位 + 链式下一个 */
+async function onScrollEnd() {
+  const el = scrollRef.value
+  if (!el) return
+
+  el.style.transition = 'none'
+  el.style.transform = 'translate3d(0, 0, 0)'
+
+  animating.value = false
+
+  // 如果动画期间有新数据排队，立即启动下一轮
+  if (pendingData.value) {
+    const next = pendingData.value
+    const newIdx = next?.activeIndex ?? -1
+    const curIdx = displayData.value?.activeIndex ?? -1
+    if (newIdx !== curIdx) {
+      animating.value = true
+      performScroll(el, next, newIdx > curIdx)
+      pendingData.value = null
+    } else {
+      pendingData.value = null
+    }
   }
 }
 
