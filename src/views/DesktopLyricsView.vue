@@ -11,7 +11,7 @@
       <div
         ref="scrollRef"
         class="scroll-container"
-        @transitionend="onScrollEnd"
+
       >
       <template v-if="displayData">
         <!-- 无歌词行时：显示歌曲信息 -->
@@ -275,12 +275,20 @@ async function performScroll(el, data, forward) {
   // 标记本次是否为最后一行居中滚动
   isLastLineScroll = isLastLineTarget
 
-  // 5. 容器滑动 — 与字号动画同时启动
-  el.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
-  getComputedStyle(el).transform
-  el.style.transform = forward
-    ? `translate3d(0, ${-scrollPx}px, 0)`
-    : `translate3d(0, ${scrollPx}px, 0)`
+  // 5. 容器滑动 — 与字号动画同时启动，使用 Web Animation 确保时机精确
+  const scrollAnim = el.animate(
+    [
+      { transform: 'translate3d(0, 0, 0)' },
+      { transform: forward
+        ? `translate3d(0, ${-scrollPx}px, 0)`
+        : `translate3d(0, ${scrollPx}px, 0)` }
+    ],
+    { duration: 500, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
+  )
+  activeAnimations.push(scrollAnim)
+
+  // 6. 等待所有动画结束后再 swap 数据
+  Promise.all(activeAnimations.map(a => a.finished)).then(() => onScrollEnd())
 }
 
 /** 滑动结束 → 容器归位 + 数据 swap + 链式下一个 */
