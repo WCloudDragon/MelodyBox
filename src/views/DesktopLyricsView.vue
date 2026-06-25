@@ -87,7 +87,8 @@ const viewportRef = ref(null)
 const marqueeTextRef = ref(null)
 const isMarqueeScrolling = ref(false)
 let marqueeAnim = null               // 横向滚动动画
-const prevIndex = ref(-1)
+const NO_PREV = -999
+const prevIndex = ref(NO_PREV)       // 之前处理的 activeIndex
 const GAP = 2                        // flex gap 间距
 
 // 当前行时长（秒），用于计算跑马灯滚动速度
@@ -142,10 +143,10 @@ onMounted(() => {
       }
 
       const newIdx = data?.activeIndex ?? -1
-      const oldIdx = displayData.value?.activeIndex ?? -1
+      const oldIdx = prevIndex.value
 
-      // 首次加载 / 首次出现歌词 / index 相同 → 直接更新
-      if (oldIdx < 0 || newIdx === oldIdx) {
+      // 首次加载（包括歌曲信息） / index 相同 → 直接更新
+      if (oldIdx === NO_PREV || newIdx === oldIdx) {
         displayData.value = data
         prevIndex.value = newIdx
         await syncViewportHeight()
@@ -254,22 +255,35 @@ async function performScroll(el, data, forward) {
   // 3. 缓存新数据，动画结束后 swap
   targetData = data
 
-  // 4. 取活跃行实际高度作为滑动距离
+  // 4. 锁定活跃行高度，防止字号动画导致 flex 布局重算（下一行位移产生抖动）
   const activeEl = el.querySelector('.dl-line--active')
-  const activeH = (activeEl ? activeEl.offsetHeight : 64)
+  if (activeEl) {
+    activeEl.dataset.animLocked = '1'
+    activeEl.style.height = activeEl.offsetHeight + 'px'
+    activeEl.style.flexShrink = '0'
+  }
+  // 同时锁定下一行高度
+  const nextEl = el.querySelector('.dl-line--next')
+  if (nextEl) {
+    nextEl.dataset.animLocked = '1'
+    nextEl.style.height = nextEl.offsetHeight + 'px'
+    nextEl.style.flexShrink = '0'
+  }
+
+  // 5. 动态计算滚动距离：基于下一行相对容器的实际位置
   const vl = desktopSettings.value.viewLines ?? 2
   const total = displayData.value?.totalLines ?? 0
   const toIdx = data?.activeIndex ?? -1
-  const isLastLineTarget = vl === 2 && total > 0 && toIdx === total - 1
+  const isLastLineTarget = vl === 2 && total > 0 && toIdx >= 0 && toIdx === total - 1
 
   let scrollPx
-  if (vl === 1) {
-    scrollPx = activeH + GAP
-  } else if (isLastLineTarget) {
+  if (isLastLineTarget) {
     // 最后一句 → 只滚动半行到视口中央
+    const activeH = activeEl ? activeEl.offsetHeight : 64
     scrollPx = Math.round(activeH / 2) + GAP / 2
   } else {
-    scrollPx = activeH + GAP
+    // 1 句 / 2 句正常模式：下一行顶部到容器顶部的精确距离
+    scrollPx = nextEl ? nextEl.offsetTop : ((activeEl ? activeEl.offsetHeight : 64) + GAP)
   }
 
   // 标记本次是否为最后一行居中滚动
@@ -300,6 +314,13 @@ async function onScrollEnd() {
   //    在 swap 数据前执行，避免旧动画样式短暂作用于新内容导致抖动
   activeAnimations.forEach(a => a.cancel())
   activeAnimations = []
+
+  // 1.5 解锁被锁定的行高
+  el.querySelectorAll('.dl-line[data-anim-locked]').forEach(lineEl => {
+    lineEl.style.height = ''
+    lineEl.style.flexShrink = ''
+    delete lineEl.dataset.animLocked
+  })
 
   // 2. 容器瞬间归位
   el.style.transition = 'none'
