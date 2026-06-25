@@ -17,6 +17,9 @@ export const usePlayerStore = defineStore('player', () => {
   // 播放模式: 'sequential' | 'repeat' | 'repeat-one' | 'shuffle'
   const playMode = ref('sequential')
 
+  // 桌面歌词开关
+  const showDesktopLyrics = ref(false)
+
   // 保存的播放数据
   const savedTime = ref(0)
   const savedVolume = ref(0.7)
@@ -279,6 +282,11 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
+  // 切换桌面歌词
+  function toggleDesktopLyrics() {
+    showDesktopLyrics.value = !showDesktopLyrics.value
+  }
+
   // 切换播放模式: sequential → repeat-one → shuffle → repeat → ...
   function togglePlayMode() {
     const modes = ['sequential', 'repeat-one', 'shuffle', 'repeat']
@@ -395,10 +403,10 @@ export const usePlayerStore = defineStore('player', () => {
 
   return {
     queue, currentIndex, audio, isPlaying, currentTime, duration,
-    volume, isMuted, playMode, savedTime, savedVolume,
+    volume, isMuted, playMode, showDesktopLyrics, savedTime, savedVolume,
     currentTrack, progress, hasNext, hasPrev,
     initAudio, play, pause, resume, togglePlay,
-    next, prev, seek, setVolume, toggleMute, togglePlayMode,
+    next, prev, seek, setVolume, toggleMute, togglePlayMode, toggleDesktopLyrics,
     addToQueue, removeFromQueue, clearQueue, playAll,
     saveSettings, loadSettings, saveProgress, restoreProgress,
     getLiveTime

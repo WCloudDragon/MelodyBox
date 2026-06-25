@@ -21,6 +21,9 @@
       @close="handleClose"
       @fly-complete="panelOpen = false"
     />
+
+    <!-- 桌面歌词浮窗 -->
+    <DesktopLyrics />
   </div>
 </template>
 
@@ -33,6 +36,7 @@ import TitleBar from '@/components/layout/TitleBar.vue'
 import Sidebar from '@/components/layout/Sidebar.vue'
 import PlayerBar from '@/components/player/PlayerBar.vue'
 import NowPlayingPanel from '@/components/player/NowPlayingPanel.vue'
+import DesktopLyrics from '@/components/player/DesktopLyrics.vue'
 import ProgressPanel from '@/components/ProgressPanel.vue'
 
 const playerStore = usePlayerStore()

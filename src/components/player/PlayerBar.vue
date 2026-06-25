@@ -72,6 +72,11 @@
               </svg>
               <span class="queue-count" v-if="queue.length">{{ queue.length }}</span>
             </button>
+            <button class="ctrl-btn" :class="{ active: showDesktopLyrics }" @click="player.toggleDesktopLyrics" :title="showDesktopLyrics ? '关闭桌面歌词' : '打开桌面歌词'">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 14h8v2H3v-2zm10 0h2v2h-2v-2zm4-4h2v8h-2v-8z"/>
+              </svg>
+            </button>
           </div>
         </transition>
       </div>
@@ -133,7 +138,7 @@ const props = defineProps({
 const toggleNowPlaying = inject('toggleNowPlaying')
 const player = usePlayerStore()
 const { currentTrack, isPlaying, currentTime, duration, volume, isMuted,
-        playMode, progress, queue, hasNext, hasPrev } = storeToRefs(player)
+        playMode, progress, queue, hasNext, hasPrev, showDesktopLyrics } = storeToRefs(player)
 
 const hovered = ref(false)
 const progressHovered = ref(false)
