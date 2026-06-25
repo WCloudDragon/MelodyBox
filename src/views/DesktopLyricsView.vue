@@ -20,15 +20,19 @@
           :class="{ 'has-translation': displayData.activeLine?.translation, 'is-word-level': displayData.activeLine?.wordLevel }"
         >
           <div class="dl-line__inner">
-            <p v-if="displayData.activeLine?.wordLevel && displayData.activeLine?.segments" class="dl-line__original word-level">
-              <span
-                v-for="(seg, si) in displayData.activeLine.segments"
-                :key="si"
-                class="word-seg"
-                :data-word="seg.text"
-              >{{ seg.text }}</span>
+            <p v-if="displayData.activeLine?.wordLevel && displayData.activeLine?.segments" class="dl-line__original word-level dl-marquee" :class="{ 'is-scrolling': isMarqueeScrolling }">
+              <span class="dl-marquee__text" ref="marqueeTextRef">
+                <span
+                  v-for="(seg, si) in displayData.activeLine.segments"
+                  :key="si"
+                  class="word-seg"
+                  :data-word="seg.text"
+                >{{ seg.text }}</span>
+              </span>
             </p>
-            <p v-else class="dl-line__original">{{ displayData.activeLine?.original || '' }}</p>
+            <p v-else class="dl-line__original dl-marquee" :class="{ 'is-scrolling': isMarqueeScrolling }">
+              <span class="dl-marquee__text" ref="marqueeTextRef">{{ displayData.activeLine?.original || '' }}</span>
+            </p>
             <p v-if="displayData.activeLine?.translation" class="dl-line__translation">{{ displayData.activeLine.translation }}</p>
           </div>
         </div>
@@ -66,8 +70,18 @@ const animating = ref(false)
 let activeAnimations = []            // 当前动画的 Animation 对象，结束后取消
 const scrollRef = ref(null)
 const viewportRef = ref(null)
+const marqueeTextRef = ref(null)
+const isMarqueeScrolling = ref(false)
+let marqueeAnim = null               // 横向滚动动画
 const prevIndex = ref(-1)
 const GAP = 2                        // flex gap 间距
+
+// 当前行时长（秒），用于计算跑马灯滚动速度
+const lineDuration = computed(() => {
+  const t1 = displayData.value?.activeLineTime ?? 0
+  const t2 = displayData.value?.nextLineTime ?? 0
+  return t2 > t1 ? t2 - t1 : 5
+})
 
 // 桌面歌词设置（默认值，与后端一致）
 const desktopSettings = ref({ fontSize: 24, activeScale: 120, transScale: 60 })
@@ -115,6 +129,7 @@ onMounted(() => {
         displayData.value = data
         prevIndex.value = newIdx
         syncViewportHeight()
+        setupMarquee()
         return
       }
 
@@ -143,6 +158,10 @@ async function performScroll(el, data, forward) {
   // 取消可能残留的旧动画
   activeAnimations.forEach(a => a.cancel())
   activeAnimations = []
+
+  // 取消跑马灯，新行将重新检测
+  if (marqueeAnim) { marqueeAnim.cancel(); marqueeAnim = null }
+  isMarqueeScrolling.value = false
 
   const { base, trans, activeFont, transActiveFont } = animFontSizes.value
   const baseStr = base + 'px'
@@ -238,6 +257,9 @@ async function onScrollEnd() {
   // 4. 同步视口高度（字号可能变化）
   syncViewportHeight()
 
+  // 5. 检查是否需要跑马灯
+  setupMarquee()
+
   // 检查动画期间是否有新一轮排队数据
   if (pendingData.value) {
     const next = pendingData.value
@@ -267,6 +289,41 @@ async function syncViewportHeight() {
   const activeH = activeEl ? activeEl.offsetHeight : 64
   const nextH = nextEl ? nextEl.offsetHeight : 0
   vp.style.height = (activeH + GAP + nextH) + 'px'
+}
+
+/** 启动横向跑马灯：文本溢出容器时根据该句时长自动滚动 */
+async function setupMarquee() {
+  if (marqueeAnim) { marqueeAnim.cancel(); marqueeAnim = null }
+  await nextTick()
+
+  const textEl = marqueeTextRef.value
+  if (!textEl) return
+
+  const container = textEl.parentElement
+  if (!container) return
+
+  const containerW = container.clientWidth
+  const textW = textEl.scrollWidth
+
+  if (textW <= containerW + 4) {
+    isMarqueeScrolling.value = false
+    return
+  }
+
+  isMarqueeScrolling.value = true
+  const dist = -(textW - containerW + 30) // 多滚 30px 留白
+  const dur = lineDuration.value * 1000
+
+  marqueeAnim = textEl.animate([
+    { transform: 'translateX(0px)', offset: 0 },
+    { transform: 'translateX(0px)', offset: 0.12 },
+    { transform: `translateX(${dist}px)`, offset: 0.82 },
+    { transform: 'translateX(0px)', offset: 1 }
+  ], {
+    duration: dur,
+    iterations: Infinity,
+    easing: 'linear'
+  })
 }
 
 // 设置变化时重新计算视口高度
@@ -361,12 +418,6 @@ html, body {
   color: #fff;
   opacity: 0.35;
   max-width: 760px;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.6),
-     1px -1px 0 rgba(0, 0, 0, 0.6),
-    -1px  1px 0 rgba(0, 0, 0, 0.6),
-     1px  1px 0 rgba(0, 0, 0, 0.6),
-    0 2px 6px rgba(0, 0, 0, 0.5);
   transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               font-size 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               font-weight 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
@@ -384,12 +435,6 @@ html, body {
   color: #fff;
   opacity: 0.18;
   max-width: 760px;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.6),
-     1px -1px 0 rgba(0, 0, 0, 0.6),
-    -1px  1px 0 rgba(0, 0, 0, 0.6),
-     1px  1px 0 rgba(0, 0, 0, 0.6),
-    0 1px 4px rgba(0, 0, 0, 0.4);
   transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               font-size 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
@@ -407,17 +452,23 @@ html, body {
   opacity: 1;
   font-size: var(--dl-active-original, 29px);
   max-width: 760px;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.7),
-     1px -1px 0 rgba(0, 0, 0, 0.7),
-    -1px  1px 0 rgba(0, 0, 0, 0.7),
-     1px  1px 0 rgba(0, 0, 0, 0.7),
-    0 2px 10px rgba(0, 0, 0, 0.5);
 }
 .dl-line--active .dl-line__translation {
   opacity: 1;
   color: #fff;
   font-size: var(--dl-active-trans, 17px);
+}
+
+/* ===== 横向跑马灯 ===== */
+.dl-line__original.dl-marquee {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+}
+.dl-marquee__text {
+  display: inline-block;
+  white-space: nowrap;
 }
 
 /* 下一行 */
@@ -454,23 +505,11 @@ html, body {
   display: inline-block;
   color: #fff;
   opacity: 0.35;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.6),
-     1px -1px 0 rgba(0, 0, 0, 0.6),
-    -1px  1px 0 rgba(0, 0, 0, 0.6),
-     1px  1px 0 rgba(0, 0, 0, 0.6),
-    0 2px 6px rgba(0, 0, 0, 0.5);
   transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               transform 0.04s linear,
               opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .dl-line--active .word-seg {
   opacity: 1;
-  text-shadow:
-    -1px -1px 0 rgba(0, 0, 0, 0.7),
-     1px -1px 0 rgba(0, 0, 0, 0.7),
-    -1px  1px 0 rgba(0, 0, 0, 0.7),
-     1px  1px 0 rgba(0, 0, 0, 0.7),
-    0 2px 10px rgba(0, 0, 0, 0.5);
 }
 </style>

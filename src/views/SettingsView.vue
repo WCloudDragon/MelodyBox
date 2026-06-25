@@ -263,7 +263,7 @@
           </div>
           <el-slider
             v-model="settingsStore.desktopLyricsFontSize"
-            :min="16" :max="48" :step="1"
+            :min="16" :max="36" :step="1"
             class="setting-slider"
             @change="settingsStore.saveSettings()"
           />

@@ -74,12 +74,14 @@ const afterNextLine = computed(() => {
 const lyricsPayload = computed(() => {
   return {
     activeIndex: currentLineIndex.value,
+    activeLineTime: activeLine.value?.time ?? 0,
     activeLine: activeLine.value ? {
       original: activeLine.value.original,
       translation: activeLine.value.translation || null,
       wordLevel: activeLine.value.wordLevel || false,
       segments: activeLine.value.segments || null
     } : null,
+    nextLineTime: nextLine.value?.time ?? 0,
     nextLine: nextLine.value ? {
       original: nextLine.value.original,
       translation: nextLine.value.translation || null
