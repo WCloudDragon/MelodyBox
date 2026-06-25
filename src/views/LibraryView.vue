@@ -201,13 +201,12 @@ const playlistStore = usePlaylistStore()
 
 // 扫描进度通知
 watch(() => libraryStore.isScanning, (scanning) => {
-  if (scanning) showScanNotify()
+  if (scanning) { showScanNotify() }
 })
 watch(() => libraryStore.scanProgress, (p) => {
-  if (!libraryStore.isScanning) return
   if (p.total > 0) updateScanNotify(p.current, p.total, p.path)
-  if (!p.scanning && p.total > 0) {
-    closeScanNotify(p.total, () => libraryStore.loadFromApi())
+  if (!p.scanning) {
+    closeScanNotify(p.total || 0, () => libraryStore.loadFromApi())
   }
 })
 onBeforeUnmount(clearScanNotify)
