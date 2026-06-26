@@ -1185,7 +1185,7 @@ onBeforeUnmount(() => {
 .lyrics-prev-enter-active {
   transition: transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               opacity 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              filter 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+              filter 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .lyrics-next-leave-active,
 .lyrics-prev-leave-active {
@@ -1202,11 +1202,11 @@ onBeforeUnmount(() => {
   z-index: 1;
 }
 /* 下一曲：新歌词从下方 50px 滑入并渐显+从模糊到清晰，旧歌词渐隐+模糊 */
-.lyrics-next-enter-from { transform: translateY(50px); opacity: 0; filter: blur(6px); }
-.lyrics-next-leave-to   { opacity: 0; filter: blur(6px); }
+.lyrics-next-enter-from { transform: translateY(50px); opacity: 0; filter: blur(10px); }
+.lyrics-next-leave-to   { opacity: 0; filter: blur(10px); }
 /* 上一曲：新歌词从上方 50px 滑入并渐显+从模糊到清晰，旧歌词渐隐+模糊 */
-.lyrics-prev-enter-from { transform: translateY(-50px); opacity: 0; filter: blur(6px); }
-.lyrics-prev-leave-to   { opacity: 0; filter: blur(6px); }
+.lyrics-prev-enter-from { transform: translateY(-50px); opacity: 0; filter: blur(10px); }
+.lyrics-prev-leave-to   { opacity: 0; filter: blur(10px); }
 /* 无动画（初始状态） */
 .lyrics-none-enter-active,
 .lyrics-none-leave-active {
