@@ -538,7 +538,7 @@ function onVolumeMouseUp() {
 .player-bar.panel-active .volume-pop__val { color: rgba(255, 255, 255, 0.8); }
 
 /* ===== 切歌时歌曲信息方向感知滑入动画 ===== */
-/* 出入同时执行：新信息从对应方向滑入（在旧信息上方），旧信息仅渐隐 */
+/* 出入同时执行：新信息从对应方向滑入（在旧信息上方），旧信息渐隐+模糊 */
 /* leave 绝对定位用 left:58px=封面(48)+gap(10) 匹配 flex 流中的实际位置 */
 .info-next-leave-active,
 .info-prev-leave-active {
@@ -554,22 +554,24 @@ function onVolumeMouseUp() {
   z-index: 1;
 }
 
-/* 下一曲：旧信息渐隐 | 新信息从下方 40px 滑入 + 渐显 */
+/* 下一曲：旧信息渐隐+模糊 | 新信息从下方 40px 滑入 + 渐显 */
 .info-next-leave-active {
-  transition: opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.info-next-leave-to { opacity: 0; }
+.info-next-leave-to { opacity: 0; filter: blur(6px); }
 .info-next-enter-active {
   transition: transform 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0) !important,
               opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .info-next-enter-from { transform: translateX(var(--info-shift-x)) translateY(40px) !important; opacity: 0; }
 
-/* 上一曲：旧信息渐隐 | 新信息从上方 -40px 滑入 + 渐显 */
+/* 上一曲：旧信息渐隐+模糊 | 新信息从上方 -40px 滑入 + 渐显 */
 .info-prev-leave-active {
-  transition: opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.info-prev-leave-to { opacity: 0; }
+.info-prev-leave-to { opacity: 0; filter: blur(6px); }
 .info-prev-enter-active {
   transition: transform 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0) !important,
               opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
