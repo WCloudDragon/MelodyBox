@@ -54,7 +54,7 @@
                 :key="index"
                 class="lyric-line"
                 :class="{
-                  active: index === currentLineIndex && !jumpPending,
+                  active: index === currentLineIndex && jumpPending < 0,
                   sung: currentLineIndex >= 0 && index < currentLineIndex,
                   upcoming: index > currentLineIndex,
                   'has-translation': line.translation,
@@ -109,9 +109,9 @@ const mainRef = ref(null)
 const scrollRef = ref(null)
 const lineRefs = ref({})
 const currentLineIndex = ref(-1)
-// 远距离点击跳转时延迟一帧再激活 .active，给 v-if 词级 span 以非活跃态先行渲染
-// 让 CSS transition（font-size/color 等 0.8s cubic-bezier）有"从 A→B"的插值空间
-const jumpPending = ref(false)
+// 远距离跳转缓冲：存旧行索引，-1 表示无跳转。延迟一帧让 v-if 词级 span 先以非活跃态渲染，
+// 然后 lineStyle(opacity) 和 .active(font-size) 在同一帧同步开始过渡，避免视觉脱节
+const jumpPending = ref(-1)
 const coverArtRef = ref(null)
 
 // 切歌动画方向：null = 无动画, 'next' = 下一曲, 'prev' = 上一曲
@@ -549,7 +549,9 @@ function onLyricsWheel(e) {
 }
 
 function lineStyle(index) {
-  const dist = index - currentLineIndex.value
+  // 远距离跳转缓冲期内以旧行索引计算距离，避免 opacity 抢先过渡
+  const refIdx = jumpPending.value >= 0 ? jumpPending.value : currentLineIndex.value
+  const dist = index - refIdx
   const absDist = Math.abs(dist)
   const t = Math.min(absDist / 6, 1)
   const opacity = isUserScrolling.value ? 1 : Math.max(0.12, 1 - t * 0.88)
@@ -637,10 +639,10 @@ watch(currentTime, async (time) => {
     const oldIdx = currentLineIndex.value
     stopWordAnimLoop()
     currentLineIndex.value = idx
-    // 远距离跳转：延迟一帧应用 .active，给 v-if 创建的 word-seg span 以非活跃态先行渲染
+    // 远距离跳转：存旧行索引，延迟一帧，lineStyle 与 .active 同步过渡
     if (Math.abs(idx - oldIdx) > 1) {
-      jumpPending.value = true
-      nextTick(() => { jumpPending.value = false })
+      jumpPending.value = oldIdx
+      nextTick(() => { jumpPending.value = -1 })
     }
     // 旧行逐字高亮渐变消失（无论是否在滚动模式都要执行）
     if (oldIdx >= 0 && parsedLyrics.value[oldIdx]?.wordLevel) fadeOutWordSegs(oldIdx)
