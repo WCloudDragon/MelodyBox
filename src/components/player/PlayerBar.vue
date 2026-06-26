@@ -539,14 +539,13 @@ function onVolumeMouseUp() {
 
 /* ===== 切歌时歌曲信息方向感知滑入动画 ===== */
 /* 出入同时执行：新信息从对应方向滑入（在旧信息上方），旧信息渐隐+模糊 */
-/* leave 绝对定位使用 top:50%+translateY(-50%) 保持 flex align-items:center 的垂直居中位置 */
+/* leave 绝对定位用 left:58px=封面(48)+gap(10) 匹配 flex 流中的实际位置 */
 .info-next-leave-active,
 .info-prev-leave-active {
   position: absolute;
-  top: 50%;
+  top: 0;
   left: 58px;
   right: 0;
-  transform: translateY(-50%);
   z-index: 0;
 }
 .info-next-enter-active,
@@ -557,10 +556,10 @@ function onVolumeMouseUp() {
 
 /* 下一曲：旧信息渐隐+模糊 | 新信息从下方 40px 滑入 + 渐显 */
 .info-next-leave-active {
-  transition: opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              filter 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: opacity 6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.info-next-leave-to { opacity: 0; filter: blur(4px); }
+.info-next-leave-to { opacity: 0; filter: blur(6px); }
 .info-next-enter-active {
   transition: transform 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0) !important,
               opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
@@ -569,10 +568,10 @@ function onVolumeMouseUp() {
 
 /* 上一曲：旧信息渐隐+模糊 | 新信息从上方 -40px 滑入 + 渐显 */
 .info-prev-leave-active {
-  transition: opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              filter 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: opacity 6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.info-prev-leave-to { opacity: 0; filter: blur(4px); }
+.info-prev-leave-to { opacity: 0; filter: blur(6px); }
 .info-prev-enter-active {
   transition: transform 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0) !important,
               opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
