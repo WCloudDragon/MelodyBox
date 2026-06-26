@@ -1182,14 +1182,15 @@ onBeforeUnmount(() => {
 
 /* ===== 歌词切歌过渡动画：方向感知滑入滑出 + 渐隐渐显（出入同时执行） ===== */
 .lyrics-next-enter-active,
-.lyrics-next-leave-active,
-.lyrics-prev-enter-active,
-.lyrics-prev-leave-active {
+.lyrics-prev-enter-active {
   transition: transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .lyrics-next-leave-active,
 .lyrics-prev-leave-active {
+  transition: transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              opacity 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
   position: absolute;
   width: 100%;
   z-index: 0;
@@ -1201,10 +1202,10 @@ onBeforeUnmount(() => {
 }
 /* 下一曲：新歌词从下方 50px 滑入并渐显，旧歌词渐隐 */
 .lyrics-next-enter-from { transform: translateY(50px); opacity: 0; }
-.lyrics-next-leave-to   { opacity: 0; }
+.lyrics-next-leave-to   { opacity: 0; filter: blur(6px); }
 /* 上一曲：新歌词从上方 50px 滑入并渐显，旧歌词渐隐 */
 .lyrics-prev-enter-from { transform: translateY(-50px); opacity: 0; }
-.lyrics-prev-leave-to   { opacity: 0; }
+.lyrics-prev-leave-to   { opacity: 0; filter: blur(6px); }
 /* 无动画（初始状态） */
 .lyrics-none-enter-active,
 .lyrics-none-leave-active {
