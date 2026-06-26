@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron')
 const { execSync } = require('child_process')
 const path = require('path')
 const fs = require('fs')
@@ -581,6 +581,28 @@ ipcMain.handle('system:getAccentColor', async () => {
 // ==================== 应用生命周期 ====================
 
 app.whenReady().then(async () => {
+  // 注册 thumb:// 协议 — 绕过 Flask，Chromium 直接读本地缩略图
+  const THUMBS_BASE = path.join(os.tmpdir(), 'melodybox-thumbs')
+  protocol.handle('thumb', (request) => {
+    try {
+      const u = new URL(request.url)
+      const size = u.hostname
+      const filename = u.pathname.slice(1)
+      if (!/^\d+$/.test(size) || /[/\\]/.test(filename) || filename === '') {
+        return new Response('', { status: 400 })
+      }
+      const fp = path.join(THUMBS_BASE, size, filename)
+      if (!fs.existsSync(fp)) return new Response('', { status: 404 })
+      const ext = path.extname(fp).toLowerCase()
+      const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
+      return new Response(fs.readFileSync(fp), {
+        headers: { 'Content-Type': mime, 'Cache-Control': 'public, max-age=31536000, immutable' }
+      })
+    } catch {
+      return new Response('', { status: 500 })
+    }
+  })
+
   // 启动 Flask 后端（生产环境自动启动，开发环境跳过）
   await startFlask()
 

@@ -96,7 +96,7 @@
               <el-icon class="play-icon" size="16" @click.stop="playTrack(track)"><VideoPlay /></el-icon>
             </span>
             <span class="col-title">
-              <LazyCover v-if="track.cover" :src="track.cover" class="row-cover" loading="lazy" :thumb-size="72" />
+              <LazyCover v-if="track.cover" :src="track.cover" class="row-cover" :thumb-size="72" />
               <div v-else class="row-cover row-cover--empty"><el-icon size="14"><Headset /></el-icon></div>
               <div class="col-title__text">
                 <span class="col-title__name">{{ track.title }}</span>
@@ -222,7 +222,7 @@ const hasMusic = computed(() => libraryStore.tracks.length > 0)
 // 虚拟滚动（仅渲染可见 + 缓冲区行数，初始秒开）
 const { list: virtualList, containerProps, wrapperProps, scrollTo } = useVirtualList(
   computed(() => libraryStore.filteredTracks),
-  { itemHeight: 64, overscan: 15 }
+  { itemHeight: 64, overscan: 20 }
 )
 
 // 筛选/排序变化时自动滚回顶部

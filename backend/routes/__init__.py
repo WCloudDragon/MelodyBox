@@ -326,16 +326,23 @@ def serve_cover():
 
     thumb = request.args.get('thumb', type=int)
     if not thumb or thumb <= 0:
-        return send_file(path)
+        resp = send_file(path)
+        resp.cache_control.max_age = 86400
+        resp.cache_control.public = True
+        return resp
 
     # 缩略图缓存目录：%TEMP%/melodybox-thumbs/{N}/
     thumb_dir = os.path.join(os.path.dirname(cover_dir), 'melodybox-thumbs', str(thumb))
     os.makedirs(thumb_dir, exist_ok=True)
     thumb_path = os.path.join(thumb_dir, os.path.basename(path))
 
-    # 缩略图已存在，直接返回
+    # 缩略图已存在，直接返回（不可变，缓存一年）
     if os.path.exists(thumb_path):
-        return send_file(thumb_path)
+        resp = send_file(thumb_path)
+        resp.cache_control.max_age = 31536000
+        resp.cache_control.public = True
+        resp.cache_control.immutable = True
+        return resp
 
     # 首次请求：先返回原图（不阻塞加载），后台线程生成缩略图供下次使用
     print(f'[cover:thumb] async generating {thumb}px for {os.path.basename(path)}')
@@ -353,5 +360,8 @@ def serve_cover():
             if os.path.exists(tmp):
                 os.remove(tmp)
     threading.Thread(target=_generate, daemon=True).start()
-    return send_file(path)
+    resp = send_file(path)
+    resp.cache_control.max_age = 86400
+    resp.cache_control.public = True
+    return resp
 
