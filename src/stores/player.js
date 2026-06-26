@@ -20,6 +20,9 @@ export const usePlayerStore = defineStore('player', () => {
   // 桌面歌词开关
   const showDesktopLyrics = ref(false)
 
+  // 切歌方向：'next' | 'prev' | null，用于全屏歌词页的过渡动画
+  const songChangeDirection = ref(null)
+
   // 保存的播放数据
   const savedTime = ref(0)
   const savedVolume = ref(0.7)
@@ -172,6 +175,7 @@ export const usePlayerStore = defineStore('player', () => {
   // 下一首
   function next() {
     if (queue.value.length === 0) return
+    songChangeDirection.value = 'next'
     let nextIndex
     switch (playMode.value) {
       case 'repeat-one':
@@ -195,6 +199,7 @@ export const usePlayerStore = defineStore('player', () => {
   function prev() {
     if (queue.value.length === 0) return
     if (currentTime.value > 3) {
+      // 从头播放当前曲目：方向为 null（刷新），不做切歌动画
       // 从头播放当前曲目：直接 seek 到 0 避免 URL 未变时浏览器不重载
       if (audio.value) audio.value.currentTime = 0
       _seekOffset = 0
@@ -202,6 +207,7 @@ export const usePlayerStore = defineStore('player', () => {
       resume()
       return
     }
+    songChangeDirection.value = 'prev'
     let prevIndex
     switch (playMode.value) {
       case 'repeat-one':
@@ -404,6 +410,7 @@ export const usePlayerStore = defineStore('player', () => {
   return {
     queue, currentIndex, audio, isPlaying, currentTime, duration,
     volume, isMuted, playMode, showDesktopLyrics, savedTime, savedVolume,
+    songChangeDirection,
     currentTrack, progress, hasNext, hasPrev,
     initAudio, play, pause, resume, togglePlay,
     next, prev, seek, setVolume, toggleMute, togglePlayMode, toggleDesktopLyrics,

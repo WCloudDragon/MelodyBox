@@ -21,10 +21,12 @@
           <div v-else class="cover cover--empty" ref="coverRef">
             <el-icon size="22"><Headset /></el-icon>
           </div>
-          <div class="info">
-            <div class="info__title">{{ currentTrack?.title || '未选择歌曲' }}</div>
-            <div class="info__artist">{{ currentTrack?.artist || '' }}</div>
-          </div>
+          <Transition :name="infoAnimName">
+            <div class="info" :key="currentTrack?.path">
+              <div class="info__title">{{ currentTrack?.title || '未选择歌曲' }}</div>
+              <div class="info__artist">{{ currentTrack?.artist || '' }}</div>
+            </div>
+          </Transition>
         </div>
       </div>
 
@@ -138,7 +140,7 @@ const props = defineProps({
 const toggleNowPlaying = inject('toggleNowPlaying')
 const player = usePlayerStore()
 const { currentTrack, isPlaying, currentTime, duration, volume, isMuted,
-        playMode, progress, queue, hasNext, hasPrev, showDesktopLyrics } = storeToRefs(player)
+        playMode, progress, queue, hasNext, hasPrev, showDesktopLyrics, songChangeDirection } = storeToRefs(player)
 
 const hovered = ref(false)
 const progressHovered = ref(false)
@@ -148,6 +150,19 @@ const progressRef = ref(null)
 const volumeRef = ref(null)
 const volumeBtnRef = ref(null)
 const coverRef = ref(null)
+
+// 歌曲信息滚动动画方向
+const infoAnimDir = ref(null)
+const infoAnimName = computed(() => {
+  if (!infoAnimDir.value) return 'info-none'
+  return `info-${infoAnimDir.value}`
+})
+watch(songChangeDirection, (dir) => {
+  if (dir) {
+    infoAnimDir.value = dir
+    setTimeout(() => { infoAnimDir.value = null }, 650)
+  }
+})
 
 defineExpose({ coverEl: coverRef, showQueue })
 
@@ -313,6 +328,7 @@ function onVolumeMouseUp() {
   cursor: pointer;
   min-width: 0;
   width: 100%;
+  position: relative;
 }
 .cover {
   width: 48px; height: 48px;
@@ -513,4 +529,56 @@ function onVolumeMouseUp() {
   border-color: rgba(255, 255, 255, 0.1);
 }
 .player-bar.panel-active .volume-pop__val { color: rgba(255, 255, 255, 0.8); }
+
+/* ===== 切歌时歌曲信息滚动动画 — 与封面动画时长/曲线一致 ===== */
+/* 出入同时执行：离开的 info absolute 叠在进入的 info 上方 */
+.info-next-leave-active,
+.info-prev-leave-active {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1;
+}
+.info-next-enter-active,
+.info-prev-enter-active {
+  position: relative;
+  z-index: 0;
+}
+
+/* 下一曲：旧信息向左滑出渐隐，新信息从右侧滑入渐显 */
+.info-next-enter-active,
+.info-next-leave-active {
+  transition: transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0) !important,
+              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.info-next-leave-to {
+  transform: translateX(-30px) !important;
+  opacity: 0;
+}
+.info-next-enter-from {
+  transform: translateX(30px) !important;
+  opacity: 0;
+}
+
+/* 上一曲：旧信息向右滑出渐隐，新信息从左侧滑入渐显 */
+.info-prev-enter-active,
+.info-prev-leave-active {
+  transition: transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0) !important,
+              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.info-prev-leave-to {
+  transform: translateX(30px) !important;
+  opacity: 0;
+}
+.info-prev-enter-from {
+  transform: translateX(-30px) !important;
+  opacity: 0;
+}
+
+/* 无动画（初始状态） */
+.info-none-enter-active,
+.info-none-leave-active {
+  transition: none;
+}
 </style>

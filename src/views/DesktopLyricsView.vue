@@ -382,64 +382,66 @@ function startKaraokeLoop(activeIndex) {
   karaokeRafId = requestAnimationFrame(tick)
 }
 
-// ===== IPC 监听 =====
-onMounted(() => {
-  if (window.electronAPI) {
-    window.electronAPI.onLyricsData((data) => {
-      // 更新设置（只在设置真正变化时才调整窗口大小）
-      if (data?.settings) {
-        const prevSettings = JSON.stringify(desktopSettings.value)
-        desktopSettings.value = data.settings
-        if (JSON.stringify(data.settings) !== prevSettings) {
-          nextTick(() => requestResize())
-        }
+// ===== IPC 监听（顶层注册，在 Vue 挂载前就绪，确保首帧数据不丢失） =====
+if (window.electronAPI) {
+  window.electronAPI.onLyricsData((data) => {
+    // 更新设置（只在设置真正变化时才调整窗口大小）
+    if (data?.settings) {
+      const prevSettings = JSON.stringify(desktopSettings.value)
+      desktopSettings.value = data.settings
+      if (JSON.stringify(data.settings) !== prevSettings) {
+        nextTick(() => requestResize())
       }
+    }
 
-      const newLyrics = data?.parsedLyrics || []
-      const newIndex = data?.currentLineIndex ?? -1
-      const newSongInfo = data?.songInfo || null
+    const newLyrics = data?.parsedLyrics || []
+    const newIndex = data?.currentLineIndex ?? -1
+    const newSongInfo = data?.songInfo || null
 
-      const lyricsChanged = JSON.stringify(newLyrics) !== JSON.stringify(parsedLyrics.value)
+    const lyricsChanged = JSON.stringify(newLyrics) !== JSON.stringify(parsedLyrics.value)
 
-      // 歌曲信息：始终更新
-      songInfo.value = newSongInfo
+    // 歌曲信息：始终更新
+    songInfo.value = newSongInfo
 
-      if (lyricsChanged) {
-        // 切歌：重置滚动
-        parsedLyrics.value = newLyrics
-        hasData.value = true
-        currentLineIndex.value = newIndex
-
-        // 逐字卡拉 OK：切歌时同步时钟
-        if (newIndex >= 0) {
-          const activeLine = newLyrics[newIndex]
-          if (activeLine.wordLevel && activeLine.segments && activeLine.segments.length >= 2 && data.currentTime != null) {
-            syncKaraokeClock(data.currentTime)
-          }
-          nextTick(() => scrollToLine(newIndex, false))
-        } else {
-          stopKaraokeLoop()
-          nextTick(() => resetScroll())
-        }
-        return
-      }
-
-      // 更新歌词行列表（内容未变但索引变了）
+    if (lyricsChanged) {
+      // 切歌：重置滚动
       parsedLyrics.value = newLyrics
       hasData.value = true
       currentLineIndex.value = newIndex
 
-      // 逐字卡拉 OK：同步时钟 & 启动 rAF 循环
+      // 逐字卡拉 OK：切歌时同步时钟
       if (newIndex >= 0) {
         const activeLine = newLyrics[newIndex]
         if (activeLine.wordLevel && activeLine.segments && activeLine.segments.length >= 2 && data.currentTime != null) {
           syncKaraokeClock(data.currentTime)
         }
-        nextTick(() => scrollToLine(newIndex, true))
+        nextTick(() => scrollToLine(newIndex, false))
+      } else {
+        stopKaraokeLoop()
+        nextTick(() => resetScroll())
       }
-    })
+      return
+    }
 
-    // 初始窗口尺寸
+    // 更新歌词行列表（内容未变但索引变了）
+    parsedLyrics.value = newLyrics
+    hasData.value = true
+    currentLineIndex.value = newIndex
+
+    // 逐字卡拉 OK：同步时钟 & 启动 rAF 循环
+    if (newIndex >= 0) {
+      const activeLine = newLyrics[newIndex]
+      if (activeLine.wordLevel && activeLine.segments && activeLine.segments.length >= 2 && data.currentTime != null) {
+        syncKaraokeClock(data.currentTime)
+      }
+      nextTick(() => scrollToLine(newIndex, true))
+    }
+  })
+}
+
+// ===== 挂载后调整窗口尺寸 =====
+onMounted(() => {
+  if (window.electronAPI) {
     requestResize()
   }
 })

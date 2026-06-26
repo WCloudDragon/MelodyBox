@@ -25,7 +25,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
@@ -98,6 +98,14 @@ function pushToLyricsWindow() {
   window.electronAPI.lyricsUpdate(lyricsPayload.value)
 }
 
+// 打开歌词窗口后的重试定时器（确保新窗口加载完成后收到首帧数据）
+let _openRetryTimers = []
+function clearOpenRetryTimers() {
+  _openRetryTimers.forEach(id => clearTimeout(id))
+  _openRetryTimers = []
+}
+onUnmounted(() => clearOpenRetryTimers())
+
 // Electron 模式下：监听开关状态，控制独立窗口
 // 注意：在歌词窗口内不执行 IPC 控制逻辑（此组件可能因路由初始化时序而被意外挂载）
 watch(showDesktopLyrics, (val) => {
@@ -105,7 +113,13 @@ watch(showDesktopLyrics, (val) => {
   if (val) {
     window.electronAPI.lyricsOpen()
     pushToLyricsWindow()
+    // 新窗口页面加载有延迟，重试多次确保首帧数据送达
+    clearOpenRetryTimers()
+    _openRetryTimers = [200, 500, 1000, 2000].map(delay =>
+      setTimeout(() => pushToLyricsWindow(), delay)
+    )
   } else {
+    clearOpenRetryTimers()
     window.electronAPI.lyricsClose()
   }
 }, { immediate: true })

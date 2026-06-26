@@ -12,9 +12,11 @@
 
   <transition name="panel-slide" @after-leave="$emit('afterLeave')">
     <div v-if="visible" class="np-overlay" @click.self="$emit('close')">
-      <!-- 模糊背景 -->
+      <!-- 模糊背景：切歌时交叉淡入淡出 -->
       <div class="np-bg">
-        <img v-if="currentTrack?.cover" :src="currentTrack.cover" class="np-bg__img" />
+        <Transition name="bg-fade">
+          <img v-if="currentTrack?.cover" :key="currentTrack?.path" :src="currentTrack.cover" class="np-bg__img" decoding="async" />
+        </Transition>
       </div>
 
       <!-- 无歌曲时的提示 -->
@@ -26,14 +28,16 @@
       <!-- Apple Music 风格布局 -->
       <template v-else>
         <div class="np-layout" :style="lyricsVars">
-          <!-- 左半屏：封面 -->
+          <!-- 左半屏：封面 — 切歌时方向感知动画（出入同时执行） -->
           <div class="np-layout__cover">
-            <div class="cover-artwork" ref="coverArtRef" :class="{ animate: animating }">
-              <img v-if="currentTrack?.cover" :src="currentTrack.cover" class="cover-artwork__img" />
-              <div v-else class="cover-artwork__empty">
-                <el-icon size="64"><Headset /></el-icon>
+            <Transition :name="coverAnimName">
+              <div class="cover-artwork" :key="currentTrack?.path" ref="coverArtRef">
+                <img v-if="currentTrack?.cover" :src="currentTrack.cover" class="cover-artwork__img" decoding="async" />
+                <div v-else class="cover-artwork__empty">
+                  <el-icon size="64"><Headset /></el-icon>
+                </div>
               </div>
-            </div>
+            </Transition>
           </div>
 
           <!-- 右半屏：歌词 -->
@@ -43,7 +47,8 @@
               <p class="lyrics-empty-state__text">未找到内嵌歌词</p>
             </div>
 
-            <div v-else class="lyrics-scroll" ref="scrollRef">
+            <Transition v-else name="lyrics-fade">
+              <div class="lyrics-scroll" :key="currentTrack?.path" ref="scrollRef">
               <div
                 v-for="(line, index) in parsedLyrics"
                 :key="index"
@@ -74,6 +79,7 @@
               </div>
               <div class="lyrics-padding"></div>
             </div>
+            </Transition>
           </div>
         </div>
       </template>
@@ -93,7 +99,7 @@ const emit = defineEmits(['close', 'afterLeave', 'flyComplete'])
 
 const player = usePlayerStore()
 const settings = useSettingsStore()
-const { currentTrack, currentTime } = storeToRefs(player)
+const { currentTrack, currentTime, songChangeDirection, queue, currentIndex } = storeToRefs(player)
 const { lyricsFontSize, lyricsFontWeight } = storeToRefs(settings)
 const { lyricsTransScale, lyricsActiveScale } = storeToRefs(settings)
 const { enableLyricsBlur, enableDominoScroll, enableWordLift, wordAnimFps } = storeToRefs(settings)
@@ -104,7 +110,15 @@ const scrollRef = ref(null)
 const lineRefs = ref({})
 const currentLineIndex = ref(-1)
 const coverArtRef = ref(null)
-const animating = ref(false)
+
+// 切歌动画方向：null = 无动画, 'next' = 下一曲, 'prev' = 上一曲
+const coverAnimDir = ref(null)
+
+// 封面过渡动画名称，与歌曲信息现有位移动画时长/曲线一致 (0.6s cubic-bezier)
+const coverAnimName = computed(() => {
+  if (!coverAnimDir.value) return 'cover-none'
+  return `cover-${coverAnimDir.value}`
+})
 const windowWidth = ref(window.innerWidth)
 
 function onResize() {
@@ -783,12 +797,52 @@ function scrollToLine(index, animate = true) {
   prevLineIndex = index
 }
 
+// 预加载封面到浏览器缓存并强制解码：decode() 确保图片完全就绪，不阻塞过渡动画
+// 策略：缓存播放队列中当前曲目前后各 5 首的封面（共最多 11 张），连续切歌几乎零延迟
+const _coverCache = new Map()
+const PRELOAD_WINDOW = 5
+
+function _preloadOne(url) {
+  if (!url || _coverCache.has(url)) return
+  const img = new Image()
+  img.src = url
+  img.decode().then(() => {
+    _coverCache.set(url, img)
+    // 保留最近 11 张，超出删最旧的
+    while (_coverCache.size > PRELOAD_WINDOW * 2 + 1) {
+      _coverCache.delete(_coverCache.keys().next().value)
+    }
+  }).catch(() => {})
+}
+
+// 当前索引或队列变化时，预取邻近封面
+watch([currentIndex, queue], ([idx, q]) => {
+  if (!q.length || idx == null) return
+  const start = Math.max(0, idx - PRELOAD_WINDOW)
+  const end = Math.min(q.length, idx + PRELOAD_WINDOW + 1)
+  for (let i = start; i < end; i++) {
+    _preloadOne(q[i]?.cover)
+  }
+}, { immediate: true })
+
 watch(() => currentTrack.value?.path, () => {
   currentLineIndex.value = -1
   stopWordAnimLoop()
   targetScrollPos = 0
   prevLineIndex = -1
   if (scrollRef.value) { scrollRef.value.style.transform = 'translate3d(0, 0, 0)'; currentScrollY = 0 }
+})
+
+// 监听切歌方向，设置封面动画方向，动画结束后清除
+watch(songChangeDirection, (dir) => {
+  if (dir) {
+    coverAnimDir.value = dir
+    // 动画结束后清除方向（cover 动画 0.6s + 少许余量）
+    setTimeout(() => {
+      coverAnimDir.value = null
+      player.songChangeDirection = null
+    }, 650)
+  }
 })
 
 onBeforeUnmount(() => {
@@ -815,6 +869,7 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   overflow: hidden;
+  background-color: #080808;
 }
 .np-bg__img {
   width: 120%;
@@ -894,6 +949,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 32px;
   user-select: none;
+  position: relative;
+  overflow: hidden;
 }
 .cover-artwork {
   width: clamp(260px, 26vw, 520px);
@@ -903,13 +960,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 20px 60px rgba(0,0,0,0.5);
   transform: translateZ(0);
   backface-visibility: hidden;
-}
-.cover-artwork.animate {
-  transition: transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-}
-.cover-artwork.no-transition {
-  transition: none !important;
+  background: #1a1a1a;
 }
 .cover-artwork__img { width: 100%; height: 100%; object-fit: cover; }
 .cover-artwork__empty {
@@ -1056,4 +1107,72 @@ onBeforeUnmount(() => {
   opacity: 0;
   transform: translateY(-10px);
 }
+
+/* ===== 切歌动画：背景交叉淡入淡出 ===== */
+.bg-fade-enter-active {
+  transition: opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.bg-fade-leave-active {
+  transition: opacity 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  position: absolute;
+  inset: 0;
+}
+.bg-fade-enter-from { opacity: 0; }
+.bg-fade-leave-to { opacity: 0; }
+
+/* ===== 切歌动画：封面 — 与歌曲信息位移动画时长/曲线一致 ===== */
+/* 出入同时执行：新封面(enter)在上，旧封面(leave)在下 */
+.cover-next-leave-active,
+.cover-prev-leave-active {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  z-index: 0;
+}
+.cover-next-enter-active,
+.cover-prev-enter-active {
+  position: relative;
+  z-index: 1;
+}
+
+/* 下一曲：i-旧封面以顶部中心为锚点缩小渐隐  ii-新封面以底部中心为锚点从最小值放大渐显 */
+.cover-next-enter-active,
+.cover-next-leave-active {
+  transition: transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+/* transform-origin 必须在 -active 上才能贯穿整个动画，-from/-to 只在首尾瞬间存在 */
+.cover-next-leave-active { transform-origin: top center; }
+.cover-next-leave-to   { transform: scale(0.75); opacity: 0; }
+ .cover-next-enter-active { transform-origin: bottom center; }
+ .cover-next-enter-from   { transform: scale(0.75); opacity: 0; }
+
+/* 上一曲：i-旧封面以底部中心为锚点缩小渐隐  ii-新封面以顶部中心为锚点从最小值放大渐显 */
+.cover-prev-enter-active,
+.cover-prev-leave-active {
+  transition: transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.cover-prev-leave-active { transform-origin: bottom center; }
+.cover-prev-leave-to   { transform: scale(0.75); opacity: 0; }
+ .cover-prev-enter-active { transform-origin: top center; }
+ .cover-prev-enter-from   { transform: scale(0.75); opacity: 0; }
+
+/* 无动画（初始状态） */
+.cover-none-enter-active,
+.cover-none-leave-active {
+  transition: none;
+}
+
+/* ===== 歌词淡入淡出（出入同时执行） ===== */
+.lyrics-fade-enter-active,
+.lyrics-fade-leave-active {
+  transition: opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.lyrics-fade-leave-active {
+  position: absolute;
+  width: 100%;
+}
+.lyrics-fade-enter-from { opacity: 0; }
+.lyrics-fade-leave-to { opacity: 0; }
 </style>
