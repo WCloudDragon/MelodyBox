@@ -345,12 +345,16 @@ function onVolumeMouseUp() {
   display: flex; align-items: center; justify-content: center;
   color: var(--text-tertiary);
 }
+.player-bar {
+  --info-shift-x: 0px;
+}
+.player-bar.text-shifted {
+  --info-shift-x: -58px;
+}
 .info {
   flex: 1; min-width: 0;
+  transform: translateX(var(--info-shift-x));
   transition: transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-}
-.player-bar.text-shifted .info {
-  transform: translateX(-58px);
 }
 .info__title { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color 0.4s; }
 .info__artist { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color 0.4s; }
@@ -557,7 +561,7 @@ function onVolumeMouseUp() {
   transition: transform 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0) !important,
               opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.info-next-enter-from { transform: translateY(40px) !important; opacity: 0; }
+.info-next-enter-from { transform: translateX(var(--info-shift-x)) translateY(40px) !important; opacity: 0; }
 
 /* 上一曲：旧信息渐隐 | 新信息从上方 -40px 滑入 + 渐显 */
 .info-prev-leave-active {
@@ -568,7 +572,7 @@ function onVolumeMouseUp() {
   transition: transform 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0) !important,
               opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.info-prev-enter-from { transform: translateY(-40px) !important; opacity: 0; }
+.info-prev-enter-from { transform: translateX(var(--info-shift-x)) translateY(-40px) !important; opacity: 0; }
 
 /* 无动画（初始状态） */
 .info-none-enter-active,
