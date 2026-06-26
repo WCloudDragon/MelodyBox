@@ -539,11 +539,13 @@ function onVolumeMouseUp() {
 
 /* ===== 切歌时歌曲信息方向感知滑入动画 ===== */
 /* 出入同时执行：新信息从对应方向滑入（在旧信息上方），旧信息仅渐隐 */
+/* leave 绝对定位用 left:58px=封面(48)+gap(10) 匹配 flex 流中的实际位置 */
 .info-next-leave-active,
 .info-prev-leave-active {
   position: absolute;
-  top: 0; left: 0;
-  width: 100%;
+  top: 0;
+  left: 58px;
+  right: 0;
   z-index: 0;
 }
 .info-next-enter-active,
