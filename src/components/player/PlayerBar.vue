@@ -533,51 +533,42 @@ function onVolumeMouseUp() {
 }
 .player-bar.panel-active .volume-pop__val { color: rgba(255, 255, 255, 0.8); }
 
-/* ===== 切歌时歌曲信息滚动动画 — 与封面动画时长/曲线一致 ===== */
-/* 出入同时执行：离开的 info absolute 叠在进入的 info 上方 */
+/* ===== 切歌时歌曲信息方向感知滑入动画 ===== */
+/* 出入同时执行：新信息从对应方向滑入（在旧信息上方），旧信息仅渐隐 */
 .info-next-leave-active,
 .info-prev-leave-active {
   position: absolute;
-  top: 0;
-  left: 0;
+  top: 0; left: 0;
   width: 100%;
-  z-index: 1;
+  z-index: 0;
 }
 .info-next-enter-active,
 .info-prev-enter-active {
   position: relative;
-  z-index: 0;
+  z-index: 1;
 }
 
-/* 下一曲：旧信息向左滑出渐隐，新信息从右侧滑入渐显 */
-.info-next-enter-active,
+/* 下一曲：旧信息渐隐 | 新信息从右侧 60px 滑入 + 渐显 */
 .info-next-leave-active {
-  transition: transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0) !important,
-              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.info-next-leave-to {
-  transform: translateX(-30px) !important;
-  opacity: 0;
+.info-next-leave-to { opacity: 0; }
+.info-next-enter-active {
+  transition: transform 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0) !important,
+              opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.info-next-enter-from {
-  transform: translateX(30px) !important;
-  opacity: 0;
-}
+.info-next-enter-from { transform: translateX(60px) !important; opacity: 0; }
 
-/* 上一曲：旧信息向右滑出渐隐，新信息从左侧滑入渐显 */
-.info-prev-enter-active,
+/* 上一曲：旧信息渐隐 | 新信息从左侧 -60px 滑入 + 渐显 */
 .info-prev-leave-active {
-  transition: transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0) !important,
-              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.info-prev-leave-to {
-  transform: translateX(30px) !important;
-  opacity: 0;
+.info-prev-leave-to { opacity: 0; }
+.info-prev-enter-active {
+  transition: transform 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0) !important,
+              opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.info-prev-enter-from {
-  transform: translateX(-30px) !important;
-  opacity: 0;
-}
+.info-prev-enter-from { transform: translateX(-60px) !important; opacity: 0; }
 
 /* 无动画（初始状态） */
 .info-none-enter-active,
