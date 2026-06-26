@@ -54,7 +54,7 @@
                 :key="index"
                 class="lyric-line"
                 :class="{
-                  active: index === currentLineIndex,
+                  active: index === currentLineIndex && !jumpPending,
                   sung: currentLineIndex >= 0 && index < currentLineIndex,
                   upcoming: index > currentLineIndex,
                   'has-translation': line.translation,
@@ -109,6 +109,9 @@ const mainRef = ref(null)
 const scrollRef = ref(null)
 const lineRefs = ref({})
 const currentLineIndex = ref(-1)
+// 远距离点击跳转时延迟一帧再激活 .active，给 v-if 词级 span 以非活跃态先行渲染
+// 让 CSS transition（font-size/color 等 0.8s cubic-bezier）有"从 A→B"的插值空间
+const jumpPending = ref(false)
 const coverArtRef = ref(null)
 
 // 切歌动画方向：null = 无动画, 'next' = 下一曲, 'prev' = 上一曲
@@ -634,6 +637,11 @@ watch(currentTime, async (time) => {
     const oldIdx = currentLineIndex.value
     stopWordAnimLoop()
     currentLineIndex.value = idx
+    // 远距离跳转：延迟一帧应用 .active，给 v-if 创建的 word-seg span 以非活跃态先行渲染
+    if (Math.abs(idx - oldIdx) > 1) {
+      jumpPending.value = true
+      nextTick(() => { jumpPending.value = false })
+    }
     // 旧行逐字高亮渐变消失（无论是否在滚动模式都要执行）
     if (oldIdx >= 0 && parsedLyrics.value[oldIdx]?.wordLevel) fadeOutWordSegs(oldIdx)
     if (idx >= 0) {
