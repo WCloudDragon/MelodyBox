@@ -13,6 +13,7 @@ def init_db(app):
 
     conn = sqlite3.connect(db_path)
     conn.execute('PRAGMA foreign_keys = ON')
+    conn.execute('PRAGMA journal_mode=WAL')
     cursor = conn.cursor()
 
     # ========== 1. users ==========
@@ -224,15 +225,15 @@ def init_db(app):
         )
     ''')
 
-    # 桌面歌词设置迁移（SQLite ALTER TABLE 不支持 IF NOT EXISTS，静默忽略错误）
+    # 桌面歌词设置迁移（SQLite ALTER TABLE 不支持 IF NOT EXISTS，静默忽略列已存在错误）
     for mig in [
         'ALTER TABLE settings ADD COLUMN desktop_lyrics_font_size INTEGER DEFAULT 24',
         'ALTER TABLE settings ADD COLUMN desktop_lyrics_active_scale INTEGER DEFAULT 120',
         'ALTER TABLE settings ADD COLUMN desktop_lyrics_trans_scale INTEGER DEFAULT 60',
         'ALTER TABLE settings ADD COLUMN desktop_lyrics_view_lines INTEGER DEFAULT 2',
     ]:
-        try: db.executescript(mig)
-        except Exception: pass
+        try: conn.executescript(mig)
+        except sqlite3.OperationalError: pass
 
     # ========== 12. ai_api_config ==========
     cursor.execute('''
@@ -321,10 +322,11 @@ def init_db(app):
 
 
 def get_db(app):
-    """获取数据库连接（Row 工厂）"""
-    conn = sqlite3.connect(app.config['DB_PATH'])
+    """获取数据库连接（Row 工厂，WAL 模式 + 超时避免并发锁）"""
+    conn = sqlite3.connect(app.config['DB_PATH'], timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA foreign_keys = ON')
+    conn.execute('PRAGMA journal_mode=WAL')
     return conn
 
 

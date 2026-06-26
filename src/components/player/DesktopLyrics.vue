@@ -70,19 +70,33 @@ const lyricsPayload = computed(() => {
   const total = parsedLyrics.value.length
   const track = currentTrack.value
 
+  // 首个时间戳到达前，把歌曲信息作为一条合成歌词行插入队列开头
+  const needsSongInfo = track && (total === 0 || idx < 0)
+  const lines = parsedLyrics.value.map(line => ({
+    time: line.time,
+    original: line.original,
+    translation: line.translation || null,
+    wordLevel: line.wordLevel || false,
+    segments: line.segments || null
+  }))
+  let lineIndex = idx
+
+  if (needsSongInfo) {
+    lines.unshift({
+      time: 0,
+      original: track.title || '...',
+      translation: track.artist || null,
+      wordLevel: false,
+      segments: null
+    })
+    // currentLineIndex 指向这条合成行（0），后续真正歌词行从 1 开始
+    lineIndex = idx < 0 ? 0 : idx + 1
+  }
+
   return {
-    parsedLyrics: parsedLyrics.value.map(line => ({
-      time: line.time,
-      original: line.original,
-      translation: line.translation || null,
-      wordLevel: line.wordLevel || false,
-      segments: line.segments || null
-    })),
-    currentLineIndex: idx,
+    parsedLyrics: lines,
+    currentLineIndex: lineIndex,
     currentTime: currentTime.value,
-    songInfo: track && (total === 0 || idx < 0)
-      ? { title: track.title || '...', artist: track.artist || '' }
-      : null,
     settings: {
       fontSize: desktopLyricsFontSize.value,
       activeScale: desktopLyricsActiveScale.value,

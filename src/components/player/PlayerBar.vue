@@ -283,6 +283,9 @@ function onVolumeMouseUp() {
 .progress-top:hover {
   transform: scaleY(2);
 }
+.progress-top:hover .progress-top__time {
+  transform: scaleY(0.5);
+}
 .progress-top__bg {
   width: 100%;
   height: 100%;
@@ -293,7 +296,7 @@ function onVolumeMouseUp() {
 }
 .progress-top__time {
   position: absolute;
-  top: 12px;
+  bottom: 6px;
   font-size: 11px;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;

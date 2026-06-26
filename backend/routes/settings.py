@@ -69,10 +69,13 @@ def get_db():
 
 
 def row_to_settings(row):
-    """将数据库行（snake_case）转换为前端格式（camelCase）"""
+    """将数据库行（snake_case）转换为前端格式（camelCase），缺失列回退默认值"""
     result = {}
     for snake_key, camel_key in SNAKE_TO_CAMEL.items():
-        val = row[snake_key]
+        try:
+            val = row[snake_key]
+        except (KeyError, IndexError):
+            val = DEFAULT_SETTINGS.get(snake_key)
         # SQLite 用 0/1 存布尔值，转为 Python bool
         if snake_key in ('follow_system_theme', 'show_lyrics', 'enable_lyrics_blur',
                          'enable_domino_scroll', 'enable_word_lift', 'show_visualizer', 'auto_scan'):

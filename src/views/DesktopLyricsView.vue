@@ -11,15 +11,6 @@
         <div v-if="!hasData" class="dl-empty">桌面歌词</div>
 
         <template v-else>
-          <!-- 歌曲信息：未到歌词时间戳时显示 -->
-          <div v-if="showSongInfo" class="dl-line active">
-            <div class="dl-line__inner">
-              <p class="dl-line__original">{{ songInfo?.title || '...' }}</p>
-              <p v-if="songInfo?.artist" class="dl-line__translation">{{ songInfo.artist }}</p>
-            </div>
-          </div>
-
-          <!-- 歌词行 -->
           <template v-if="parsedLyrics.length > 0">
             <div
               v-for="(line, index) in parsedLyrics"
@@ -58,7 +49,6 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 // ===== 状态 =====
 const parsedLyrics = ref([])
 const currentLineIndex = ref(-1)
-const songInfo = ref(null)
 const desktopSettings = ref({ fontSize: 24, activeScale: 120, transScale: 60, viewLines: 2 })
 const hasData = ref(false)
 
@@ -69,10 +59,6 @@ const lineRefs = ref({})
 function setLineRef(el, index) {
   if (el) lineRefs.value[index] = el
 }
-
-const showSongInfo = computed(() =>
-  currentLineIndex.value < 0 && songInfo.value !== null
-)
 
 // ===== CSS 变量 =====
 const desktopVars = computed(() => {
@@ -396,12 +382,8 @@ if (window.electronAPI) {
 
     const newLyrics = data?.parsedLyrics || []
     const newIndex = data?.currentLineIndex ?? -1
-    const newSongInfo = data?.songInfo || null
 
     const lyricsChanged = JSON.stringify(newLyrics) !== JSON.stringify(parsedLyrics.value)
-
-    // 歌曲信息：始终更新
-    songInfo.value = newSongInfo
 
     if (lyricsChanged) {
       // 切歌：重置滚动
@@ -409,10 +391,10 @@ if (window.electronAPI) {
       hasData.value = true
       currentLineIndex.value = newIndex
 
-      // 逐字卡拉 OK：切歌时同步时钟
-      if (newIndex >= 0) {
+      // 逐字卡拉 OK：切歌时同步时钟（newIndex 可能因切歌时序问题越界，必须校验）
+      if (newIndex >= 0 && newIndex < newLyrics.length) {
         const activeLine = newLyrics[newIndex]
-        if (activeLine.wordLevel && activeLine.segments && activeLine.segments.length >= 2 && data.currentTime != null) {
+        if (activeLine && activeLine.wordLevel && activeLine.segments && activeLine.segments.length >= 2 && data.currentTime != null) {
           syncKaraokeClock(data.currentTime)
         }
         nextTick(() => scrollToLine(newIndex, false))
@@ -429,9 +411,9 @@ if (window.electronAPI) {
     currentLineIndex.value = newIndex
 
     // 逐字卡拉 OK：同步时钟 & 启动 rAF 循环
-    if (newIndex >= 0) {
+    if (newIndex >= 0 && newIndex < newLyrics.length) {
       const activeLine = newLyrics[newIndex]
-      if (activeLine.wordLevel && activeLine.segments && activeLine.segments.length >= 2 && data.currentTime != null) {
+      if (activeLine && activeLine.wordLevel && activeLine.segments && activeLine.segments.length >= 2 && data.currentTime != null) {
         syncKaraokeClock(data.currentTime)
       }
       nextTick(() => scrollToLine(newIndex, true))
