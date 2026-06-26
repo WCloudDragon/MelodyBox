@@ -47,7 +47,7 @@
               <p class="lyrics-empty-state__text">未找到内嵌歌词</p>
             </div>
 
-            <Transition v-else name="lyrics-fade">
+            <Transition v-else :name="lyricsAnimName">
               <div class="lyrics-scroll" :key="currentTrack?.path" ref="scrollRef">
               <div
                 v-for="(line, index) in parsedLyrics"
@@ -121,6 +121,12 @@ const coverAnimDir = ref(null)
 const coverAnimName = computed(() => {
   if (!coverAnimDir.value) return 'cover-none'
   return `cover-${coverAnimDir.value}`
+})
+
+// 歌词切歌过渡动画名称，复用 songChangeDirection 方向
+const lyricsAnimName = computed(() => {
+  if (!coverAnimDir.value) return 'lyrics-none'
+  return `lyrics-${coverAnimDir.value}`
 })
 const windowWidth = ref(window.innerWidth)
 
@@ -1174,15 +1180,34 @@ onBeforeUnmount(() => {
   transition: none;
 }
 
-/* ===== 歌词淡入淡出（出入同时执行） ===== */
-.lyrics-fade-enter-active,
-.lyrics-fade-leave-active {
-  transition: opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+/* ===== 歌词切歌过渡动画：方向感知滑入滑出 + 渐隐渐显（出入同时执行） ===== */
+.lyrics-next-enter-active,
+.lyrics-next-leave-active,
+.lyrics-prev-enter-active,
+.lyrics-prev-leave-active {
+  transition: transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.lyrics-fade-leave-active {
+.lyrics-next-leave-active,
+.lyrics-prev-leave-active {
   position: absolute;
   width: 100%;
+  z-index: 0;
 }
-.lyrics-fade-enter-from { opacity: 0; }
-.lyrics-fade-leave-to { opacity: 0; }
+.lyrics-next-enter-active,
+.lyrics-prev-enter-active {
+  position: relative;
+  z-index: 1;
+}
+/* 下一曲：新歌词从下方 50px 滑入并渐显，旧歌词渐隐 */
+.lyrics-next-enter-from { transform: translateY(50px); opacity: 0; }
+.lyrics-next-leave-to   { opacity: 0; }
+/* 上一曲：新歌词从上方 50px 滑入并渐显，旧歌词渐隐 */
+.lyrics-prev-enter-from { transform: translateY(-50px); opacity: 0; }
+.lyrics-prev-leave-to   { opacity: 0; }
+/* 无动画（初始状态） */
+.lyrics-none-enter-active,
+.lyrics-none-leave-active {
+  transition: none;
+}
 </style>
