@@ -548,7 +548,7 @@ function onVolumeMouseUp() {
   z-index: 1;
 }
 
-/* 下一曲：旧信息渐隐 | 新信息从右侧 60px 滑入 + 渐显 */
+/* 下一曲：旧信息渐隐 | 新信息从下方 40px 滑入 + 渐显 */
 .info-next-leave-active {
   transition: opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
@@ -557,9 +557,9 @@ function onVolumeMouseUp() {
   transition: transform 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0) !important,
               opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.info-next-enter-from { transform: translateX(60px) !important; opacity: 0; }
+.info-next-enter-from { transform: translateY(40px) !important; opacity: 0; }
 
-/* 上一曲：旧信息渐隐 | 新信息从左侧 -60px 滑入 + 渐显 */
+/* 上一曲：旧信息渐隐 | 新信息从上方 -40px 滑入 + 渐显 */
 .info-prev-leave-active {
   transition: opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
@@ -568,7 +568,7 @@ function onVolumeMouseUp() {
   transition: transform 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0) !important,
               opacity 0.42s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.info-prev-enter-from { transform: translateX(-60px) !important; opacity: 0; }
+.info-prev-enter-from { transform: translateY(-40px) !important; opacity: 0; }
 
 /* 无动画（初始状态） */
 .info-none-enter-active,
