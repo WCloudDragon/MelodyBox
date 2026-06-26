@@ -1194,7 +1194,6 @@ onBeforeUnmount(() => {
               filter 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
   position: absolute;
   top: 0;
-  left: 0;
   width: 100%;
   z-index: 0;
 }
