@@ -547,7 +547,7 @@ function onVolumeMouseUp() {
   top: 50%;
   left: 58px;
   right: 0;
-  transform: translateY(-50%);
+  transform: translateX(var(--info-shift-x)) translateY(-50%);
   z-index: 0;
 }
 .info-next-enter-active,
