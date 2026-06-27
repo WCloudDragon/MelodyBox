@@ -224,9 +224,9 @@ function stopRhythmLoop() {
   _prev.speed = 0; _prev.scale = 0; _prev.midOp = 0; _prev.hlOp = 0
 }
 
-// 动态背景开关/可见性变化时控制 RAF 循环
-watch([() => settings.enableDynamicBg, () => props.visible], ([bgOn, visible]) => {
-  if (bgOn && visible) startRhythmLoop()
+// 动态背景开关/可见性/律动开关变化时控制 RAF 循环
+watch([() => settings.enableDynamicBg, () => settings.enableAudioRhythm, () => props.visible], ([bgOn, rhythmOn, visible]) => {
+  if (bgOn && rhythmOn && visible) startRhythmLoop()
   else stopRhythmLoop()
 })
 

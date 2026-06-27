@@ -146,6 +146,13 @@
         </div>
         <div class="setting-row">
           <div class="setting-label">
+            <span class="setting-title">音频律动</span>
+            <span class="setting-desc">全屏歌词页光球随音频节奏改变速度与透明度（关闭时光球匀速流动）</span>
+          </div>
+          <el-switch v-model="settingsStore.enableAudioRhythm" @change="settingsStore.saveSettings()" />
+        </div>
+        <div class="setting-row">
+          <div class="setting-label">
             <span class="setting-title">歌词行模糊</span>
             <span class="setting-desc">远离当前行的歌词行产生模糊效果（关闭可提升低配设备性能）</span>
           </div>
