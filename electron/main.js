@@ -1,5 +1,5 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron')
-const { execSync } = require('child_process')
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, systemPreferences } = require('electron')
+const { execSync, exec } = require('child_process')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
@@ -645,22 +645,37 @@ ipcMain.on('lyrics:resize', (_event, { width, height }) => {
 
 // ==================== Windows 主题色 ====================
 
+// 从 DWM 注册表异步读取主题色（与旧 PowerShell 方式读同一个键，但非阻塞）
+function readDwmAccentColor() {
+  return new Promise((resolve) => {
+    exec('reg query "HKCU\\Software\\Microsoft\\Windows\\DWM" /v AccentColor', { timeout: 3000 }, (err, stdout) => {
+      if (err) { resolve(null); return }
+      // 输出格式: "    AccentColor    REG_DWORD    0xff60b3e2"
+      const match = stdout.match(/0x([0-9a-fA-F]{8})/)
+      if (!match) { resolve(null); return }
+      const dword = parseInt(match[1], 16)
+      // AABBGGRR → #RRGGBB
+      const r = dword & 0xff
+      const g = (dword >> 8) & 0xff
+      const b = (dword >> 16) & 0xff
+      resolve('#' + [r, g, b].map(c => c.toString(16).padStart(2, '0')).join(''))
+    })
+  })
+}
+
 ipcMain.handle('system:getAccentColor', async () => {
   try {
-    // 从注册表读取 Windows DWM 主题色 (DWORD, AABBGGRR 格式)
-    const raw = execSync(
-      'powershell -NoProfile -Command "Get-ItemPropertyValue -Path \'HKCU:\\Software\\Microsoft\\Windows\\DWM\' -Name AccentColor"',
-      { timeout: 3000 }
-    ).toString().trim()
-    const dword = parseInt(raw, 10)
-    if (isNaN(dword)) return null
-    // AABBGGRR → #RRGGBB
-    const r = dword & 0xff
-    const g = (dword >> 8) & 0xff
-    const b = (dword >> 16) & 0xff
-    return '#' + [r, g, b].map(c => c.toString(16).padStart(2, '0')).join('')
+    return await readDwmAccentColor()
   } catch {
     return null
+  }
+})
+
+// 系统主题色变化时重新读取 DWM 注册表并推送（事件驱动，异步非阻塞）
+systemPreferences.on('accent-color-changed', async (_event, _newColor) => {
+  const color = await readDwmAccentColor()
+  if (color && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('system:accentColorChanged', color)
   }
 })
 

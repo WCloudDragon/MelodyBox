@@ -29,6 +29,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Windows 主题色
   getAccentColor: () => ipcRenderer.invoke('system:getAccentColor'),
+  onAccentColorChanged: (callback) => {
+    ipcRenderer.on('system:accentColorChanged', (_event, color) => callback(color))
+  },
 
   // 桌面歌词窗口控制（主窗口使用）
   lyricsOpen: () => ipcRenderer.send('lyrics:open'),

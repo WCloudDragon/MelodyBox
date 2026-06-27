@@ -156,23 +156,7 @@ watch(() => settingsStore.accentColor, (val) => {
   }
 })
 
-// Windows 系统主题色变化的监听（通过注册表监控不可行，改为定时轮询 + 窗口焦点事件）
-let systemColorTimer = null
-function startSystemColorPolling() {
-  stopSystemColorPolling()
-  if (!settingsStore.followSystemTheme) return
-  systemColorTimer = setInterval(async () => {
-    if (document.hasFocus()) {
-      await fetchAndApplySystemColor()
-    }
-  }, 3000)
-}
-function stopSystemColorPolling() {
-  if (systemColorTimer) { clearInterval(systemColorTimer); systemColorTimer = null }
-}
-watch(() => settingsStore.followSystemTheme, (val) => {
-  val ? startSystemColorPolling() : stopSystemColorPolling()
-})
+// 监听系统主题色变化（事件驱动，零轮询，零开销）
 
 onMounted(() => {
   playerStore.loadSettings()
@@ -183,7 +167,14 @@ onMounted(() => {
   } else {
     applyAccentColor(settingsStore.accentColor)
   }
-  startSystemColorPolling()
+  // 监听系统主题色变化（事件驱动）
+  if (window.electronAPI?.onAccentColorChanged) {
+    window.electronAPI.onAccentColorChanged((color) => {
+      if (settingsStore.followSystemTheme && color) {
+        applyAccentColor(color)
+      }
+    })
+  }
   // 初始化深色/浅色主题
   applyTheme()
   // 监听系统色彩方案变化
