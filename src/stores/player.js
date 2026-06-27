@@ -67,6 +67,7 @@ export const usePlayerStore = defineStore('player', () => {
   function initAudio() {
     if (audio.value) return
     audio.value = new Audio()
+    audio.value.crossOrigin = 'anonymous'    // Web Audio API 取流必备
     audio.value.preload = 'auto'
     audio.value.volume = volume.value
 
