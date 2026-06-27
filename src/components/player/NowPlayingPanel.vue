@@ -198,7 +198,7 @@ function startRhythmLoop() {
 
     // 写入 CSS 变量 — 值不变时跳过 setProperty，避免无意义的样式重算
     // 低频能量 → 所有光球缩放
-    const sc = Math.round((1 + _rhythmEnergy.low * 0.35) * 100) / 100
+    const sc = Math.round((1 + _rhythmEnergy.low * 0.6) * 100) / 100
     if (sc !== _prev.scale) { _flowEl.style.setProperty('--flow-scale', sc); _prev.scale = sc }
     // 中频能量 → mid 层透明度
     const mo = Math.round((0.6 + _rhythmEnergy.mid * 0.35) * 100) / 100
