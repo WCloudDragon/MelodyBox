@@ -542,6 +542,92 @@ ipcMain.handle('audio:getPort', () => audioServerPort)
 ipcMain.on('lyrics:open', () => createLyricsWindow())
 ipcMain.on('lyrics:close', () => closeLyricsWindow())
 ipcMain.on('lyrics:update', (_event, data) => updateLyricsData(data))
+
+// ==================== 光球律动日志窗口 (不透明 + 置顶) ====================
+let rhythmDebugWindow = null
+
+function getRhythmDebugUrl() {
+  const isDev = !app.isPackaged
+  if (isDev) {
+    return 'http://localhost:5173/#/rhythm-debug'
+  }
+  return `file://${path.join(__dirname, '..', 'dist', 'index.html')}#/rhythm-debug`
+}
+
+function createRhythmDebugWindow() {
+  if (rhythmDebugWindow && !rhythmDebugWindow.isDestroyed()) {
+    rhythmDebugWindow.show()
+    rhythmDebugWindow.focus()
+    return
+  }
+
+  let rhythmLoaded = false
+
+  const { screen } = require('electron')
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { width: screenWidth } = primaryDisplay.workAreaSize
+
+  rhythmDebugWindow = new BrowserWindow({
+    width: 360,
+    height: 520,
+    x: screenWidth - 380,
+    y: 60,
+    frame: false,
+    transparent: false,        // 不透明
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    },
+    backgroundColor: '#1a1a2e',
+    show: false
+  })
+
+  rhythmDebugWindow.setAlwaysOnTop(true, 'screen-saver')
+
+  const url = getRhythmDebugUrl()
+  rhythmDebugWindow.loadURL(url)
+
+  rhythmDebugWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[rhythm-debug] 渲染进程崩溃:', details.reason, details.exitCode)
+    if (rhythmDebugWindow && !rhythmDebugWindow.isDestroyed()) {
+      rhythmDebugWindow.close()
+    }
+    rhythmDebugWindow = null
+  })
+
+  rhythmDebugWindow.once('ready-to-show', () => {
+    if (rhythmDebugWindow && !rhythmDebugWindow.isDestroyed()) {
+      rhythmDebugWindow.show()
+      rhythmLoaded = true
+    }
+  })
+
+  rhythmDebugWindow.on('closed', () => {
+    rhythmDebugWindow = null
+  })
+}
+
+function closeRhythmDebugWindow() {
+  if (rhythmDebugWindow && !rhythmDebugWindow.isDestroyed()) {
+    rhythmDebugWindow.close()
+    rhythmDebugWindow = null
+  }
+}
+
+function updateRhythmDebugData(data) {
+  if (rhythmDebugWindow && !rhythmDebugWindow.isDestroyed()) {
+    rhythmDebugWindow.webContents.send('rhythm:data', data)
+  }
+}
+
+ipcMain.on('rhythm:open', () => createRhythmDebugWindow())
+ipcMain.on('rhythm:close', () => closeRhythmDebugWindow())
+ipcMain.on('rhythm:update', (_event, data) => updateRhythmDebugData(data))
 ipcMain.on('lyrics:resize', (_event, { width, height }) => {
   if (lyricsWindow && !lyricsWindow.isDestroyed()) {
     const before = lyricsWindow.getSize()

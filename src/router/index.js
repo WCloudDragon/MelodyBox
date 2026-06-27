@@ -72,6 +72,12 @@ const routes = [
     name: 'desktopLyrics',
     component: () => import('@/views/DesktopLyricsView.vue'),
     meta: { title: '桌面歌词' }
+  },
+  {
+    path: '/rhythm-debug',
+    name: 'rhythmDebug',
+    component: () => import('@/views/RhythmDebugView.vue'),
+    meta: { title: '律动日志' }
   }
 ]
 

@@ -42,5 +42,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onLyricsData: (callback) => {
     ipcRenderer.on('lyrics:data', (_event, data) => callback(data))
   },
-  lyricsResize: (width, height) => ipcRenderer.send('lyrics:resize', { width, height })
+  lyricsResize: (width, height) => ipcRenderer.send('lyrics:resize', { width, height }),
+
+  // 光球律动日志（主窗口使用）
+  rhythmOpen: () => ipcRenderer.send('rhythm:open'),
+  rhythmClose: () => ipcRenderer.send('rhythm:close'),
+  rhythmUpdate: (data) => ipcRenderer.send('rhythm:update', data),
+
+  // 光球律动日志数据接收（日志窗口使用）
+  onRhythmData: (callback) => {
+    ipcRenderer.on('rhythm:data', (_event, data) => callback(data))
+  }
 })
