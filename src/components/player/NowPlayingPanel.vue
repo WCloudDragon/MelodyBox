@@ -12,10 +12,19 @@
 
   <transition name="panel-slide" @after-leave="$emit('afterLeave')">
     <div v-if="visible" class="np-overlay" @click.self="$emit('close')">
-      <!-- 模糊背景：切歌时交叉淡入淡出 -->
-      <div class="np-bg">
+      <!-- 动态背景：模糊底图 + 双层渐变叠化漂移 -->
+      <div class="np-bg" :style="{ backgroundColor: palette.dark }">
+        <!-- 层 0：模糊封面底图 -->
         <Transition name="bg-fade">
           <img v-if="currentTrack?.cover" :key="currentTrack?.path" :src="currentTrack.cover" class="np-bg__img" decoding="async" />
+        </Transition>
+        <!-- 层 1：大范围渐变缓慢漂移 -->
+        <Transition name="bg-grad-fade">
+          <div v-if="currentTrack?.cover" :key="'g1-' + currentTrack?.path" class="np-bg__grad np-bg__grad--1" :style="grad1Style" />
+        </Transition>
+        <!-- 层 2：小范围渐变反向漂移 -->
+        <Transition name="bg-grad-fade">
+          <div v-if="currentTrack?.cover" :key="'g2-' + currentTrack?.path" class="np-bg__grad np-bg__grad--2" :style="grad2Style" />
         </Transition>
       </div>
 
@@ -93,6 +102,7 @@ import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
 import { parseLRC, getCurrentLyricIndex } from '@/utils/format'
+import { extractCoverColors } from '@/utils/colorExtract'
 
 const props = defineProps({ visible: { type: Boolean, default: false } })
 const emit = defineEmits(['close', 'afterLeave', 'flyComplete'])
@@ -104,6 +114,40 @@ const { lyricsFontSize, lyricsFontWeight } = storeToRefs(settings)
 const { lyricsTransScale, lyricsActiveScale } = storeToRefs(settings)
 const { enableLyricsBlur, enableDominoScroll, enableWordLift, wordAnimFps } = storeToRefs(settings)
 const coverOriginRect = inject('coverOriginRect', ref(null))
+
+// ==================== 动态背景：封面主色提取 + 渐变层 ====================
+
+const palette = ref({
+  light: '#a5a0d4',
+  vibrant: '#6366f1',
+  dark: '#1a1a2e',
+  muted: '#3a3570'
+})
+
+// 切歌时提取封面主色，面板打开时首次提取
+watch(() => currentTrack.value?.cover, async (cover) => {
+  if (cover && props.visible) {
+    const colors = await extractCoverColors(cover)
+    palette.value = colors
+  }
+})
+
+watch(() => props.visible, async (val) => {
+  if (val && currentTrack.value?.cover) {
+    const colors = await extractCoverColors(currentTrack.value.cover)
+    palette.value = colors
+  }
+})
+
+const grad1Style = computed(() => ({
+  background: `radial-gradient(ellipse 60% 50% at 30% 40%, ${palette.value.light}28, ${palette.value.vibrant}1a 40%, transparent 70%)`
+}))
+
+const grad2Style = computed(() => ({
+  background: `radial-gradient(ellipse 50% 60% at 70% 60%, ${palette.value.vibrant}22, ${palette.value.muted}18 50%, transparent 80%)`
+}))
+
+// ==================== 主面板 ====================
 
 const mainRef = ref(null)
 const scrollRef = ref(null)
@@ -880,12 +924,12 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-/* 模糊背景 */
 .np-bg {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background-color: #080808;
+  /* 动态背景色通过 :style 注入，实现切歌时颜色渐变 */
+  transition: background-color 1.2s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .np-bg__img {
   width: 120%;
@@ -894,9 +938,49 @@ onBeforeUnmount(() => {
   top: -10%;
   left: -10%;
   object-fit: cover;
-  filter: blur(60px) brightness(0.5);
+  filter: blur(80px) brightness(0.45) saturate(1.5);
   will-change: filter;
 }
+
+/* ===== 渐变叠层 ===== */
+.np-bg__grad {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  will-change: transform;
+  /* background 通过 :style 注入，transition 实现切歌时颜色平滑插值 */
+  transition: background 1.2s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.np-bg__grad--1 {
+  animation: bg-drift-1 24s ease-in-out infinite;
+  mix-blend-mode: overlay;
+}
+.np-bg__grad--2 {
+  animation: bg-drift-2 28s ease-in-out infinite;
+  mix-blend-mode: soft-light;
+}
+
+@keyframes bg-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25%  { transform: translate(4%, 2%) scale(1.04); }
+  50%  { transform: translate(-2%, 5%) scale(0.97); }
+  75%  { transform: translate(-5%, -3%) scale(1.03); }
+}
+@keyframes bg-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%  { transform: translate(-5%, -4%) scale(1.05); }
+  66%  { transform: translate(4%, 3%) scale(0.96); }
+}
+
+/* 渐变层切歌淡入淡出 */
+.bg-grad-fade-enter-active,
+.bg-grad-fade-leave-active {
+  transition: opacity 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.bg-grad-fade-enter-active { z-index: 1; }
+.bg-grad-fade-leave-active { z-index: 0; }
+.bg-grad-fade-enter-from { opacity: 0; }
+.bg-grad-fade-leave-to   { opacity: 0; }
 
 
 /* 窗口控制器风格关闭按钮 */
