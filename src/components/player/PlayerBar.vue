@@ -17,10 +17,12 @@
       <!-- 左侧：封面 + 歌名歌手 -->
       <div class="player-bar__left" v-ripple @click="toggleNowPlaying" title="点击查看歌词">
         <div class="now-playing">
-          <img v-if="currentTrack?.cover" :src="currentTrack.cover" class="cover" ref="coverRef" />
-          <div v-else class="cover cover--empty" ref="coverRef">
-            <el-icon size="22"><Headset /></el-icon>
-          </div>
+          <Transition :name="coverAnimName">
+            <img v-if="currentTrack?.cover" :key="currentTrack?.path" :src="currentTrack.cover" class="cover" ref="coverRef" />
+            <div v-else :key="'empty'" class="cover cover--empty" ref="coverRef">
+              <el-icon size="22"><Headset /></el-icon>
+            </div>
+          </Transition>
           <Transition :name="infoAnimName">
             <div class="info" :key="currentTrack?.path">
               <div class="info__title">{{ currentTrack?.title || '未选择歌曲' }}</div>
@@ -157,10 +159,17 @@ const infoAnimName = computed(() => {
   if (!infoAnimDir.value) return 'info-none'
   return `info-${infoAnimDir.value}`
 })
+// 封面切换动画方向（与全屏歌词页一致）
+const coverAnimDir = ref(null)
+const coverAnimName = computed(() => {
+  if (!coverAnimDir.value) return 'cover-none'
+  return `cover-${coverAnimDir.value}`
+})
 watch(songChangeDirection, (dir) => {
   if (dir) {
     infoAnimDir.value = dir
-    setTimeout(() => { infoAnimDir.value = null }, 650)
+    coverAnimDir.value = dir
+    setTimeout(() => { infoAnimDir.value = null; coverAnimDir.value = null }, 650)
   }
 })
 
@@ -583,6 +592,47 @@ function onVolumeMouseUp() {
 /* 无动画（初始状态） */
 .info-none-enter-active,
 .info-none-leave-active {
+  transition: none;
+}
+
+/* ===== 切歌封面方向感知动画（与全屏歌词页一致） ===== */
+.cover-next-leave-active,
+.cover-prev-leave-active {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+}
+.cover-next-enter-active,
+.cover-prev-enter-active {
+  position: relative;
+  z-index: 1;
+}
+
+/* 下一曲：旧封面以顶部中心为锚点缩小渐隐 | 新封面从底部缩小放大渐显 */
+.cover-next-enter-active,
+.cover-next-leave-active {
+  transition: transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.cover-next-leave-active { transform-origin: top center; }
+.cover-next-leave-to   { transform: scale(0.75); opacity: 0; }
+.cover-next-enter-active { transform-origin: bottom center; }
+.cover-next-enter-from   { transform: scale(0.75); opacity: 0; }
+
+/* 上一曲：旧封面以底部中心为锚点缩小渐隐 | 新封面从顶部缩小放大渐显 */
+.cover-prev-enter-active,
+.cover-prev-leave-active {
+  transition: transform 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.cover-prev-leave-active { transform-origin: bottom center; }
+.cover-prev-leave-to   { transform: scale(0.75); opacity: 0; }
+.cover-prev-enter-active { transform-origin: top center; }
+.cover-prev-enter-from   { transform: scale(0.75); opacity: 0; }
+
+.cover-none-enter-active,
+.cover-none-leave-active {
   transition: none;
 }
 </style>
