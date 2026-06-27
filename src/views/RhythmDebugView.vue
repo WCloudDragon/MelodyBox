@@ -66,7 +66,7 @@
       <section class="rd-section">
         <div class="rd-section__title">能量变化率 Δ（驱动缩放）</div>
         <div class="rd-bar-row">
-          <span class="rd-bar-label" style="color:#6ee7b7">基线</span>
+          <span class="rd-bar-label" style="color:#6ee7b7">L基线</span>
           <span class="rd-bar-val">{{ fmt(data.lowBaseline) }}</span>
           <div class="rd-bar">
             <div class="rd-bar__fill" :style="{ width: (data.lowBaseline * 100) + '%', background: '#6ee7b7' }"></div>
@@ -93,6 +93,27 @@
             <div class="rd-bar__fill" :style="{ width: Math.min(100, (data.accumulator || 0) * 100) + '%', background: '#f97316' }"></div>
           </div>
         </div>
+        <div class="rd-bar-row" style="margin-top:4px;border-top:1px solid #2d2d4a;padding-top:6px">
+          <span class="rd-bar-label" style="color:#34d399">M基线</span>
+          <span class="rd-bar-val">{{ fmt(data.midBaseline) }}</span>
+          <div class="rd-bar">
+            <div class="rd-bar__fill" :style="{ width: (data.midBaseline * 100) + '%', background: '#34d399' }"></div>
+          </div>
+        </div>
+        <div class="rd-bar-row">
+          <span class="rd-bar-label" style="color:#2dd4bf">MΔRaw</span>
+          <span class="rd-bar-val">{{ fmt(data.midDelta) }}</span>
+          <div class="rd-bar">
+            <div class="rd-bar__fill" :style="{ width: Math.min(100, (data.midDelta || 0) * 500) + '%', background: '#2dd4bf' }"></div>
+          </div>
+        </div>
+        <div class="rd-bar-row">
+          <span class="rd-bar-label" style="color:#14b8a6">MΔSmt</span>
+          <span class="rd-bar-val">{{ fmt(data.midDeltaSmoothed) }}</span>
+          <div class="rd-bar">
+            <div class="rd-bar__fill" :style="{ width: Math.min(100, (data.midDeltaSmoothed || 0) * 500) + '%', background: '#14b8a6' }"></div>
+          </div>
+        </div>
       </section>
     </template>
   </div>
@@ -106,7 +127,8 @@ const fps = ref(0)
 const data = ref({
   lowRaw: 0, midRaw: 0, fullRaw: 0,
   lowSmoothed: 0, midSmoothed: 0, fullSmoothed: 0,
-  lowBaseline: 0,
+  lowBaseline: 0, midBaseline: 0,
+  midDelta: 0, midDeltaSmoothed: 0,
   scale: '1', midOp: '0.7', hlOp: '0.55',
   flowElFound: false
 })
