@@ -162,11 +162,16 @@ watch(() => settings.enableDynamicBg, async (on) => {
   }
 })
 
-// ==================== 音频律动 — 频谱分析驱动光球速度/缩放/透明度 ====================
+// ==================== 音频律动 — 频谱分析驱动光球缩放/透明度 ====================
+//  光球缩放：delta 脉冲 + 能量累积器（密集鼓点持续膨胀，安静段缓慢泄放）
+//  光球透明度：中频/全频能量 → 氛围渐变
 let _rhythmRaf = null
 let _flowEl = null                           // 缓存 DOM 引用，避免每帧 querySelector
 const _rhythmEnergy = { low: 0, mid: 0, full: 0 }
 const _prev = { scale: 0, midOp: 0, hlOp: 0 }     // 值未变时跳过 setProperty
+let _prevLowRaw = 0                          // 上帧低频原始值，用于计算 delta
+let _deltaSmoothed = 0                       // 平滑后的低频变化率
+let _accumulator = 0                         // 能量累积器，密集鼓点持续走高，安静段缓慢衰减
 
 function startRhythmLoop() {
   const analyser = analyserNode.value
@@ -178,9 +183,10 @@ function startRhythmLoop() {
     analyser.getByteFrequencyData(freqData)
 
     // for 循环累加，避免 slice+reduce 每帧分配临时数组（GC 压力）
+    // LOW: bins 1-4（约 344~1723Hz），跳过 bin0 常量 DC/sub-bass，抓鼓点 punch 段
     let lowSum = 0
-    for (let i = 0; i < 6; i++) lowSum += freqData[i]
-    const lowRaw = lowSum / 1530               // 6 * 255
+    for (let i = 1; i < 5; i++) lowSum += freqData[i]
+    const lowRaw = lowSum / 1020              // 4 * 255
 
     let midSum = 0
     for (let i = 6; i < 31; i++) midSum += freqData[i]
@@ -196,10 +202,19 @@ function startRhythmLoop() {
     _rhythmEnergy.mid = lerp(_rhythmEnergy.mid, midRaw)
     _rhythmEnergy.full = lerp(_rhythmEnergy.full, fullRaw)
 
-    // 写入 CSS 变量 — 值不变时跳过 setProperty，避免无意义的样式重算
-    // 低频能量 → 所有光球缩放
-    const sc = Math.round((1 + _rhythmEnergy.low * 0.6) * 100) / 100
+    // 低频能量变化率（加速度）→ 光球脉冲缩放
+    // 只取正向 delta（能量上升 = 鼓点击中瞬间），忽略回缩
+    const lowDelta = Math.max(0, lowRaw - _prevLowRaw)
+    _prevLowRaw = lowRaw
+    // delta 平滑（因子 0.08），约 0.5s 达到目标，避免抽搐式抖动
+    _deltaSmoothed = _deltaSmoothed + (lowDelta - _deltaSmoothed) * 0.08
+    // 能量累积：每次鼓点注入 delta × 0.15，每帧自然衰减 3%（~0.5s 泄放）
+    _accumulator += lowDelta * 0.15
+    _accumulator *= 0.97
+    // scale = 基础 + delta脉冲 + 累积能量（上限 2.0）
+    const sc = Math.round(Math.min(2.0, 1 + _deltaSmoothed * 8 + _accumulator * 3) * 100) / 100
     if (sc !== _prev.scale) { _flowEl.style.setProperty('--flow-scale', sc); _prev.scale = sc }
+
     // 中频能量 → mid 层透明度
     const mo = Math.round((0.6 + _rhythmEnergy.mid * 0.35) * 100) / 100
     if (mo !== _prev.midOp) { _flowEl.style.setProperty('--flow-opacity-mid', mo); _prev.midOp = mo }
@@ -211,6 +226,7 @@ function startRhythmLoop() {
     window.electronAPI?.rhythmUpdate({
       lowRaw, midRaw, fullRaw,
       lowSmoothed: _rhythmEnergy.low, midSmoothed: _rhythmEnergy.mid, fullSmoothed: _rhythmEnergy.full,
+      lowDelta, deltaSmoothed: _deltaSmoothed, accumulator: _accumulator,
       scale: String(sc), midOp: String(mo), hlOp: String(ho),
       flowElFound: true
     })
@@ -233,7 +249,8 @@ function stopRhythmLoop() {
   _flowEl = null
   _rhythmEnergy.low = 0; _rhythmEnergy.mid = 0; _rhythmEnergy.full = 0
   _prev.scale = 0; _prev.midOp = 0; _prev.hlOp = 0
-  window.electronAPI?.rhythmUpdate({ lowRaw:0,midRaw:0,fullRaw:0, lowSmoothed:0,midSmoothed:0,fullSmoothed:0, scale:'1',midOp:'0.7',hlOp:'0.55', flowElFound:false })
+  _prevLowRaw = 0; _deltaSmoothed = 0; _accumulator = 0
+  window.electronAPI?.rhythmUpdate({ lowRaw:0,midRaw:0,fullRaw:0, lowSmoothed:0,midSmoothed:0,fullSmoothed:0, lowDelta:0,deltaSmoothed:0,accumulator:0, scale:'1',midOp:'0.7',hlOp:'0.55', flowElFound:false })
 }
 
 // 动态背景开关/可见性/律动开关变化时控制 RAF 循环
@@ -1040,10 +1057,10 @@ onBeforeUnmount(() => {
   position: absolute;
   border-radius: 50%;
   background: var(--c, transparent);
-  filter: blur(80px);
+  filter: blur(45px);
   opacity: 0.7;
   will-change: top, left;
-  transition: background 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: background 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0), transform 0.15s ease-out;
 }
 .np-bg__blob--1 { --base-dur: 14s; width: 45%; height: 45%; top: 10%; left: 10%; animation-name: blob-float-1; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
 .np-bg__blob--2 { --base-dur: 17s; width: 50%; height: 50%; top: 50%; left: 60%; animation: blob-float-2 17s ease-in-out infinite 2s; }

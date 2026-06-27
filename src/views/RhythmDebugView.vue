@@ -61,6 +61,32 @@
         <div class="rd-kv"><span>midRaw</span><span>{{ fmt(data.midRaw) }}</span></div>
         <div class="rd-kv"><span>fullRaw</span><span>{{ fmt(data.fullRaw) }}</span></div>
       </section>
+
+      <!-- 能量变化率（加速度） -->
+      <section class="rd-section">
+        <div class="rd-section__title">能量变化率 Δ（驱动缩放）</div>
+        <div class="rd-bar-row">
+          <span class="rd-bar-label" style="color:#a78bfa">ΔRaw</span>
+          <span class="rd-bar-val">{{ fmt(data.lowDelta) }}</span>
+          <div class="rd-bar">
+            <div class="rd-bar__fill" :style="{ width: Math.min(100, (data.lowDelta || 0) * 500) + '%', background: '#a78bfa' }"></div>
+          </div>
+        </div>
+        <div class="rd-bar-row">
+          <span class="rd-bar-label" style="color:#c084fc">ΔSmt</span>
+          <span class="rd-bar-val">{{ fmt(data.deltaSmoothed) }}</span>
+          <div class="rd-bar">
+            <div class="rd-bar__fill" :style="{ width: Math.min(100, (data.deltaSmoothed || 0) * 500) + '%', background: '#c084fc' }"></div>
+          </div>
+        </div>
+        <div class="rd-bar-row">
+          <span class="rd-bar-label" style="color:#f97316">Acc</span>
+          <span class="rd-bar-val">{{ fmt(data.accumulator) }}</span>
+          <div class="rd-bar">
+            <div class="rd-bar__fill" :style="{ width: Math.min(100, (data.accumulator || 0) * 100) + '%', background: '#f97316' }"></div>
+          </div>
+        </div>
+      </section>
     </template>
   </div>
 </template>
