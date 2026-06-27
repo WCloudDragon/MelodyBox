@@ -127,13 +127,27 @@ const coverArtRef = ref(null)
 // ==================== 动态流光背景（封面主色驱动渐变流动） ====================
 const flowColors = ref(null)
 
+// HTTP cover URL → thumb:// URL，绕过 Flask 直读本地缩略图，零 HTTP 开销
+function toThumbUrl(coverUrl, size = 332) {
+  if (!coverUrl) return null
+  try {
+    const u = new URL(coverUrl)
+    const coverPath = u.searchParams.get('path')
+    if (coverPath) {
+      const basename = decodeURIComponent(coverPath).split(/[/\\]/).pop()
+      if (basename) return `thumb://${size}/${basename}`
+    }
+  } catch {}
+  return coverUrl // fallback：非标准 HTTP URL 走原路径
+}
+
 // 封面变化时异步提取主色
 watch(() => currentTrack.value?.cover, async (cover) => {
   if (!cover || !settings.enableDynamicBg) {
     flowColors.value = null
     return
   }
-  const colors = await extractCoverColors(cover)
+  const colors = await extractCoverColors(toThumbUrl(cover))
   if (currentTrack.value?.cover !== cover) return // 避免竞态：封面已切换
   flowColors.value = colors
 })
@@ -143,7 +157,7 @@ watch(() => settings.enableDynamicBg, async (on) => {
   if (!on) { flowColors.value = null; return }
   const cover = currentTrack.value?.cover
   if (cover) {
-    const colors = await extractCoverColors(cover)
+    const colors = await extractCoverColors(toThumbUrl(cover))
     flowColors.value = colors
   }
 })

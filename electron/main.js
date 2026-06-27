@@ -596,7 +596,11 @@ app.whenReady().then(async () => {
       const ext = path.extname(fp).toLowerCase()
       const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
       return new Response(fs.readFileSync(fp), {
-        headers: { 'Content-Type': mime, 'Cache-Control': 'public, max-age=31536000, immutable' }
+        headers: {
+          'Content-Type': mime,
+          'Cache-Control': 'public, max-age=31536000, immutable',
+          'Access-Control-Allow-Origin': '*'
+        }
       })
     } catch {
       return new Response('', { status: 500 })
