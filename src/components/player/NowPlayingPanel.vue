@@ -228,16 +228,18 @@ function startRhythmLoop() {
     const ho = Math.round((0.55 + _rhythmEnergy.full * 0.4) * 100) / 100
     if (ho !== _prev.hlOp) { _flowEl.style.setProperty('--flow-opacity-hl', ho); _prev.hlOp = ho }
 
-    // 发送数据到律动日志窗口
-    window.electronAPI?.rhythmUpdate({
-      lowRaw, midRaw, fullRaw,
-      lowSmoothed: _rhythmEnergy.low, midSmoothed: _rhythmEnergy.mid, fullSmoothed: _rhythmEnergy.full,
-      lowBaseline: _lowBaseline, midBaseline: _midBaseline,
-      lowDelta, deltaSmoothed: _deltaSmoothed, midDelta, midDeltaSmoothed: _midDeltaSmoothed,
-      accumulator: _accumulator,
-      scale: String(sc), midOp: String(mo), hlOp: String(ho),
-      flowElFound: true
-    })
+    // 发送数据到律动日志窗口（仅调试模式）
+    if (settings.debugMode) {
+      window.electronAPI?.rhythmUpdate({
+        lowRaw, midRaw, fullRaw,
+        lowSmoothed: _rhythmEnergy.low, midSmoothed: _rhythmEnergy.mid, fullSmoothed: _rhythmEnergy.full,
+        lowBaseline: _lowBaseline, midBaseline: _midBaseline,
+        lowDelta, deltaSmoothed: _deltaSmoothed, midDelta, midDeltaSmoothed: _midDeltaSmoothed,
+        accumulator: _accumulator,
+        scale: String(sc), midOp: String(mo), hlOp: String(ho),
+        flowElFound: true
+      })
+    }
 
     _rhythmRaf = requestAnimationFrame(step)
   }
@@ -246,8 +248,8 @@ function startRhythmLoop() {
   _rhythmRaf = requestAnimationFrame(() => {
     _flowEl = document.querySelector('.np-overlay .np-bg__flow')
     if (!_flowEl) return
-    // 自动打开律动日志窗口
-    window.electronAPI?.rhythmOpen()
+    // 调试模式：自动打开律动日志窗口
+    if (settings.debugMode) window.electronAPI?.rhythmOpen()
     _rhythmRaf = requestAnimationFrame(step)
   })
 }
@@ -258,7 +260,9 @@ function stopRhythmLoop() {
   _rhythmEnergy.low = 0; _rhythmEnergy.mid = 0; _rhythmEnergy.full = 0
   _prev.scale = 0; _prev.midOp = 0; _prev.hlOp = 0
   _lowBaseline = 0; _midBaseline = 0; _deltaSmoothed = 0; _midDeltaSmoothed = 0; _accumulator = 0
-  window.electronAPI?.rhythmUpdate({ lowRaw:0,midRaw:0,fullRaw:0, lowSmoothed:0,midSmoothed:0,fullSmoothed:0, lowBaseline:0,midBaseline:0,lowDelta:0,deltaSmoothed:0,midDelta:0,midDeltaSmoothed:0,accumulator:0, scale:'1',midOp:'0.7',hlOp:'0.55', flowElFound:false })
+  if (settings.debugMode) {
+    window.electronAPI?.rhythmUpdate({ lowRaw:0,midRaw:0,fullRaw:0, lowSmoothed:0,midSmoothed:0,fullSmoothed:0, lowBaseline:0,midBaseline:0,lowDelta:0,deltaSmoothed:0,midDelta:0,midDeltaSmoothed:0,accumulator:0, scale:'1',midOp:'0.7',hlOp:'0.55', flowElFound:false })
+  }
 }
 
 // 动态背景开关/可见性/律动开关变化时控制 RAF 循环

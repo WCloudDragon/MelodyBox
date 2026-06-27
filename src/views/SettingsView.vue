@@ -386,6 +386,13 @@
             <span>哈尔滨信息工程学院 2023届 软件工程 王云龙</span>
           </div>
         </div>
+        <div class="setting-row" style="margin-top: 24px;">
+          <div class="setting-label">
+            <span class="setting-title">调试模式</span>
+            <span class="setting-desc">开启后将显示律动调试窗口并传输实时参数（重启应用后自动关闭）</span>
+          </div>
+          <el-switch v-model="settingsStore.debugMode" />
+        </div>
       </section>
     </template>
   </div>

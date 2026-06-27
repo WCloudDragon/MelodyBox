@@ -56,6 +56,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const enableDynamicBg = ref(true)
   const enableAudioRhythm = ref(true)
 
+  // 调试模式（前端 only，不持久化到后端）
+  const debugMode = ref(false)
+
   let _loaded = false
   let _saveTimer = null
 
@@ -150,6 +153,7 @@ export const useSettingsStore = defineStore('settings', () => {
     desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale, desktopLyricsViewLines,
     enableDynamicBg,
     enableAudioRhythm,
+    debugMode,
     loadSettings, saveSettings, saveSettingsImmediate, resetLyricsDefaults
   }
 })

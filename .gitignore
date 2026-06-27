@@ -10,6 +10,7 @@ __pycache__/
 build/
 dist/
 flask-dist/
+release/
 *.spec
 
 # 二进制
