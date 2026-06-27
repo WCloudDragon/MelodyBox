@@ -166,7 +166,7 @@ watch(() => settings.enableDynamicBg, async (on) => {
 let _rhythmRaf = null
 let _flowEl = null                           // 缓存 DOM 引用，避免每帧 querySelector
 const _rhythmEnergy = { low: 0, mid: 0, full: 0 }
-const _prev = { speed: 0, scale: 0, midOp: 0, hlOp: 0 }  // 值未变时跳过 setProperty
+const _prev = { scale: 0, midOp: 0, hlOp: 0 }     // 值未变时跳过 setProperty
 
 function startRhythmLoop() {
   const analyser = analyserNode.value
@@ -197,12 +197,13 @@ function startRhythmLoop() {
     _rhythmEnergy.full = lerp(_rhythmEnergy.full, fullRaw)
 
     // 写入 CSS 变量 — 值不变时跳过 setProperty，避免无意义的样式重算
-    const s = Math.round((1 + _rhythmEnergy.low * 0.8) * 100) / 100
-    if (s !== _prev.speed) { _flowEl.style.setProperty('--flow-speed', s); _prev.speed = s }
-    const sc = Math.round((1 + _rhythmEnergy.low * 0.25) * 100) / 100
-    if (sc !== _prev.scale) { _flowEl.style.setProperty('--flow-scale-low', sc); _prev.scale = sc }
+    // 低频能量 → 所有光球缩放
+    const sc = Math.round((1 + _rhythmEnergy.low * 0.35) * 100) / 100
+    if (sc !== _prev.scale) { _flowEl.style.setProperty('--flow-scale', sc); _prev.scale = sc }
+    // 中频能量 → mid 层透明度
     const mo = Math.round((0.6 + _rhythmEnergy.mid * 0.35) * 100) / 100
     if (mo !== _prev.midOp) { _flowEl.style.setProperty('--flow-opacity-mid', mo); _prev.midOp = mo }
+    // 全频能量 → highlight 层透明度
     const ho = Math.round((0.55 + _rhythmEnergy.full * 0.4) * 100) / 100
     if (ho !== _prev.hlOp) { _flowEl.style.setProperty('--flow-opacity-hl', ho); _prev.hlOp = ho }
 
@@ -221,7 +222,7 @@ function stopRhythmLoop() {
   if (_rhythmRaf) { cancelAnimationFrame(_rhythmRaf); _rhythmRaf = null }
   _flowEl = null
   _rhythmEnergy.low = 0; _rhythmEnergy.mid = 0; _rhythmEnergy.full = 0
-  _prev.speed = 0; _prev.scale = 0; _prev.midOp = 0; _prev.hlOp = 0
+  _prev.scale = 0; _prev.midOp = 0; _prev.hlOp = 0
 }
 
 // 动态背景开关/可见性/律动开关变化时控制 RAF 循环
@@ -1033,10 +1034,6 @@ onBeforeUnmount(() => {
   will-change: top, left;
   transition: background 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-/* 光球基础速度由 CSS 变量 --flow-speed 驱动（RAF 写入），默认为 1（原速） */
-.np-bg__blob {
-  animation-duration: calc(var(--base-dur, 14s) / var(--flow-speed, 1));
-}
 .np-bg__blob--1 { --base-dur: 14s; width: 45%; height: 45%; top: 10%; left: 10%; animation-name: blob-float-1; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
 .np-bg__blob--2 { --base-dur: 17s; width: 50%; height: 50%; top: 50%; left: 60%; animation: blob-float-2 17s ease-in-out infinite 2s; }
 .np-bg__blob--3 { --base-dur: 15s; width: 38%; height: 38%; top: 60%; left: 20%; animation: blob-float-3 15s ease-in-out infinite 4s; }
@@ -1044,8 +1041,8 @@ onBeforeUnmount(() => {
 .np-bg__blob--5 { --base-dur: 13s; width: 35%; height: 35%; top: 30%; left: 70%; animation: blob-float-5 13s ease-in-out infinite 5s; }
 .np-bg__blob--6 { --base-dur: 21s; width: 48%; height: 48%; top: 70%; left: 40%; animation: blob-float-6 21s ease-in-out infinite 3s; }
 
-/* 分层响应：低频能量 → blob-3/6 (shadow) 缩放 | 中频能量 → blob-2/5 (mid) 透明度 | 全频 → blob-1/4 (highlight) 透明度 */
-.np-bg__blob--3, .np-bg__blob--6 { transform: scale(var(--flow-scale-low, 1)); }
+/* 分层响应：低频能量 → 所有光球缩放 | 中频能量 → 光球 2/5 透明度 | 全频能量 → 光球 1/4 透明度 */
+.np-bg__blob { transform: scale(var(--flow-scale, 1)); }
 .np-bg__blob--2, .np-bg__blob--5 { opacity: var(--flow-opacity-mid, 0.7); }
 .np-bg__blob--1, .np-bg__blob--4 { opacity: var(--flow-opacity-hl, 0.7); }
 
