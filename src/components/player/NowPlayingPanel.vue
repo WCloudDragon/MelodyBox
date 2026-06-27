@@ -949,52 +949,59 @@ onBeforeUnmount(() => {
 /* 动态流光渐变层 — 封面主色驱动的有机流动效果 */
 .np-bg__flow {
   position: absolute;
-  inset: 0;
+  /* 超出父容器 20% 避免动画位移时露边 */
+  top: -10%;
+  left: -10%;
+  width: 120%;
+  height: 120%;
   z-index: 1;
   mix-blend-mode: overlay;
   pointer-events: none;
-  transform: translateZ(0);
 }
 .np-bg__flow-layer {
   position: absolute;
-  inset: 0;
+  /* 与 .np-bg__flow 等大，动画位移不会露边 */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   will-change: transform;
 }
-/* 高亮层：大椭圆径向渐变，逆时针缓慢旋转 + 水平漂移 */
+/* 高亮层：大椭圆径向渐变，迅速向透明过渡避免硬边缘 */
 .np-bg__flow--hl {
-  background: radial-gradient(ellipse 70% 55% at 30% 40%, var(--flow-hl, transparent) 0%, transparent 70%);
-  opacity: 0.55;
-  animation: flow-drift-hl 26s ease-in-out infinite;
+  background: radial-gradient(ellipse 55% 45% at 30% 35%, var(--flow-hl, transparent) 0%, transparent 100%);
+  opacity: 0.8;
+  animation: flow-drift-hl 20s ease-in-out infinite;
 }
-/* 中间调层：与高亮层错开方向和速度，创造丰富层次 */
+/* 中间调层：与高亮层错开方向和速度 */
 .np-bg__flow--mid {
-  background: radial-gradient(ellipse 65% 50% at 70% 60%, var(--flow-mid, transparent) 0%, transparent 70%);
-  opacity: 0.45;
-  animation: flow-drift-mid 22s ease-in-out infinite;
+  background: radial-gradient(ellipse 50% 45% at 65% 55%, var(--flow-mid, transparent) 0%, transparent 100%);
+  opacity: 0.7;
+  animation: flow-drift-mid 24s ease-in-out infinite;
 }
-/* 暗部层：低速大范围漂移，防止黑色区域死板 */
+/* 暗部层：大范围低速漂移 */
 .np-bg__flow--shadow {
-  background: radial-gradient(ellipse 80% 60% at 50% 80%, var(--flow-shadow, transparent) 0%, transparent 65%);
-  opacity: 0.5;
-  animation: flow-drift-shadow 30s ease-in-out infinite;
+  background: radial-gradient(ellipse 60% 50% at 50% 75%, var(--flow-shadow, transparent) 0%, transparent 100%);
+  opacity: 0.6;
+  animation: flow-drift-shadow 28s ease-in-out infinite;
 }
 
 @keyframes flow-drift-hl {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  25%      { transform: translate(4%, -3%) rotate(3deg); }
-  50%      { transform: translate(-2%, 4%) rotate(-2deg); }
-  75%      { transform: translate(3%, -2%) rotate(4deg); }
+  0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+  25%      { transform: translate(10%, -6%) rotate(3deg) scale(1.06); }
+  50%      { transform: translate(-5%, 8%) rotate(-2deg) scale(0.95); }
+  75%      { transform: translate(7%, -4%) rotate(4deg) scale(1.04); }
 }
 @keyframes flow-drift-mid {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  33%      { transform: translate(-4%, 3%) rotate(-3deg); }
-  66%      { transform: translate(2%, -4%) rotate(2deg); }
+  0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+  33%      { transform: translate(-8%, 6%) rotate(-3deg) scale(1.05); }
+  66%      { transform: translate(5%, -7%) rotate(2deg) scale(0.96); }
 }
 @keyframes flow-drift-shadow {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  25%      { transform: translate(-2%, -4%) rotate(-1deg); }
-  50%      { transform: translate(3%, 2%) rotate(1deg); }
-  75%      { transform: translate(-4%, 3%) rotate(-2deg); }
+  0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+  25%      { transform: translate(-5%, -8%) rotate(-1deg) scale(1.04); }
+  50%      { transform: translate(6%, 5%) rotate(1deg) scale(0.97); }
+  75%      { transform: translate(-8%, 7%) rotate(-2deg) scale(1.03); }
 }
 
 /* CSS @property 注册后颜色可插值，切歌时无缝过渡 */
