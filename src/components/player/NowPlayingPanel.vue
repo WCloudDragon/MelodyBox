@@ -897,12 +897,7 @@ onBeforeUnmount(() => {
   filter: blur(60px) brightness(0.5);
   will-change: filter;
 }
-.np-bg::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.6) 100%);
-}
+
 
 /* 窗口控制器风格关闭按钮 */
 .np-close-btn {
@@ -1124,15 +1119,18 @@ onBeforeUnmount(() => {
   transform: translateY(-10px);
 }
 
-/* ===== 切歌动画：背景交叉淡入淡出 ===== */
-.bg-fade-enter-active {
-  transition: opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-}
+/* ===== 切歌动画：背景叠化（叠化 = 出入同步同速，零黑底穿透） ===== */
+.bg-fade-enter-active,
 .bg-fade-leave-active {
-  transition: opacity 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
   position: absolute;
-  inset: 0;
+  top: -10%;
+  left: -10%;
+  width: 120%;
+  height: 120%;
 }
+.bg-fade-enter-active { z-index: 1; }
+.bg-fade-leave-active { z-index: 0; }
 .bg-fade-enter-from { opacity: 0; }
 .bg-fade-leave-to { opacity: 0; }
 

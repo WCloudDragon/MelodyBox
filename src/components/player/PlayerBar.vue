@@ -558,8 +558,8 @@ function onVolumeMouseUp() {
 
 /* 下一曲：旧信息渐隐+模糊 | 新信息从下方 40px 滑入 + 渐显 */
 .info-next-leave-active {
-  transition: opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              filter 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: opacity 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .info-next-leave-to { opacity: 0; filter: blur(6px); }
 .info-next-enter-active {
@@ -570,8 +570,8 @@ function onVolumeMouseUp() {
 
 /* 上一曲：旧信息渐隐+模糊 | 新信息从上方 -40px 滑入 + 渐显 */
 .info-prev-leave-active {
-  transition: opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              filter 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: opacity 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .info-prev-leave-to { opacity: 0; filter: blur(6px); }
 .info-prev-enter-active {
