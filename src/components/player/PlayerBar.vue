@@ -616,9 +616,9 @@ function onVolumeMouseUp() {
               opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .cover-next-leave-active { transform-origin: top center; }
-.cover-next-leave-to   { transform: scale(0.75); opacity: 0; }
+.cover-next-leave-to   { transform: scale(0.65); opacity: 0; }
 .cover-next-enter-active { transform-origin: bottom center; }
-.cover-next-enter-from   { transform: scale(0.75); opacity: 0; }
+.cover-next-enter-from   { transform: scale(0.65); opacity: 0; }
 
 /* 上一曲：旧封面以底部中心为锚点缩小渐隐 | 新封面从顶部缩小放大渐显 */
 .cover-prev-enter-active,
@@ -627,9 +627,9 @@ function onVolumeMouseUp() {
               opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .cover-prev-leave-active { transform-origin: bottom center; }
-.cover-prev-leave-to   { transform: scale(0.75); opacity: 0; }
+.cover-prev-leave-to   { transform: scale(0.65); opacity: 0; }
 .cover-prev-enter-active { transform-origin: top center; }
-.cover-prev-enter-from   { transform: scale(0.75); opacity: 0; }
+.cover-prev-enter-from   { transform: scale(0.65); opacity: 0; }
 
 .cover-none-enter-active,
 .cover-none-leave-active {

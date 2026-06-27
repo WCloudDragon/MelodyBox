@@ -1281,9 +1281,9 @@ onBeforeUnmount(() => {
 }
 /* transform-origin 必须在 -active 上才能贯穿整个动画，-from/-to 只在首尾瞬间存在 */
 .cover-next-leave-active { transform-origin: top center; }
-.cover-next-leave-to   { transform: scale(0.75); opacity: 0; }
+.cover-next-leave-to   { transform: scale(0.65); opacity: 0; }
  .cover-next-enter-active { transform-origin: bottom center; }
- .cover-next-enter-from   { transform: scale(0.75); opacity: 0; }
+ .cover-next-enter-from   { transform: scale(0.65); opacity: 0; }
 
 /* 上一曲：i-旧封面以底部中心为锚点缩小渐隐  ii-新封面以顶部中心为锚点从最小值放大渐显 */
 .cover-prev-enter-active,
@@ -1292,9 +1292,9 @@ onBeforeUnmount(() => {
               opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .cover-prev-leave-active { transform-origin: bottom center; }
-.cover-prev-leave-to   { transform: scale(0.75); opacity: 0; }
+.cover-prev-leave-to   { transform: scale(0.65); opacity: 0; }
  .cover-prev-enter-active { transform-origin: top center; }
- .cover-prev-enter-from   { transform: scale(0.75); opacity: 0; }
+ .cover-prev-enter-from   { transform: scale(0.65); opacity: 0; }
 
 /* 无动画（初始状态） */
 .cover-none-enter-active,
