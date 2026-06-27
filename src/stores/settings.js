@@ -16,6 +16,7 @@ const SNAKE_TO_CAMEL = {
   desktop_lyrics_active_scale: 'desktopLyricsActiveScale',
   desktop_lyrics_trans_scale: 'desktopLyricsTransScale',
   desktop_lyrics_view_lines: 'desktopLyricsViewLines',
+  enable_dynamic_bg: 'enableDynamicBg',
 }
 const CAMEL_TO_SNAKE = Object.fromEntries(
   Object.entries(SNAKE_TO_CAMEL).map(([k, v]) => [v, k])
@@ -50,6 +51,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const desktopLyricsTransScale = ref(60)
   const desktopLyricsViewLines = ref(2)
 
+  // 动态流光背景（封面主色驱动的渐变流动效果）
+  const enableDynamicBg = ref(true)
+
   let _loaded = false
   let _saveTimer = null
 
@@ -76,6 +80,7 @@ export const useSettingsStore = defineStore('settings', () => {
       desktopLyricsActiveScale.value = data.desktopLyricsActiveScale ?? 120
       desktopLyricsTransScale.value = data.desktopLyricsTransScale ?? 60
       desktopLyricsViewLines.value = data.desktopLyricsViewLines ?? 2
+      enableDynamicBg.value = data.enableDynamicBg ?? true
       _loaded = true
     } catch {}
   }
@@ -105,6 +110,7 @@ export const useSettingsStore = defineStore('settings', () => {
         body.desktopLyricsActiveScale = desktopLyricsActiveScale.value
         body.desktopLyricsTransScale = desktopLyricsTransScale.value
         body.desktopLyricsViewLines = desktopLyricsViewLines.value
+        body.enableDynamicBg = enableDynamicBg.value ? 1 : 0
         await fetch(API_BASE, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -138,6 +144,7 @@ export const useSettingsStore = defineStore('settings', () => {
     enableLyricsBlur, enableDominoScroll, enableWordLift, wordAnimFps,
     autoScan, language,
     desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale, desktopLyricsViewLines,
+    enableDynamicBg,
     loadSettings, saveSettings, saveSettingsImmediate, resetLyricsDefaults
   }
 })

@@ -31,6 +31,7 @@ SNAKE_TO_CAMEL = {
     'desktop_lyrics_active_scale': 'desktopLyricsActiveScale',
     'desktop_lyrics_trans_scale': 'desktopLyricsTransScale',
     'desktop_lyrics_view_lines': 'desktopLyricsViewLines',
+    'enable_dynamic_bg': 'enableDynamicBg',
 }
 
 CAMEL_TO_SNAKE = {v: k for k, v in SNAKE_TO_CAMEL.items()}
@@ -57,6 +58,7 @@ DEFAULT_SETTINGS = {
     'desktop_lyrics_active_scale': 120,
     'desktop_lyrics_trans_scale': 60,
     'desktop_lyrics_view_lines': 2,
+    'enable_dynamic_bg': True,
 }
 
 # SQLite 中所有 settings 列（不含 id）
@@ -78,7 +80,7 @@ def row_to_settings(row):
             val = DEFAULT_SETTINGS.get(snake_key)
         # SQLite 用 0/1 存布尔值，转为 Python bool
         if snake_key in ('follow_system_theme', 'show_lyrics', 'enable_lyrics_blur',
-                         'enable_domino_scroll', 'enable_word_lift', 'show_visualizer', 'auto_scan'):
+                         'enable_domino_scroll', 'enable_word_lift', 'show_visualizer', 'auto_scan', 'enable_dynamic_bg'):
             val = bool(val)
         result[camel_key] = val
     return result
@@ -167,7 +169,7 @@ def update_settings():
         for snake_key, camel_key in SNAKE_TO_CAMEL.items():
             val = current[snake_key]
             if snake_key in ('follow_system_theme', 'show_lyrics', 'enable_lyrics_blur',
-                             'enable_domino_scroll', 'enable_word_lift', 'show_visualizer', 'auto_scan'):
+                             'enable_domino_scroll', 'enable_word_lift', 'show_visualizer', 'auto_scan', 'enable_dynamic_bg'):
                 val = bool(val)
             result[camel_key] = val
 

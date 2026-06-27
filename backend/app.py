@@ -231,6 +231,7 @@ def init_db(app):
         'ALTER TABLE settings ADD COLUMN desktop_lyrics_active_scale INTEGER DEFAULT 120',
         'ALTER TABLE settings ADD COLUMN desktop_lyrics_trans_scale INTEGER DEFAULT 60',
         'ALTER TABLE settings ADD COLUMN desktop_lyrics_view_lines INTEGER DEFAULT 2',
+        'ALTER TABLE settings ADD COLUMN enable_dynamic_bg INTEGER DEFAULT 1',
     ]:
         try: conn.executescript(mig)
         except sqlite3.OperationalError: pass

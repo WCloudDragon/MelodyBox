@@ -139,6 +139,13 @@
       <section class="settings-section">
         <div class="setting-row">
           <div class="setting-label">
+            <span class="setting-title">动态流光背景</span>
+            <span class="setting-desc">全屏歌词页背景随封面主色动态流动的流光效果（关闭可提升低配设备性能）</span>
+          </div>
+          <el-switch v-model="settingsStore.enableDynamicBg" @change="settingsStore.saveSettings()" />
+        </div>
+        <div class="setting-row">
+          <div class="setting-label">
             <span class="setting-title">歌词行模糊</span>
             <span class="setting-desc">远离当前行的歌词行产生模糊效果（关闭可提升低配设备性能）</span>
           </div>

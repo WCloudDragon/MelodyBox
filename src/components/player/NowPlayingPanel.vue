@@ -12,20 +12,17 @@
 
   <transition name="panel-slide" @after-leave="$emit('afterLeave')">
     <div v-if="visible" class="np-overlay" @click.self="$emit('close')">
-      <!-- 动态背景：模糊底图 + 双层渐变叠化漂移 -->
-      <div class="np-bg" :style="{ backgroundColor: palette.dark }">
-        <!-- 层 0：模糊封面底图 -->
+      <!-- 模糊背景：切歌时交叉淡入淡出 -->
+      <div class="np-bg">
         <Transition name="bg-fade">
           <img v-if="currentTrack?.cover" :key="currentTrack?.path" :src="currentTrack.cover" class="np-bg__img" decoding="async" />
         </Transition>
-        <!-- 层 1：大范围渐变缓慢漂移 -->
-        <Transition name="bg-grad-fade">
-          <div v-if="currentTrack?.cover" :key="'g1-' + currentTrack?.path" class="np-bg__grad np-bg__grad--1" :style="grad1Style" />
-        </Transition>
-        <!-- 层 2：小范围渐变反向漂移 -->
-        <Transition name="bg-grad-fade">
-          <div v-if="currentTrack?.cover" :key="'g2-' + currentTrack?.path" class="np-bg__grad np-bg__grad--2" :style="grad2Style" />
-        </Transition>
+        <!-- 动态流光渐变层（封面主色驱动，可开关） -->
+        <div v-if="settings.enableDynamicBg && flowColors" class="np-bg__flow" :style="flowVars">
+          <div class="np-bg__flow-layer np-bg__flow--hl"></div>
+          <div class="np-bg__flow-layer np-bg__flow--mid"></div>
+          <div class="np-bg__flow-layer np-bg__flow--shadow"></div>
+        </div>
       </div>
 
       <!-- 无歌曲时的提示 -->
@@ -102,7 +99,7 @@ import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
 import { parseLRC, getCurrentLyricIndex } from '@/utils/format'
-import { extractCoverColors } from '@/utils/colorExtract'
+import { extractCoverColors } from '@/utils/coverColorExtractor'
 
 const props = defineProps({ visible: { type: Boolean, default: false } })
 const emit = defineEmits(['close', 'afterLeave', 'flyComplete'])
@@ -115,40 +112,6 @@ const { lyricsTransScale, lyricsActiveScale } = storeToRefs(settings)
 const { enableLyricsBlur, enableDominoScroll, enableWordLift, wordAnimFps } = storeToRefs(settings)
 const coverOriginRect = inject('coverOriginRect', ref(null))
 
-// ==================== 动态背景：封面主色提取 + 渐变层 ====================
-
-const palette = ref({
-  light: '#a5a0d4',
-  vibrant: '#6366f1',
-  dark: '#1a1a2e',
-  muted: '#3a3570'
-})
-
-// 切歌时提取封面主色，面板打开时首次提取
-watch(() => currentTrack.value?.cover, async (cover) => {
-  if (cover && props.visible) {
-    const colors = await extractCoverColors(cover)
-    palette.value = colors
-  }
-})
-
-watch(() => props.visible, async (val) => {
-  if (val && currentTrack.value?.cover) {
-    const colors = await extractCoverColors(currentTrack.value.cover)
-    palette.value = colors
-  }
-})
-
-const grad1Style = computed(() => ({
-  background: `radial-gradient(ellipse 60% 50% at 30% 40%, ${palette.value.light}28, ${palette.value.vibrant}1a 40%, transparent 70%)`
-}))
-
-const grad2Style = computed(() => ({
-  background: `radial-gradient(ellipse 50% 60% at 70% 60%, ${palette.value.vibrant}22, ${palette.value.muted}18 50%, transparent 80%)`
-}))
-
-// ==================== 主面板 ====================
-
 const mainRef = ref(null)
 const scrollRef = ref(null)
 const lineRefs = ref({})
@@ -157,6 +120,47 @@ const currentLineIndex = ref(-1)
 // 然后 lineStyle(opacity) 和 .active(font-size) 在同一帧同步开始过渡，避免视觉脱节
 const jumpPending = ref(-1)
 const coverArtRef = ref(null)
+
+// ==================== 动态流光背景（封面主色驱动渐变流动） ====================
+const flowColors = ref(null)
+const flowVars = computed(() => {
+  if (!flowColors.value) return {}
+  return {
+    '--flow-hl': flowColors.value.highlight,
+    '--flow-mid': flowColors.value.mid,
+    '--flow-shadow': flowColors.value.shadow,
+  }
+})
+
+// 注册 CSS @property 使颜色渐变可插值（Chrome/Edge ≥ 85）
+if (typeof CSS !== 'undefined' && CSS.registerProperty) {
+  try {
+    CSS.registerProperty({ name: '--flow-hl', syntax: '<color>', inherits: true, initialValue: 'transparent' })
+    CSS.registerProperty({ name: '--flow-mid', syntax: '<color>', inherits: true, initialValue: 'transparent' })
+    CSS.registerProperty({ name: '--flow-shadow', syntax: '<color>', inherits: true, initialValue: 'transparent' })
+  } catch {}
+}
+
+// 封面变化时异步提取主色
+watch(() => currentTrack.value?.cover, async (cover) => {
+  if (!cover || !settings.enableDynamicBg) {
+    flowColors.value = null
+    return
+  }
+  const colors = await extractCoverColors(cover)
+  if (currentTrack.value?.cover !== cover) return // 避免竞态：封面已切换
+  flowColors.value = colors
+})
+
+// 开关变化时，若关则清除；若开且当前有封面则立即提取
+watch(() => settings.enableDynamicBg, async (on) => {
+  if (!on) { flowColors.value = null; return }
+  const cover = currentTrack.value?.cover
+  if (cover) {
+    const colors = await extractCoverColors(cover)
+    flowColors.value = colors
+  }
+})
 
 // 切歌动画方向：null = 无动画, 'next' = 下一曲, 'prev' = 上一曲
 const coverAnimDir = ref(null)
@@ -924,12 +928,12 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+/* 模糊背景 */
 .np-bg {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  /* 动态背景色通过 :style 注入，实现切歌时颜色渐变 */
-  transition: background-color 1.2s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  background-color: #080808;
 }
 .np-bg__img {
   width: 120%;
@@ -938,49 +942,65 @@ onBeforeUnmount(() => {
   top: -10%;
   left: -10%;
   object-fit: cover;
-  filter: blur(80px) brightness(0.45) saturate(1.5);
+  filter: blur(60px) brightness(0.5);
   will-change: filter;
 }
 
-/* ===== 渐变叠层 ===== */
-.np-bg__grad {
+/* 动态流光渐变层 — 封面主色驱动的有机流动效果 */
+.np-bg__flow {
   position: absolute;
   inset: 0;
-  pointer-events: none;
-  will-change: transform;
-  /* background 通过 :style 注入，transition 实现切歌时颜色平滑插值 */
-  transition: background 1.2s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-}
-.np-bg__grad--1 {
-  animation: bg-drift-1 24s ease-in-out infinite;
+  z-index: 1;
   mix-blend-mode: overlay;
+  pointer-events: none;
+  transform: translateZ(0);
 }
-.np-bg__grad--2 {
-  animation: bg-drift-2 28s ease-in-out infinite;
-  mix-blend-mode: soft-light;
+.np-bg__flow-layer {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+/* 高亮层：大椭圆径向渐变，逆时针缓慢旋转 + 水平漂移 */
+.np-bg__flow--hl {
+  background: radial-gradient(ellipse 70% 55% at 30% 40%, var(--flow-hl, transparent) 0%, transparent 70%);
+  opacity: 0.55;
+  animation: flow-drift-hl 26s ease-in-out infinite;
+}
+/* 中间调层：与高亮层错开方向和速度，创造丰富层次 */
+.np-bg__flow--mid {
+  background: radial-gradient(ellipse 65% 50% at 70% 60%, var(--flow-mid, transparent) 0%, transparent 70%);
+  opacity: 0.45;
+  animation: flow-drift-mid 22s ease-in-out infinite;
+}
+/* 暗部层：低速大范围漂移，防止黑色区域死板 */
+.np-bg__flow--shadow {
+  background: radial-gradient(ellipse 80% 60% at 50% 80%, var(--flow-shadow, transparent) 0%, transparent 65%);
+  opacity: 0.5;
+  animation: flow-drift-shadow 30s ease-in-out infinite;
 }
 
-@keyframes bg-drift-1 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  25%  { transform: translate(4%, 2%) scale(1.04); }
-  50%  { transform: translate(-2%, 5%) scale(0.97); }
-  75%  { transform: translate(-5%, -3%) scale(1.03); }
+@keyframes flow-drift-hl {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25%      { transform: translate(4%, -3%) rotate(3deg); }
+  50%      { transform: translate(-2%, 4%) rotate(-2deg); }
+  75%      { transform: translate(3%, -2%) rotate(4deg); }
 }
-@keyframes bg-drift-2 {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33%  { transform: translate(-5%, -4%) scale(1.05); }
-  66%  { transform: translate(4%, 3%) scale(0.96); }
+@keyframes flow-drift-mid {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  33%      { transform: translate(-4%, 3%) rotate(-3deg); }
+  66%      { transform: translate(2%, -4%) rotate(2deg); }
+}
+@keyframes flow-drift-shadow {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25%      { transform: translate(-2%, -4%) rotate(-1deg); }
+  50%      { transform: translate(3%, 2%) rotate(1deg); }
+  75%      { transform: translate(-4%, 3%) rotate(-2deg); }
 }
 
-/* 渐变层切歌淡入淡出 */
-.bg-grad-fade-enter-active,
-.bg-grad-fade-leave-active {
-  transition: opacity 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-}
-.bg-grad-fade-enter-active { z-index: 1; }
-.bg-grad-fade-leave-active { z-index: 0; }
-.bg-grad-fade-enter-from { opacity: 0; }
-.bg-grad-fade-leave-to   { opacity: 0; }
+/* CSS @property 注册后颜色可插值，切歌时无缝过渡 */
+.np-bg__flow--hl  { transition: --flow-hl 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0); }
+.np-bg__flow--mid { transition: --flow-mid 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0); }
+.np-bg__flow--shadow { transition: --flow-shadow 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0); }
 
 
 /* 窗口控制器风格关闭按钮 */
