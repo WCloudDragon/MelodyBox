@@ -164,57 +164,64 @@ watch(() => settings.enableDynamicBg, async (on) => {
 
 // ==================== 音频律动 — 频谱分析驱动光球速度/缩放/透明度 ====================
 let _rhythmRaf = null
+let _flowEl = null                           // 缓存 DOM 引用，避免每帧 querySelector
 const _rhythmEnergy = { low: 0, mid: 0, full: 0 }
+const _prev = { speed: 0, scale: 0, midOp: 0, hlOp: 0 }  // 值未变时跳过 setProperty
 
 function startRhythmLoop() {
   const analyser = analyserNode.value
   if (!analyser || _rhythmRaf) return
-  const freqData = new Uint8Array(analyser.frequencyBinCount) // 64 for fftSize=128
+  const freqData = new Uint8Array(analyser.frequencyBinCount) // 64
+  const binCount = freqData.length
 
   function step() {
     analyser.getByteFrequencyData(freqData)
 
-    // Low: 0~170Hz (鼓/贝斯)，取 bin 0~5
-    const lowSum = freqData.slice(0, 6).reduce((a, b) => a + b, 0)
-    const lowRaw = lowSum / (6 * 255)
+    // for 循环累加，避免 slice+reduce 每帧分配临时数组（GC 压力）
+    let lowSum = 0
+    for (let i = 0; i < 6; i++) lowSum += freqData[i]
+    const lowRaw = lowSum / 1530               // 6 * 255
 
-    // Mid: 170~2kHz (人声/钢琴/吉他)，取 bin 6~30
-    const midSlice = freqData.slice(6, 31)
-    const midSum = midSlice.reduce((a, b) => a + b, 0)
-    const midRaw = midSum / (midSlice.length * 255)
+    let midSum = 0
+    for (let i = 6; i < 31; i++) midSum += freqData[i]
+    const midRaw = midSum / 6375               // 25 * 255
 
-    // Full: 全频段平均能量
-    const fullSum = freqData.reduce((a, b) => a + b, 0)
-    const fullRaw = fullSum / (freqData.length * 255)
+    let fullSum = 0
+    for (let i = 0; i < binCount; i++) fullSum += freqData[i]
+    const fullRaw = fullSum / (binCount * 255)
 
-    // Lerp 平滑（避免逐帧抖动，保持流体感）
+    // Lerp 平滑（避免逐帧抖动）
     const lerp = (prev, raw, f = 0.12) => prev + (raw - prev) * f
     _rhythmEnergy.low = lerp(_rhythmEnergy.low, lowRaw)
     _rhythmEnergy.mid = lerp(_rhythmEnergy.mid, midRaw)
     _rhythmEnergy.full = lerp(_rhythmEnergy.full, fullRaw)
 
-    // 写入 CSS 变量到 .np-bg__flow 容器
-    const flowEl = document.querySelector('.np-overlay .np-bg__flow')
-    if (flowEl) {
-      // 低频能量 → 光球速度 (shadow 层)
-      flowEl.style.setProperty('--flow-speed', (1 + _rhythmEnergy.low * 0.8).toFixed(3))
-      // 低频能量 → 光球缩放 (shadow 层)
-      flowEl.style.setProperty('--flow-scale-low', (1 + _rhythmEnergy.low * 0.25).toFixed(3))
-      // 中频能量 → 光球透明度 (mid 层)
-      flowEl.style.setProperty('--flow-opacity-mid', (0.6 + _rhythmEnergy.mid * 0.35).toFixed(3))
-      // 全频能量 → highlight 层透明度
-      flowEl.style.setProperty('--flow-opacity-hl', (0.55 + _rhythmEnergy.full * 0.4).toFixed(3))
-    }
+    // 写入 CSS 变量 — 值不变时跳过 setProperty，避免无意义的样式重算
+    const s = Math.round((1 + _rhythmEnergy.low * 0.8) * 100) / 100
+    if (s !== _prev.speed) { _flowEl.style.setProperty('--flow-speed', s); _prev.speed = s }
+    const sc = Math.round((1 + _rhythmEnergy.low * 0.25) * 100) / 100
+    if (sc !== _prev.scale) { _flowEl.style.setProperty('--flow-scale-low', sc); _prev.scale = sc }
+    const mo = Math.round((0.6 + _rhythmEnergy.mid * 0.35) * 100) / 100
+    if (mo !== _prev.midOp) { _flowEl.style.setProperty('--flow-opacity-mid', mo); _prev.midOp = mo }
+    const ho = Math.round((0.55 + _rhythmEnergy.full * 0.4) * 100) / 100
+    if (ho !== _prev.hlOp) { _flowEl.style.setProperty('--flow-opacity-hl', ho); _prev.hlOp = ho }
 
     _rhythmRaf = requestAnimationFrame(step)
   }
 
-  _rhythmRaf = requestAnimationFrame(step)
+  // 延迟一帧缓存 DOM（Vue v-if 异步渲染，首帧可能不在 DOM）
+  _rhythmRaf = requestAnimationFrame(() => {
+    _flowEl = document.querySelector('.np-overlay .np-bg__flow')
+    if (!_flowEl) return
+    _rhythmRaf = requestAnimationFrame(step)
+  })
 }
 
 function stopRhythmLoop() {
   if (_rhythmRaf) { cancelAnimationFrame(_rhythmRaf); _rhythmRaf = null }
+  _flowEl = null
   _rhythmEnergy.low = 0; _rhythmEnergy.mid = 0; _rhythmEnergy.full = 0
+  _prev.speed = 0; _prev.scale = 0; _prev.midOp = 0; _prev.hlOp = 0
 }
 
 // 动态背景开关/可见性变化时控制 RAF 循环
