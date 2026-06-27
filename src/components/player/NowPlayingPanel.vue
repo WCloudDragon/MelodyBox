@@ -17,11 +17,14 @@
         <Transition name="bg-fade">
           <img v-if="currentTrack?.cover" :key="currentTrack?.path" :src="currentTrack.cover" class="np-bg__img" decoding="async" />
         </Transition>
-        <!-- 动态流光渐变层（封面主色驱动，可开关） -->
-        <div v-if="settings.enableDynamicBg && flowColors" class="np-bg__flow" :style="flowVars">
-          <div class="np-bg__flow-layer np-bg__flow--hl"></div>
-          <div class="np-bg__flow-layer np-bg__flow--mid"></div>
-          <div class="np-bg__flow-layer np-bg__flow--shadow"></div>
+        <!-- 动态流光：多色块模糊漂移产生流体流动感 -->
+        <div v-if="settings.enableDynamicBg && flowColors" class="np-bg__flow">
+          <div class="np-bg__blob np-bg__blob--1" :style="{ '--c': flowColors.highlight }"></div>
+          <div class="np-bg__blob np-bg__blob--2" :style="{ '--c': flowColors.mid }"></div>
+          <div class="np-bg__blob np-bg__blob--3" :style="{ '--c': flowColors.shadow }"></div>
+          <div class="np-bg__blob np-bg__blob--4" :style="{ '--c': flowColors.highlight }"></div>
+          <div class="np-bg__blob np-bg__blob--5" :style="{ '--c': flowColors.mid }"></div>
+          <div class="np-bg__blob np-bg__blob--6" :style="{ '--c': flowColors.shadow }"></div>
         </div>
       </div>
 
@@ -123,23 +126,6 @@ const coverArtRef = ref(null)
 
 // ==================== 动态流光背景（封面主色驱动渐变流动） ====================
 const flowColors = ref(null)
-const flowVars = computed(() => {
-  if (!flowColors.value) return {}
-  return {
-    '--flow-hl': flowColors.value.highlight,
-    '--flow-mid': flowColors.value.mid,
-    '--flow-shadow': flowColors.value.shadow,
-  }
-})
-
-// 注册 CSS @property 使颜色渐变可插值（Chrome/Edge ≥ 85）
-if (typeof CSS !== 'undefined' && CSS.registerProperty) {
-  try {
-    CSS.registerProperty({ name: '--flow-hl', syntax: '<color>', inherits: true, initialValue: 'transparent' })
-    CSS.registerProperty({ name: '--flow-mid', syntax: '<color>', inherits: true, initialValue: 'transparent' })
-    CSS.registerProperty({ name: '--flow-shadow', syntax: '<color>', inherits: true, initialValue: 'transparent' })
-  } catch {}
-}
 
 // 封面变化时异步提取主色
 watch(() => currentTrack.value?.cover, async (cover) => {
@@ -946,68 +932,81 @@ onBeforeUnmount(() => {
   will-change: filter;
 }
 
-/* 动态流光渐变层 — 封面主色驱动的有机流动效果 */
+/* 动态流光 — 多色块高斯模糊漂移产生流体流动感 */
 .np-bg__flow {
   position: absolute;
-  /* 超出父容器 20% 避免动画位移时露边 */
-  top: -10%;
-  left: -10%;
-  width: 120%;
-  height: 120%;
+  inset: -10%;
   z-index: 1;
-  mix-blend-mode: overlay;
+  mix-blend-mode: soft-light;
   pointer-events: none;
+  filter: contrast(1.15) saturate(1.4);
 }
-.np-bg__flow-layer {
+.np-bg__blob {
   position: absolute;
-  /* 与 .np-bg__flow 等大，动画位移不会露边 */
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  will-change: transform;
-}
-/* 高亮层：大椭圆径向渐变，迅速向透明过渡避免硬边缘 */
-.np-bg__flow--hl {
-  background: radial-gradient(ellipse 55% 45% at 30% 35%, var(--flow-hl, transparent) 0%, transparent 100%);
-  opacity: 0.8;
-  animation: flow-drift-hl 20s ease-in-out infinite;
-}
-/* 中间调层：与高亮层错开方向和速度 */
-.np-bg__flow--mid {
-  background: radial-gradient(ellipse 50% 45% at 65% 55%, var(--flow-mid, transparent) 0%, transparent 100%);
+  border-radius: 50%;
+  background: var(--c, transparent);
+  filter: blur(80px);
   opacity: 0.7;
-  animation: flow-drift-mid 24s ease-in-out infinite;
+  will-change: top, left;
+  transition: background 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-/* 暗部层：大范围低速漂移 */
-.np-bg__flow--shadow {
-  background: radial-gradient(ellipse 60% 50% at 50% 75%, var(--flow-shadow, transparent) 0%, transparent 100%);
-  opacity: 0.6;
-  animation: flow-drift-shadow 28s ease-in-out infinite;
-}
+.np-bg__blob--1 { width: 45%; height: 45%; top: 10%; left: 10%; animation: blob-float-1 14s ease-in-out infinite; }
+.np-bg__blob--2 { width: 50%; height: 50%; top: 50%; left: 60%; animation: blob-float-2 17s ease-in-out infinite 2s; }
+.np-bg__blob--3 { width: 38%; height: 38%; top: 60%; left: 20%; animation: blob-float-3 15s ease-in-out infinite 4s; }
+.np-bg__blob--4 { width: 42%; height: 42%; top: 0%;  left: 50%; animation: blob-float-4 19s ease-in-out infinite 1s; }
+.np-bg__blob--5 { width: 35%; height: 35%; top: 30%; left: 70%; animation: blob-float-5 13s ease-in-out infinite 5s; }
+.np-bg__blob--6 { width: 48%; height: 48%; top: 70%; left: 40%; animation: blob-float-6 21s ease-in-out infinite 3s; }
 
-@keyframes flow-drift-hl {
-  0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
-  25%      { transform: translate(10%, -6%) rotate(3deg) scale(1.06); }
-  50%      { transform: translate(-5%, 8%) rotate(-2deg) scale(0.95); }
-  75%      { transform: translate(7%, -4%) rotate(4deg) scale(1.04); }
+@keyframes blob-float-1 {
+  0%, 100% { top: 10%; left: 10%; }
+  15% { top: 35%; left: 20%; }
+  30% { top: 20%; left: 50%; }
+  45% { top: 45%; left: 40%; }
+  60% { top: 15%; left: 60%; }
+  75% { top: 40%; left: 30%; }
+  90% { top: 5%; left: 45%; }
 }
-@keyframes flow-drift-mid {
-  0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
-  33%      { transform: translate(-8%, 6%) rotate(-3deg) scale(1.05); }
-  66%      { transform: translate(5%, -7%) rotate(2deg) scale(0.96); }
+@keyframes blob-float-2 {
+  0%, 100% { top: 50%; left: 60%; }
+  15% { top: 30%; left: 40%; }
+  30% { top: 60%; left: 30%; }
+  45% { top: 25%; left: 50%; }
+  60% { top: 55%; left: 70%; }
+  75% { top: 40%; left: 55%; }
+  90% { top: 65%; left: 45%; }
 }
-@keyframes flow-drift-shadow {
-  0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
-  25%      { transform: translate(-5%, -8%) rotate(-1deg) scale(1.04); }
-  50%      { transform: translate(6%, 5%) rotate(1deg) scale(0.97); }
-  75%      { transform: translate(-8%, 7%) rotate(-2deg) scale(1.03); }
+@keyframes blob-float-3 {
+  0%, 100% { top: 60%; left: 20%; }
+  20% { top: 40%; left: 45%; }
+  40% { top: 65%; left: 60%; }
+  60% { top: 20%; left: 35%; }
+  80% { top: 50%; left: 15%; }
 }
-
-/* CSS @property 注册后颜色可插值，切歌时无缝过渡 */
-.np-bg__flow--hl  { transition: --flow-hl 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0); }
-.np-bg__flow--mid { transition: --flow-mid 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0); }
-.np-bg__flow--shadow { transition: --flow-shadow 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0); }
+@keyframes blob-float-4 {
+  0%, 100% { top: 0%; left: 50%; }
+  15% { top: 25%; left: 65%; }
+  30% { top: 10%; left: 30%; }
+  45% { top: 40%; left: 55%; }
+  60% { top: 5%; left: 70%; }
+  75% { top: 30%; left: 35%; }
+  90% { top: 15%; left: 60%; }
+}
+@keyframes blob-float-5 {
+  0%, 100% { top: 30%; left: 70%; }
+  20% { top: 55%; left: 50%; }
+  40% { top: 40%; left: 20%; }
+  60% { top: 15%; left: 45%; }
+  80% { top: 50%; left: 60%; }
+}
+@keyframes blob-float-6 {
+  0%, 100% { top: 70%; left: 40%; }
+  15% { top: 45%; left: 25%; }
+  30% { top: 60%; left: 55%; }
+  45% { top: 35%; left: 60%; }
+  60% { top: 55%; left: 15%; }
+  75% { top: 65%; left: 50%; }
+  90% { top: 40%; left: 35%; }
+}
 
 
 /* 窗口控制器风格关闭按钮 */
