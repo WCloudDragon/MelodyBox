@@ -66,6 +66,13 @@
       <section class="rd-section">
         <div class="rd-section__title">能量变化率 Δ（驱动缩放）</div>
         <div class="rd-bar-row">
+          <span class="rd-bar-label" style="color:#6ee7b7">基线</span>
+          <span class="rd-bar-val">{{ fmt(data.lowBaseline) }}</span>
+          <div class="rd-bar">
+            <div class="rd-bar__fill" :style="{ width: (data.lowBaseline * 100) + '%', background: '#6ee7b7' }"></div>
+          </div>
+        </div>
+        <div class="rd-bar-row">
           <span class="rd-bar-label" style="color:#a78bfa">ΔRaw</span>
           <span class="rd-bar-val">{{ fmt(data.lowDelta) }}</span>
           <div class="rd-bar">
@@ -99,6 +106,7 @@ const fps = ref(0)
 const data = ref({
   lowRaw: 0, midRaw: 0, fullRaw: 0,
   lowSmoothed: 0, midSmoothed: 0, fullSmoothed: 0,
+  lowBaseline: 0,
   scale: '1', midOp: '0.7', hlOp: '0.55',
   flowElFound: false
 })
