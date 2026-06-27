@@ -109,7 +109,7 @@ const emit = defineEmits(['close', 'afterLeave', 'flyComplete'])
 
 const player = usePlayerStore()
 const settings = useSettingsStore()
-const { currentTrack, currentTime, songChangeDirection, queue, currentIndex } = storeToRefs(player)
+const { currentTrack, currentTime, songChangeDirection, queue, currentIndex, analyserNode } = storeToRefs(player)
 const { lyricsFontSize, lyricsFontWeight } = storeToRefs(settings)
 const { lyricsTransScale, lyricsActiveScale } = storeToRefs(settings)
 const { enableLyricsBlur, enableDominoScroll, enableWordLift, wordAnimFps } = storeToRefs(settings)
@@ -160,6 +160,67 @@ watch(() => settings.enableDynamicBg, async (on) => {
     const colors = await extractCoverColors(toThumbUrl(cover))
     flowColors.value = colors
   }
+})
+
+// ==================== 音频律动 — 频谱分析驱动光球速度/缩放/透明度 ====================
+let _rhythmRaf = null
+const _rhythmEnergy = { low: 0, mid: 0, full: 0 }
+
+function startRhythmLoop() {
+  const analyser = analyserNode.value
+  if (!analyser || _rhythmRaf) return
+  const freqData = new Uint8Array(analyser.frequencyBinCount) // 64 for fftSize=128
+
+  function step() {
+    analyser.getByteFrequencyData(freqData)
+
+    // Low: 0~170Hz (鼓/贝斯)，取 bin 0~5
+    const lowSum = freqData.slice(0, 6).reduce((a, b) => a + b, 0)
+    const lowRaw = lowSum / (6 * 255)
+
+    // Mid: 170~2kHz (人声/钢琴/吉他)，取 bin 6~30
+    const midSlice = freqData.slice(6, 31)
+    const midSum = midSlice.reduce((a, b) => a + b, 0)
+    const midRaw = midSum / (midSlice.length * 255)
+
+    // Full: 全频段平均能量
+    const fullSum = freqData.reduce((a, b) => a + b, 0)
+    const fullRaw = fullSum / (freqData.length * 255)
+
+    // Lerp 平滑（避免逐帧抖动，保持流体感）
+    const lerp = (prev, raw, f = 0.12) => prev + (raw - prev) * f
+    _rhythmEnergy.low = lerp(_rhythmEnergy.low, lowRaw)
+    _rhythmEnergy.mid = lerp(_rhythmEnergy.mid, midRaw)
+    _rhythmEnergy.full = lerp(_rhythmEnergy.full, fullRaw)
+
+    // 写入 CSS 变量到 .np-bg__flow 容器
+    const flowEl = document.querySelector('.np-overlay .np-bg__flow')
+    if (flowEl) {
+      // 低频能量 → 光球速度 (shadow 层)
+      flowEl.style.setProperty('--flow-speed', (1 + _rhythmEnergy.low * 0.8).toFixed(3))
+      // 低频能量 → 光球缩放 (shadow 层)
+      flowEl.style.setProperty('--flow-scale-low', (1 + _rhythmEnergy.low * 0.25).toFixed(3))
+      // 中频能量 → 光球透明度 (mid 层)
+      flowEl.style.setProperty('--flow-opacity-mid', (0.6 + _rhythmEnergy.mid * 0.35).toFixed(3))
+      // 全频能量 → highlight 层透明度
+      flowEl.style.setProperty('--flow-opacity-hl', (0.55 + _rhythmEnergy.full * 0.4).toFixed(3))
+    }
+
+    _rhythmRaf = requestAnimationFrame(step)
+  }
+
+  _rhythmRaf = requestAnimationFrame(step)
+}
+
+function stopRhythmLoop() {
+  if (_rhythmRaf) { cancelAnimationFrame(_rhythmRaf); _rhythmRaf = null }
+  _rhythmEnergy.low = 0; _rhythmEnergy.mid = 0; _rhythmEnergy.full = 0
+}
+
+// 动态背景开关/可见性变化时控制 RAF 循环
+watch([() => settings.enableDynamicBg, () => props.visible], ([bgOn, visible]) => {
+  if (bgOn && visible) startRhythmLoop()
+  else stopRhythmLoop()
 })
 
 // 切歌动画方向：null = 无动画, 'next' = 下一曲, 'prev' = 上一曲
@@ -911,6 +972,7 @@ watch(songChangeDirection, (dir) => {
 
 onBeforeUnmount(() => {
   stopWordAnimLoop()
+  stopRhythmLoop()
   cleanupFlyer()
   if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
 })
@@ -964,12 +1026,21 @@ onBeforeUnmount(() => {
   will-change: top, left;
   transition: background 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.np-bg__blob--1 { width: 45%; height: 45%; top: 10%; left: 10%; animation: blob-float-1 14s ease-in-out infinite; }
-.np-bg__blob--2 { width: 50%; height: 50%; top: 50%; left: 60%; animation: blob-float-2 17s ease-in-out infinite 2s; }
-.np-bg__blob--3 { width: 38%; height: 38%; top: 60%; left: 20%; animation: blob-float-3 15s ease-in-out infinite 4s; }
-.np-bg__blob--4 { width: 42%; height: 42%; top: 0%;  left: 50%; animation: blob-float-4 19s ease-in-out infinite 1s; }
-.np-bg__blob--5 { width: 35%; height: 35%; top: 30%; left: 70%; animation: blob-float-5 13s ease-in-out infinite 5s; }
-.np-bg__blob--6 { width: 48%; height: 48%; top: 70%; left: 40%; animation: blob-float-6 21s ease-in-out infinite 3s; }
+/* 光球基础速度由 CSS 变量 --flow-speed 驱动（RAF 写入），默认为 1（原速） */
+.np-bg__blob {
+  animation-duration: calc(var(--base-dur, 14s) / var(--flow-speed, 1));
+}
+.np-bg__blob--1 { --base-dur: 14s; width: 45%; height: 45%; top: 10%; left: 10%; animation-name: blob-float-1; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
+.np-bg__blob--2 { --base-dur: 17s; width: 50%; height: 50%; top: 50%; left: 60%; animation: blob-float-2 17s ease-in-out infinite 2s; }
+.np-bg__blob--3 { --base-dur: 15s; width: 38%; height: 38%; top: 60%; left: 20%; animation: blob-float-3 15s ease-in-out infinite 4s; }
+.np-bg__blob--4 { --base-dur: 19s; width: 42%; height: 42%; top: 0%;  left: 50%; animation: blob-float-4 19s ease-in-out infinite 1s; }
+.np-bg__blob--5 { --base-dur: 13s; width: 35%; height: 35%; top: 30%; left: 70%; animation: blob-float-5 13s ease-in-out infinite 5s; }
+.np-bg__blob--6 { --base-dur: 21s; width: 48%; height: 48%; top: 70%; left: 40%; animation: blob-float-6 21s ease-in-out infinite 3s; }
+
+/* 分层响应：低频能量 → blob-3/6 (shadow) 缩放 | 中频能量 → blob-2/5 (mid) 透明度 | 全频 → blob-1/4 (highlight) 透明度 */
+.np-bg__blob--3, .np-bg__blob--6 { transform: scale(var(--flow-scale-low, 1)); }
+.np-bg__blob--2, .np-bg__blob--5 { opacity: var(--flow-opacity-mid, 0.7); }
+.np-bg__blob--1, .np-bg__blob--4 { opacity: var(--flow-opacity-hl, 0.7); }
 
 @keyframes blob-float-1 {
   0%, 100% { top: 10%; left: 10%; }

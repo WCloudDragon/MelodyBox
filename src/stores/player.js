@@ -14,6 +14,10 @@ export const usePlayerStore = defineStore('player', () => {
   const volume = ref(0.7)
   const isMuted = ref(false)
 
+  // Web Audio API — 频谱分析（音频律动驱动动态背景）
+  const audioCtx = ref(null)
+  const analyserNode = ref(null)
+
   // 播放模式: 'sequential' | 'repeat' | 'repeat-one' | 'shuffle'
   const playMode = ref('sequential')
 
@@ -65,6 +69,24 @@ export const usePlayerStore = defineStore('player', () => {
     audio.value = new Audio()
     audio.value.preload = 'auto'
     audio.value.volume = volume.value
+
+    // 创建 Web Audio 频谱分析管线（只在首次播放时初始化一次）
+    audio.value.addEventListener('play', () => {
+      if (audioCtx.value) return
+      try {
+        const ctx = new AudioContext()
+        const src = ctx.createMediaElementSource(audio.value)
+        const analyser = ctx.createAnalyser()
+        analyser.fftSize = 128           // 64 频段，性能优先
+        analyser.smoothingTimeConstant = 0.6
+        src.connect(analyser)
+        analyser.connect(ctx.destination) // 手动路由到扬声器，否则无声
+        audioCtx.value = ctx
+        analyserNode.value = analyser
+      } catch (e) {
+        console.warn('[audio-rhythm] AudioContext 初始化失败:', e)
+      }
+    }, { once: true })
 
     audio.value.addEventListener('timeupdate', () => {
       currentTime.value = audio.value.currentTime + _seekOffset
@@ -410,7 +432,7 @@ export const usePlayerStore = defineStore('player', () => {
   return {
     queue, currentIndex, audio, isPlaying, currentTime, duration,
     volume, isMuted, playMode, showDesktopLyrics, savedTime, savedVolume,
-    songChangeDirection,
+    songChangeDirection, audioCtx, analyserNode,
     currentTrack, progress, hasNext, hasPrev,
     initAudio, play, pause, resume, togglePlay,
     next, prev, seek, setVolume, toggleMute, togglePlayMode, toggleDesktopLyrics,
