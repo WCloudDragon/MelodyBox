@@ -68,6 +68,18 @@ const routes = [
     meta: { title: '文件夹管理' }
   },
   {
+    path: '/history',
+    name: 'history',
+    component: () => import('@/views/HistoryView.vue'),
+    meta: { title: '播放历史' }
+  },
+  {
+    path: '/top-plays',
+    name: 'topPlays',
+    component: () => import('@/views/TopPlaysView.vue'),
+    meta: { title: '播放次数' }
+  },
+  {
     path: '/desktop-lyrics',
     name: 'desktopLyrics',
     component: () => import('@/views/DesktopLyricsView.vue'),

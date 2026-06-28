@@ -22,6 +22,14 @@
         <el-icon><FolderOpened /></el-icon>
         <span>文件夹</span>
       </router-link>
+      <router-link to="/history" class="nav-item" v-ripple :class="{ active: $route.path === '/history' }">
+        <el-icon><Timer /></el-icon>
+        <span>播放历史</span>
+      </router-link>
+      <router-link to="/top-plays" class="nav-item" v-ripple :class="{ active: $route.path === '/top-plays' }">
+        <el-icon><TrendCharts /></el-icon>
+        <span>播放次数</span>
+      </router-link>
     </div>
 
     <!-- 歌单 -->
@@ -83,7 +91,7 @@
 </template>
 
 <script setup>
-import { Plus, Moon, Sunny, Monitor, UserFilled } from '@element-plus/icons-vue'
+import { Plus, Moon, Sunny, Monitor, UserFilled, Timer, TrendCharts } from '@element-plus/icons-vue'
 import { usePlaylistStore } from '@/stores/playlist'
 import { useSettingsStore } from '@/stores/settings'
 import { useAuthStore } from '@/stores/auth'

@@ -205,8 +205,10 @@ function startRhythmLoop() {
     _rhythmEnergy.full = lerp(_rhythmEnergy.full, fullRaw)
 
     // LOW 自适应基线 delta — 鼓点瞬态脉冲
+    // 暖启动：基线为 0 时（切歌首帧）直接快照当前能量，避免从 0 爬升导致的虚高 delta
+    if (_lowBaseline === 0) { _lowBaseline = lowRaw; _midBaseline = midRaw }
     _lowBaseline = _lowBaseline + (lowRaw - _lowBaseline) * 0.005
-    const lowDelta = Math.max(0, lowRaw - _lowBaseline)
+    const lowDelta = Math.min(0.15, Math.max(0, lowRaw - _lowBaseline))
     _deltaSmoothed = _deltaSmoothed + (lowDelta - _deltaSmoothed) * 0.08
 
     // MID 自适应基线 delta — 吉他/人声等持续乐器增量脉冲
@@ -1071,8 +1073,8 @@ onBeforeUnmount(() => {
   background: var(--c, transparent);
   filter: blur(45px);
   opacity: 0.7;
-  will-change: top, left;
-  transition: background 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0), transform 0.15s ease-out;
+  will-change: top, left, transform;
+  transition: background 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .np-bg__blob--1 { --base-dur: 14s; width: 45%; height: 45%; top: 10%; left: 10%; animation-name: blob-float-1; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
 .np-bg__blob--2 { --base-dur: 17s; width: 50%; height: 50%; top: 50%; left: 60%; animation: blob-float-2 17s ease-in-out infinite 2s; }
@@ -1082,59 +1084,58 @@ onBeforeUnmount(() => {
 .np-bg__blob--6 { --base-dur: 21s; width: 48%; height: 48%; top: 70%; left: 40%; animation: blob-float-6 21s ease-in-out infinite 3s; }
 
 /* 分层响应：低频能量 → 所有光球缩放 | 中频能量 → 光球 2/5 透明度 | 全频能量 → 光球 1/4 透明度 */
-.np-bg__blob { transform: scale(var(--flow-scale, 1)); }
 .np-bg__blob--2, .np-bg__blob--5 { opacity: var(--flow-opacity-mid, 0.7); }
 .np-bg__blob--1, .np-bg__blob--4 { opacity: var(--flow-opacity-hl, 0.7); }
 
 @keyframes blob-float-1 {
-  0%, 100% { top: 10%; left: 10%; }
-  15% { top: 35%; left: 20%; }
-  30% { top: 20%; left: 50%; }
-  45% { top: 45%; left: 40%; }
-  60% { top: 15%; left: 60%; }
-  75% { top: 40%; left: 30%; }
-  90% { top: 5%; left: 45%; }
+  0%, 100% { top: 10%; left: 10%; transform: rotate(0deg)   scale(var(--flow-scale, 1)); }
+  15%       { top: 35%; left: 20%; transform: rotate(54deg)  scale(var(--flow-scale, 1)); }
+  30%       { top: 20%; left: 50%; transform: rotate(108deg) scale(var(--flow-scale, 1)); }
+  45%       { top: 45%; left: 40%; transform: rotate(162deg) scale(var(--flow-scale, 1)); }
+  60%       { top: 15%; left: 60%; transform: rotate(216deg) scale(var(--flow-scale, 1)); }
+  75%       { top: 40%; left: 30%; transform: rotate(270deg) scale(var(--flow-scale, 1)); }
+  90%       { top: 5%;  left: 45%; transform: rotate(324deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-2 {
-  0%, 100% { top: 50%; left: 60%; }
-  15% { top: 30%; left: 40%; }
-  30% { top: 60%; left: 30%; }
-  45% { top: 25%; left: 50%; }
-  60% { top: 55%; left: 70%; }
-  75% { top: 40%; left: 55%; }
-  90% { top: 65%; left: 45%; }
+  0%, 100% { top: 50%; left: 60%; transform: rotate(0deg)    scale(var(--flow-scale, 1)); }
+  15%       { top: 30%; left: 40%; transform: rotate(-54deg)  scale(var(--flow-scale, 1)); }
+  30%       { top: 60%; left: 30%; transform: rotate(-108deg) scale(var(--flow-scale, 1)); }
+  45%       { top: 25%; left: 50%; transform: rotate(-162deg) scale(var(--flow-scale, 1)); }
+  60%       { top: 55%; left: 70%; transform: rotate(-216deg) scale(var(--flow-scale, 1)); }
+  75%       { top: 40%; left: 55%; transform: rotate(-270deg) scale(var(--flow-scale, 1)); }
+  90%       { top: 65%; left: 45%; transform: rotate(-324deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-3 {
-  0%, 100% { top: 60%; left: 20%; }
-  20% { top: 40%; left: 45%; }
-  40% { top: 65%; left: 60%; }
-  60% { top: 20%; left: 35%; }
-  80% { top: 50%; left: 15%; }
+  0%, 100% { top: 60%; left: 20%; transform: rotate(0deg)  scale(var(--flow-scale, 1)); }
+  20%       { top: 40%; left: 45%; transform: rotate(72deg) scale(var(--flow-scale, 1)); }
+  40%       { top: 65%; left: 60%; transform: rotate(144deg) scale(var(--flow-scale, 1)); }
+  60%       { top: 20%; left: 35%; transform: rotate(216deg) scale(var(--flow-scale, 1)); }
+  80%       { top: 50%; left: 15%; transform: rotate(288deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-4 {
-  0%, 100% { top: 0%; left: 50%; }
-  15% { top: 25%; left: 65%; }
-  30% { top: 10%; left: 30%; }
-  45% { top: 40%; left: 55%; }
-  60% { top: 5%; left: 70%; }
-  75% { top: 30%; left: 35%; }
-  90% { top: 15%; left: 60%; }
+  0%, 100% { top: 0%;  left: 50%; transform: rotate(0deg)    scale(var(--flow-scale, 1)); }
+  15%       { top: 25%; left: 65%; transform: rotate(-54deg)  scale(var(--flow-scale, 1)); }
+  30%       { top: 10%; left: 30%; transform: rotate(-108deg) scale(var(--flow-scale, 1)); }
+  45%       { top: 40%; left: 55%; transform: rotate(-162deg) scale(var(--flow-scale, 1)); }
+  60%       { top: 5%;  left: 70%; transform: rotate(-216deg) scale(var(--flow-scale, 1)); }
+  75%       { top: 30%; left: 35%; transform: rotate(-270deg) scale(var(--flow-scale, 1)); }
+  90%       { top: 15%; left: 60%; transform: rotate(-324deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-5 {
-  0%, 100% { top: 30%; left: 70%; }
-  20% { top: 55%; left: 50%; }
-  40% { top: 40%; left: 20%; }
-  60% { top: 15%; left: 45%; }
-  80% { top: 50%; left: 60%; }
+  0%, 100% { top: 30%; left: 70%; transform: rotate(0deg)   scale(var(--flow-scale, 1)); }
+  20%       { top: 55%; left: 50%; transform: rotate(72deg)  scale(var(--flow-scale, 1)); }
+  40%       { top: 40%; left: 20%; transform: rotate(144deg) scale(var(--flow-scale, 1)); }
+  60%       { top: 15%; left: 45%; transform: rotate(216deg) scale(var(--flow-scale, 1)); }
+  80%       { top: 50%; left: 60%; transform: rotate(288deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-6 {
-  0%, 100% { top: 70%; left: 40%; }
-  15% { top: 45%; left: 25%; }
-  30% { top: 60%; left: 55%; }
-  45% { top: 35%; left: 60%; }
-  60% { top: 55%; left: 15%; }
-  75% { top: 65%; left: 50%; }
-  90% { top: 40%; left: 35%; }
+  0%, 100% { top: 70%; left: 40%; transform: rotate(0deg)    scale(var(--flow-scale, 1)); }
+  15%       { top: 45%; left: 25%; transform: rotate(-54deg)  scale(var(--flow-scale, 1)); }
+  30%       { top: 60%; left: 55%; transform: rotate(-108deg) scale(var(--flow-scale, 1)); }
+  45%       { top: 35%; left: 60%; transform: rotate(-162deg) scale(var(--flow-scale, 1)); }
+  60%       { top: 55%; left: 15%; transform: rotate(-216deg) scale(var(--flow-scale, 1)); }
+  75%       { top: 65%; left: 50%; transform: rotate(-270deg) scale(var(--flow-scale, 1)); }
+  90%       { top: 40%; left: 35%; transform: rotate(-324deg) scale(var(--flow-scale, 1)); }
 }
 
 
