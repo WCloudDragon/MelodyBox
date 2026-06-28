@@ -75,7 +75,7 @@
                 @click="seekToLine(line.time)"
               >
                 <div class="lyric-line__inner">
-                  <p v-if="line.wordLevel && line.segments && Math.abs(index - currentLineIndex) <= 1" class="lyric-line__original word-level">
+                  <p v-if="line.wordLevel && line.segments && (Math.abs(index - currentLineIndex) <= 1 || index === fadingLineIndex)" class="lyric-line__original word-level">
                     <span
                       v-for="(seg, si) in line.segments"
                       :key="si"
@@ -123,6 +123,8 @@ const currentLineIndex = ref(-1)
 // 远距离跳转缓冲：存旧行索引，-1 表示无跳转。延迟一帧让 v-if 词级 span 先以非活跃态渲染，
 // 然后 lineStyle(opacity) 和 .active(font-size) 在同一帧同步开始过渡，避免视觉脱节
 const jumpPending = ref(-1)
+let fadingTimer = null
+const fadingLineIndex = ref(-1)   // 远距离跳转后，旧行逐字 DOM 延后销毁，给过渡动画时间
 const coverArtRef = ref(null)
 
 // ==================== 动态流光背景（封面主色驱动渐变流动） ====================
@@ -793,6 +795,8 @@ watch(() => props.visible, async (val) => {
     exitUserScrollMode()
     targetScrollPos = 0
     prevLineIndex = -1
+    if (fadingTimer) { clearTimeout(fadingTimer); fadingTimer = null }
+    fadingLineIndex.value = -1
   }
 })
 
@@ -809,6 +813,10 @@ watch(currentTime, async (time) => {
     if (Math.abs(idx - oldIdx) > 1) {
       jumpPending.value = oldIdx
       nextTick(() => { jumpPending.value = -1 })
+      // 旧行逐字 DOM 延后销毁，留 0.4s 给 fadeOutWordSegs 的颜色过渡
+      if (fadingTimer) clearTimeout(fadingTimer)
+      fadingLineIndex.value = oldIdx
+      fadingTimer = setTimeout(() => { fadingLineIndex.value = -1 }, 400)
     }
     // 旧行逐字高亮渐变消失（无论是否在滚动模式都要执行）
     if (oldIdx >= 0 && parsedLyrics.value[oldIdx]?.wordLevel) fadeOutWordSegs(oldIdx)
@@ -1284,6 +1292,7 @@ onBeforeUnmount(() => {
   display: inline-flex; flex-wrap: wrap;
   justify-content: flex-start; gap: 0; white-space: pre;
 }
+
 .word-seg {
   display: inline-block;
   color: rgba(255,255,255,0.25);

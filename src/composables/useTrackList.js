@@ -9,6 +9,7 @@ export function useTrackList() {
   const selected = ref(new Set())
 
   const ctxMenu = ref({ visible: false, x: 0, y: 0, track: null })
+  const contextMenuTarget = ref(null)  // 当前右键目标 track.path，菜单关闭时清空
 
   // --- 右键菜单（含防出屏） ---
   function showContextMenu(e, track) {
@@ -19,10 +20,12 @@ export function useTrackList() {
     if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 8
     if (y + menuH > window.innerHeight) y = window.innerHeight - menuH - 8
     ctxMenu.value = { visible: true, x, y, track }
+    contextMenuTarget.value = track.path
   }
 
   function hideContextMenu() {
     ctxMenu.value.visible = false
+    contextMenuTarget.value = null
   }
 
   /**
@@ -119,6 +122,7 @@ export function useTrackList() {
     multiSelectMode,
     selected,
     ctxMenu,
+    contextMenuTarget,
     showContextMenu,
     hideContextMenu,
     createCtxHandler,

@@ -64,7 +64,7 @@
               :key="track.path"
               class="track-row"
               v-ripple
-              :class="{ playing: currentTrack?.path === track.path }"
+              :class="{ playing: currentTrack?.path === track.path, 'track-row--ctx-active': contextMenuTarget === track.path }"
               @dblclick="playTrack(track)"
               @contextmenu.prevent="showContextMenu($event, track)"
             >
@@ -111,6 +111,7 @@
       :x="ctxMenu.x"
       :y="ctxMenu.y"
       :items="menuItems"
+      :animated="true"
       @close="hideContextMenu"
       @action="ctxAction"
     />
@@ -137,7 +138,7 @@ const playlistStore = usePlaylistStore()
 const playerStore = usePlayerStore()
 const { currentTrack } = storeToRefs(playerStore)
 
-const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems } = useTrackList()
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems } = useTrackList()
 
 const ctxHandler = createCtxHandler(playerStore, router)
 
@@ -282,9 +283,10 @@ function batchAddQueueNext(tracks) {
   padding: 0 12px; border-radius: 6px;
   height: 52px; transition: background 0.15s; cursor: default;
 }
-.track-row:hover { background: var(--hover-bg); }
+.track-row:hover, .track-row--ctx-active { background: var(--hover-bg); }
 .track-row.playing { background: var(--accent-bg); }
 .track-row.playing .col-title span { color: var(--accent-color); }
+.track-row--ctx-active { background: var(--hover-bg); }
 
 .col-index { width: 40px; text-align: center; position: relative; }
 .col-index .index-num { font-size: 12px; color: var(--text-tertiary); transition: opacity 0.12s; }
@@ -293,8 +295,8 @@ function batchAddQueueNext(tracks) {
   cursor: pointer; color: var(--accent-color);
   opacity: 0; pointer-events: none; transition: opacity 0.12s;
 }
-.track-row:hover .col-index .index-num { opacity: 0; }
-.track-row:hover .col-index .play-icon { opacity: 1; pointer-events: auto; }
+.track-row:hover .col-index .index-num, .track-row--ctx-active .col-index .index-num { opacity: 0; }
+.track-row:hover .col-index .play-icon, .track-row--ctx-active .col-index .play-icon { opacity: 1; pointer-events: auto; }
 
 .col-title { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 13px; overflow: hidden; }
 .col-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

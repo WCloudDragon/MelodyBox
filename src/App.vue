@@ -10,10 +10,12 @@
     <div class="app-body">
       <Sidebar />
       <main class="main-content">
-        <router-view v-slot="{ Component }">
-          <keep-alive include="HomeView,LibraryView,AlbumsView,ArtistsView,SettingsView,UserView,FoldersView">
-            <component :is="Component" />
-          </keep-alive>
+        <router-view v-slot="{ Component, route: currentRoute }">
+          <transition name="page">
+            <keep-alive include="HomeView,LibraryView,AlbumsView,ArtistsView,SettingsView,UserView,FoldersView">
+              <component :is="Component" :key="currentRoute.path" />
+            </keep-alive>
+          </transition>
         </router-view>
       </main>
     </div>
@@ -221,6 +223,7 @@ onMounted(() => {
   scrollbar-gutter: stable;
   content-visibility: auto;
   background: var(--bg-secondary);
+  position: relative; /* 为页面过渡动画提供定位参考 */
 }
 
 /* 滚动条样式 */
@@ -236,5 +239,48 @@ onMounted(() => {
 }
 .main-content::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
+}
+
+/* ===== 页面切换过渡动画 ===== */
+/* 使用 @keyframes 动画而非 transition，确保每次路由切换都从 from 状态开始，
+   避免 keep-alive 缓存页激活时因初始状态已可见导致的"闪现" */
+/* 进入/离开元素均设为绝对定位并完全重叠，消除布局跳动 */
+.page-enter-active {
+  animation: page-enter 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0) both;
+  position: absolute;
+  top: 24px;
+  left: 32px;
+  right: 32px;
+}
+.page-leave-active {
+  animation: page-leave 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0) both;
+  position: absolute;
+  top: 24px;
+  left: 32px;
+  right: 32px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes page-leave {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.03);
+  }
 }
 </style>

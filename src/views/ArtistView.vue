@@ -50,7 +50,7 @@
           :key="track.path"
           class="track-row"
           v-ripple
-          :class="{ playing: currentTrack?.path === track.path }"
+          :class="{ playing: currentTrack?.path === track.path, 'track-row--ctx-active': contextMenuTarget === track.path }"
           @dblclick="playTrack(track)"
           @contextmenu.prevent="showContextMenu($event, track)"
         >
@@ -87,6 +87,7 @@
       :x="ctxMenu.x"
       :y="ctxMenu.y"
       :items="menuItems"
+      :animated="true"
       @close="hideContextMenu"
       @action="ctxAction"
     />
@@ -111,7 +112,7 @@ const playerStore = usePlayerStore()
 const router = useRouter()
 const { currentTrack } = storeToRefs(playerStore)
 
-const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems } = useTrackList()
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems } = useTrackList()
 
 const ctxHandler = createCtxHandler(playerStore, router)
 
@@ -202,15 +203,16 @@ function batchAddQueueNext(tracks) {
   contain-intrinsic-size: 64px;
   contain: layout style paint;
 }
-.track-row:hover { background: var(--hover-bg); }
+.track-row:hover, .track-row--ctx-active { background: var(--hover-bg); }
 .track-row.playing { background: var(--accent-bg); }
 .track-row.playing .col-title { color: var(--accent-color); }
+.track-row--ctx-active { background: var(--hover-bg); }
 
 .col-index { width: 40px; text-align: center; }
 .col-index .index-num { font-size: 13px; color: var(--text-tertiary); }
 .col-index .play-icon { display: none; cursor: pointer; color: var(--accent-color); }
-.track-row:hover .col-index .index-num { display: none; }
-.track-row:hover .col-index .play-icon { display: inline-flex; }
+.track-row:hover .col-index .index-num, .track-row--ctx-active .col-index .index-num { display: none; }
+.track-row:hover .col-index .play-icon, .track-row--ctx-active .col-index .play-icon { display: inline-flex; }
 
 .col-title { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 15px; overflow: hidden; }
 .col-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
