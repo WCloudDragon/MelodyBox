@@ -187,6 +187,8 @@
         <div class="ctx-menu-item" @click="contextAction('addQueue')">添加到队列</div>
         <div class="ctx-menu-divider"></div>
         <div class="ctx-menu-item" @click="contextAction('addPlaylist')">添加到歌单</div>
+        <div class="ctx-menu-divider"></div>
+        <div class="ctx-menu-item" @click="contextAction('info')">音轨信息</div>
       </div>
       <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="hideContextMenu"></div>
     </teleport>
@@ -196,6 +198,7 @@
 <script setup>
 defineOptions({ name: 'LibraryView' })
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useVirtualList } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { Search } from '@element-plus/icons-vue'
@@ -212,6 +215,7 @@ import { useTrackList } from '@/composables/useTrackList'
 
 const libraryStore = useLibraryStore()
 const playerStore = usePlayerStore()
+const router = useRouter()
 const playlistStore = usePlaylistStore()
 
 // 扫描进度通知
@@ -261,6 +265,9 @@ function contextAction(action) {
       break
     case 'addPlaylist':
       showAddPlaylistDialog(track)
+      break
+    case 'info':
+      router.push(`/track-info?path=${encodeURIComponent(track.path)}`)
       break
   }
 }

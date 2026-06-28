@@ -80,6 +80,12 @@ const routes = [
     meta: { title: '播放次数' }
   },
   {
+    path: '/track-info',
+    name: 'trackInfo',
+    component: () => import('@/views/TrackInfoView.vue'),
+    meta: { title: '音轨信息' }
+  },
+  {
     path: '/desktop-lyrics',
     name: 'desktopLyrics',
     component: () => import('@/views/DesktopLyricsView.vue'),

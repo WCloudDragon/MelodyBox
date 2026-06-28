@@ -111,6 +111,8 @@
         <div class="ctx-menu-item" @click="ctxAction('addQueue')">添加到队列</div>
         <div class="ctx-menu-divider"></div>
         <div class="ctx-menu-item ctx-menu-item--danger" @click="ctxAction('remove')">从歌单移除</div>
+        <div class="ctx-menu-divider"></div>
+        <div class="ctx-menu-item" @click="ctxAction('info')">音轨信息</div>
       </div>
       <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="hideContextMenu"></div>
     </teleport>
@@ -218,6 +220,8 @@ function ctxAction(action) {
     ElMessage.success('已添加到播放队列')
   } else if (action === 'remove') {
     removeTrack(track)
+  } else if (action === 'info') {
+    router.push(`/track-info?path=${encodeURIComponent(track.path)}`)
   }
 }
 

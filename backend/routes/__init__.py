@@ -37,6 +37,7 @@ def row_to_song(row):
         'lyrics': row['lyrics'] or '',
         'url': None,  # 由前端协议层填充
         'file_size': row['file_size'],
+        'file_mtime': row['file_mtime'],
         'disc_number': row['disc_number'],
         'track_number': row['track_number'],
     }

@@ -85,6 +85,8 @@
       <div v-if="ctxMenu.visible" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
         <div class="ctx-menu-item" @click="ctxAction('play')">播放</div>
         <div class="ctx-menu-item" @click="ctxAction('addQueue')">添加到队列</div>
+        <div class="ctx-menu-divider"></div>
+        <div class="ctx-menu-item" @click="ctxAction('info')">音轨信息</div>
       </div>
       <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="hideContextMenu"></div>
     </teleport>
@@ -93,7 +95,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
@@ -105,6 +107,7 @@ import LazyCover from '@/components/LazyCover.vue'
 const route = useRoute()
 const libraryStore = useLibraryStore()
 const playerStore = usePlayerStore()
+const router = useRouter()
 const { currentTrack } = storeToRefs(playerStore)
 
 const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection } = useTrackList()
@@ -155,6 +158,8 @@ function ctxAction(action) {
   } else if (action === 'addQueue') {
     playerStore.addToQueue(track)
     ElMessage.success('已添加到播放队列')
+  } else if (action === 'info') {
+    router.push(`/track-info?path=${encodeURIComponent(track.path)}`)
   }
 }
 

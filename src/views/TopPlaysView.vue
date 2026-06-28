@@ -71,7 +71,7 @@
             @contextmenu.prevent="showContextMenu($event, track)"
           >
             <span class="col-index">
-              <span v-if="sortKey === 'play_count' && sortOrder === 'desc'" class="rank-badge" :class="rankClass(index)">{{ rankIcon(index) }}</span>
+              <span v-if="sortKey === 'play_count' && sortOrder === 'desc' && index < 3" class="rank-badge" :class="rankClass(index)">{{ rankIcon(index) }}</span>
               <span v-else class="index-num">{{ index + 1 }}</span>
               <el-icon class="play-icon" size="16" @click.stop="playTrack(track)"><VideoPlay /></el-icon>
             </span>
@@ -100,6 +100,8 @@
       <div v-if="ctxMenu.visible" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
         <div class="ctx-menu-item" @click="ctxAction('play')">播放</div>
         <div class="ctx-menu-item" @click="ctxAction('addQueue')">添加到队列</div>
+        <div class="ctx-menu-divider"></div>
+        <div class="ctx-menu-item" @click="ctxAction('info')">音轨信息</div>
       </div>
       <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="hideContextMenu"></div>
     </teleport>
@@ -109,6 +111,7 @@
 <script setup>
 defineOptions({ name: 'TopPlaysView' })
 import { ref, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useVirtualList } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { Search } from '@element-plus/icons-vue'
@@ -141,6 +144,7 @@ function pathToUrl(filePath) {
 
 const playerStore = usePlayerStore()
 const libraryStore = useLibraryStore()
+const router = useRouter()
 const { currentTrack } = storeToRefs(playerStore)
 
 const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection } = useTrackList()
@@ -246,6 +250,8 @@ function ctxAction(action) {
   } else if (action === 'addQueue') {
     playerStore.addToQueue(track)
     ElMessage.success('已添加到播放队列')
+  } else if (action === 'info') {
+    router.push(`/track-info?path=${encodeURIComponent(track.path)}`)
   }
 }
 
