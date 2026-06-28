@@ -81,6 +81,10 @@
             音乐库信息
           </h3>
           <div class="info-card__body">
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(track.title)" title="点击复制">
+              <span class="info-row__label">歌名</span>
+              <span class="info-row__value">{{ track.title }}</span>
+            </div>
             <div class="info-row info-row--copyable" v-ripple @click="copyText(track.album)" title="点击复制">
               <span class="info-row__label">专辑</span>
               <span class="info-row__value">{{ track.album || '未知' }}</span>
@@ -96,6 +100,10 @@
             <div class="info-row info-row--copyable" v-ripple @click="copyText(track.genre)" title="点击复制" v-if="track.genre && track.genre !== '未知'">
               <span class="info-row__label">流派</span>
               <span class="info-row__value">{{ track.genre }}</span>
+            </div>
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(String(track.playCount || 0) + ' 次')" title="点击复制" v-if="track.playCount !== undefined">
+              <span class="info-row__label">播放次数</span>
+              <span class="info-row__value">{{ track.playCount || 0 }} 次</span>
             </div>
             <div class="info-row info-row--copyable" v-ripple @click="copyText('Disc ' + track.disc_number + ' · #' + (track.track_number || '-'))" title="点击复制" v-if="track.disc_number > 0">
               <span class="info-row__label">碟号 / 曲目号</span>
@@ -319,7 +327,7 @@ watch(() => route.query.path, (p) => {
 .info-row__value--muted { color: var(--text-tertiary); font-style: italic; }
 .info-row__value--path {
   font-size: 12px; color: var(--text-secondary);
-  word-break: break-all; font-family: 'Consolas', 'Courier New', monospace;
+  word-break: break-all; font-family: 'Cascadia Code', 'Consolas', 'Courier New', 'Microsoft YaHei UI', monospace;
 }
 .info-row--full { padding: 12px 20px; }
 .info-row--full .info-row__label { min-width: auto; }

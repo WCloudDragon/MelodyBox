@@ -148,7 +148,12 @@ def get_song_by_path():
     try:
         db = get_db()
         cursor = db.cursor()
-        cursor.execute('SELECT * FROM songs WHERE file_path = ?', (file_path,))
+        cursor.execute('''
+            SELECT s.*, COALESCE(ps.play_count, 0) AS play_count
+            FROM songs s
+            LEFT JOIN play_stats ps ON s.fingerprint = ps.fingerprint
+            WHERE s.file_path = ?
+        ''', (file_path,))
         row = cursor.fetchone()
         cursor.close()
         db.close()
@@ -156,7 +161,9 @@ def get_song_by_path():
         if not row:
             return jsonify({'error': '歌曲不存在'}), 404
 
-        return jsonify(row_to_song(row))
+        result = row_to_song(row)
+        result['playCount'] = row['play_count']
+        return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
