@@ -7,6 +7,41 @@
   font-display: swap;
 }
 
+/* ==================== 全局右键菜单 ==================== */
+.ctx-menu {
+  position: fixed; z-index: 9999;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px; padding: 4px 0;
+  min-width: 140px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+.ctx-menu-item {
+  padding: 8px 16px; font-size: 13px; cursor: pointer;
+  color: var(--text-primary);
+}
+.ctx-menu-item:hover { background: var(--bg-tertiary); }
+.ctx-menu-divider {
+  height: 1px; background: var(--border-color);
+  margin: 4px 0;
+}
+.ctx-menu-backdrop {
+  position: fixed; inset: 0; z-index: 9998;
+}
+
+/* ==================== 多选工具栏 ==================== */
+.batch-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px;
+  margin-bottom: 12px;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-color);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.batch-toolbar__count { color: var(--accent-color); font-weight: 600; }
+.batch-toolbar__actions { display: flex; gap: 6px; margin-left: auto; }
+
 /* ==================== CSS 变量 ==================== */
 :root {
   --bg-primary: #272727;
@@ -187,8 +222,9 @@ html, body {
   color: var(--text-primary) !important;
 }
 
-/* Loading 动画 */
-.is-loading {
+/* Loading 动画 — 仅作用于图标，避免 el-button loading 时按钮整体旋转 */
+.el-icon.is-loading,
+el-icon.is-loading {
   animation: rotating 1.5s linear infinite;
 }
 

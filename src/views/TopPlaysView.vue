@@ -3,11 +3,26 @@
     <div class="top-plays-view__header">
       <h1>播放次数</h1>
       <div class="header-actions">
+        <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
+          <el-icon><Select /></el-icon>
+          {{ multiSelectMode ? '退出多选' : '多选' }}
+        </el-button>
         <el-button @click="refresh" :loading="loading">
           <el-icon><Refresh /></el-icon>
           刷新
         </el-button>
       </div>
+    </div>
+
+    <!-- 多选工具栏 -->
+    <div v-if="multiSelectMode && selected.size > 0" class="batch-toolbar">
+      <span>已选 <span class="batch-toolbar__count">{{ selected.size }}</span> 首</span>
+      <span class="batch-toolbar__actions">
+        <el-button size="small" @click="batchPlay(filtered.filter(t => selected.has(t.path)))">播放选中</el-button>
+        <el-button size="small" @click="batchAddQueue(filtered.filter(t => selected.has(t.path)))">添加到队列</el-button>
+        <el-button size="small" @click="selectAll(filtered)">全选</el-button>
+        <el-button size="small" @click="clearSelection">取消</el-button>
+      </span>
     </div>
 
     <div class="toolbar">
@@ -53,6 +68,7 @@
             v-ripple
             :class="{ playing: currentTrack?.path === track.path }"
             @dblclick="playTrack(track)"
+            @contextmenu.prevent="showContextMenu($event, track)"
           >
             <span class="col-index">
               <span v-if="sortKey === 'play_count' && sortOrder === 'desc'" class="rank-badge" :class="rankClass(index)">{{ rankIcon(index) }}</span>
@@ -72,14 +88,21 @@
             <span class="col-album">{{ track.album }}</span>
             <span class="col-count">{{ track.play_count || 0 }} 次</span>
             <span class="col-action">
-              <el-button text size="small" @click.stop.prevent="playTrack(track)">
-                <el-icon><VideoPlay /></el-icon>
-              </el-button>
+              <el-checkbox v-if="multiSelectMode" :model-value="isSelected(track)" @change="toggleSelect(track)" />
             </span>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- 右键菜单 -->
+    <teleport to="body">
+      <div v-if="ctxMenu.visible" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
+        <div class="ctx-menu-item" @click="ctxAction('play')">播放</div>
+        <div class="ctx-menu-item" @click="ctxAction('addQueue')">添加到队列</div>
+      </div>
+      <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="hideContextMenu"></div>
+    </teleport>
   </div>
 </template>
 
@@ -91,6 +114,8 @@ import { storeToRefs } from 'pinia'
 import { Search } from '@element-plus/icons-vue'
 import { usePlayerStore } from '@/stores/player'
 import { useLibraryStore } from '@/stores/library'
+import { useTrackList } from '@/composables/useTrackList'
+import { ElMessage } from '@/utils/toast'
 import LazyCover from '@/components/LazyCover.vue'
 
 const API_BASE = 'http://127.0.0.1:5000/api/music'
@@ -117,6 +142,8 @@ function pathToUrl(filePath) {
 const playerStore = usePlayerStore()
 const libraryStore = useLibraryStore()
 const { currentTrack } = storeToRefs(playerStore)
+
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection } = useTrackList()
 
 const list = ref([])
 const loading = ref(false)
@@ -197,7 +224,6 @@ async function refresh() {
       }
     }) : []
   } catch {
-    // 后端未启动时静默
   } finally {
     loading.value = false
   }
@@ -209,6 +235,28 @@ function playTrack(track) {
   if (idx !== -1) {
     playerStore.playAll(list.value.filter(t => t.path), idx)
   }
+}
+
+function ctxAction(action) {
+  const track = ctxMenu.value.track
+  hideContextMenu()
+  if (!track) return
+  if (action === 'play') {
+    playTrack(track)
+  } else if (action === 'addQueue') {
+    playerStore.addToQueue(track)
+    ElMessage.success('已添加到播放队列')
+  }
+}
+
+function batchPlay(tracks) {
+  if (!tracks.length) return
+  playerStore.playAll(tracks, 0)
+}
+function batchAddQueue(tracks) {
+  tracks.forEach(t => playerStore.addToQueue(t))
+  ElMessage.success(`已添加 ${tracks.length} 首到播放队列`)
+  clearSelection()
 }
 
 refresh()

@@ -23,7 +23,24 @@
 
       <div class="section-header">
         <h3>所有歌曲</h3>
-        <el-button type="primary" @click="playAll">播放全部</el-button>
+        <div class="section-header__actions">
+          <el-button type="primary" @click="playAll">播放全部</el-button>
+          <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
+            <el-icon><Select /></el-icon>
+            {{ multiSelectMode ? '退出多选' : '多选' }}
+          </el-button>
+        </div>
+      </div>
+
+      <!-- 多选工具栏 -->
+      <div v-if="multiSelectMode && selected.size > 0" class="batch-toolbar">
+        <span>已选 <span class="batch-toolbar__count">{{ selected.size }}</span> 首</span>
+        <span class="batch-toolbar__actions">
+          <el-button size="small" @click="batchPlay(artist.tracks.filter(t => selected.has(t.path)))">播放选中</el-button>
+          <el-button size="small" @click="batchAddQueue(artist.tracks.filter(t => selected.has(t.path)))">添加到队列</el-button>
+          <el-button size="small" @click="selectAll(artist.tracks)">全选</el-button>
+          <el-button size="small" @click="clearSelection">取消</el-button>
+        </span>
       </div>
 
       <div class="tracks-list">
@@ -34,6 +51,7 @@
           v-ripple
           :class="{ playing: currentTrack?.path === track.path }"
           @dblclick="playTrack(track)"
+          @contextmenu.prevent="showContextMenu($event, track)"
         >
           <span class="col-index">
             <span class="index-num">{{ index + 1 }}</span>
@@ -51,6 +69,9 @@
               <span v-if="track.quality" class="quality-tag" :class="qualityClass(track.quality)">{{ track.quality }}</span>
             </span>
             <span class="col-time">{{ formatDuration(track.duration) }}</span>
+            <span class="col-action">
+              <el-checkbox v-if="multiSelectMode" :model-value="isSelected(track)" @change="toggleSelect(track)" />
+            </span>
         </div>
       </div>
     </div>
@@ -58,6 +79,15 @@
     <div v-else class="empty-state">
       <p>未找到该歌手信息</p>
     </div>
+
+    <!-- 右键菜单 -->
+    <teleport to="body">
+      <div v-if="ctxMenu.visible" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
+        <div class="ctx-menu-item" @click="ctxAction('play')">播放</div>
+        <div class="ctx-menu-item" @click="ctxAction('addQueue')">添加到队列</div>
+      </div>
+      <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="hideContextMenu"></div>
+    </teleport>
   </div>
 </template>
 
@@ -67,13 +97,17 @@ import { useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
+import { useTrackList } from '@/composables/useTrackList'
 import { formatDuration, qualityClass } from '@/utils/format'
+import { ElMessage } from '@/utils/toast'
 import LazyCover from '@/components/LazyCover.vue'
 
 const route = useRoute()
 const libraryStore = useLibraryStore()
 const playerStore = usePlayerStore()
 const { currentTrack } = storeToRefs(playerStore)
+
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection } = useTrackList()
 
 const artist = computed(() => {
   const name = route.params.name
@@ -93,6 +127,30 @@ function playAll() {
   if (artist.value) {
     playerStore.playAll(artist.value.tracks)
   }
+}
+
+// 右键菜单动作
+function ctxAction(action) {
+  const track = ctxMenu.value.track
+  hideContextMenu()
+  if (!track) return
+  if (action === 'play') {
+    playTrack(track)
+  } else if (action === 'addQueue') {
+    playerStore.addToQueue(track)
+    ElMessage.success('已添加到播放队列')
+  }
+}
+
+// 批量操作
+function batchPlay(tracks) {
+  if (!tracks.length) return
+  playerStore.playAll(tracks, 0)
+}
+function batchAddQueue(tracks) {
+  tracks.forEach(t => playerStore.addToQueue(t))
+  ElMessage.success(`已添加 ${tracks.length} 首到播放队列`)
+  clearSelection()
 }
 </script>
 
@@ -124,10 +182,11 @@ function playAll() {
   margin-bottom: 16px;
 }
 .section-header h3 { font-size: 18px; margin: 0; }
+.section-header__actions { display: flex; gap: 8px; align-items: center; }
 
 .track-row {
   display: grid;
-  grid-template-columns: 40px 1fr 1fr 52px 60px;
+  grid-template-columns: 40px 1fr 1fr 52px 60px 40px;
   align-items: center;
   padding: 0 12px;
   height: 64px;
@@ -157,6 +216,7 @@ function playAll() {
 .col-album { font-size: 14px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .col-quality { width: 52px; display: flex; align-items: center; justify-content: flex-end; }
 .col-time { width: 60px; text-align: right; font-size: 13px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.col-action { text-align: center; }
 .link { color: var(--text-secondary); text-decoration: none; }
 .link:hover { color: var(--accent-color); text-decoration: underline; }
 

@@ -3,6 +3,10 @@
     <div class="library-view__header">
       <h1>音乐库</h1>
       <div class="header-actions">
+        <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
+          <el-icon><Select /></el-icon>
+          {{ multiSelectMode ? '退出多选' : '多选' }}
+        </el-button>
         <el-button @click="handleImport" :loading="libraryStore.isScanning" v-if="isElectron">
           <el-icon><FolderOpened /></el-icon>
           导入音乐
@@ -12,6 +16,17 @@
           刷新
         </el-button>
       </div>
+    </div>
+
+    <!-- 多选工具栏 -->
+    <div v-if="multiSelectMode && selected.size > 0" class="batch-toolbar">
+      <span>已选 <span class="batch-toolbar__count">{{ selected.size }}</span> 首</span>
+      <span class="batch-toolbar__actions">
+        <el-button size="small" @click="batchPlay(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">播放选中</el-button>
+        <el-button size="small" @click="batchAddQueue(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">添加到队列</el-button>
+        <el-button size="small" @click="selectAll(libraryStore.filteredTracks)">全选</el-button>
+        <el-button size="small" @click="clearSelection">取消</el-button>
+      </span>
     </div>
 
     <!-- 搜索与筛选 -->
@@ -90,6 +105,7 @@
             v-ripple
             :class="{ playing: currentTrack?.path === track.path }"
             @dblclick="playTrack(track)"
+            @contextmenu.prevent="showContextMenu($event, track)"
           >
             <span class="col-index">
               <span class="index-num">{{ index + 1 }}</span>
@@ -116,9 +132,7 @@
             </span>
             <span class="col-time">{{ formatDuration(track.duration) }}</span>
             <span class="col-action">
-              <el-button text size="small" @click.stop.prevent="showContextMenu($event, track)">
-                <el-icon><MoreFilled /></el-icon>
-              </el-button>
+              <el-checkbox v-if="multiSelectMode" :model-value="isSelected(track)" @change="toggleSelect(track)" />
             </span>
           </div>
         </div>
@@ -174,7 +188,7 @@
         <div class="ctx-menu-divider"></div>
         <div class="ctx-menu-item" @click="contextAction('addPlaylist')">添加到歌单</div>
       </div>
-      <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="ctxMenu.visible = false"></div>
+      <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="hideContextMenu"></div>
     </teleport>
   </div>
 </template>
@@ -194,6 +208,7 @@ import MusicCard from '@/components/music/MusicCard.vue'
 import LazyCover from '@/components/LazyCover.vue'
 import { ElMessage } from '@/utils/toast'
 import { useScrollMemory } from '@/composables/useScrollMemory'
+import { useTrackList } from '@/composables/useTrackList'
 
 const libraryStore = useLibraryStore()
 const playerStore = usePlayerStore()
@@ -213,6 +228,8 @@ onBeforeUnmount(clearScanNotify)
 
 const { currentTrack } = storeToRefs(playerStore)
 
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection } = useTrackList()
+
 useScrollMemory('library-list', () => document.querySelector('.tracks-list-body'))
 useScrollMemory('library-grid', () => document.querySelector('.tracks-grid'))
 
@@ -230,16 +247,9 @@ watch(() => libraryStore.filteredTracks.length, () => {
   scrollTo(0)
 })
 
-// 全局操作菜单（替代行级的 el-dropdown，大幅减少 DOM 节点）
-const ctxMenu = ref({ visible: false, x: 0, y: 0, track: null })
-
-function showContextMenu(e, track) {
-  ctxMenu.value = { visible: true, x: e.clientX, y: e.clientY, track }
-}
-
 function contextAction(action) {
   const track = ctxMenu.value.track
-  ctxMenu.value.visible = false
+  hideContextMenu()
   if (!track) return
   switch (action) {
     case 'play':
@@ -299,6 +309,17 @@ function showAddPlaylistDialog(track) {
   // 简单实现：添加到第一个歌单
   playlistStore.addToPlaylist(playlistStore.playlists[0].id, track)
   ElMessage.success(`已添加到「${playlistStore.playlists[0].name}」`)
+}
+
+// 批量操作
+function batchPlay(tracks) {
+  if (!tracks.length) return
+  playerStore.playAll(tracks, 0)
+}
+function batchAddQueue(tracks) {
+  tracks.forEach(t => playerStore.addToQueue(t))
+  ElMessage.success(`已添加 ${tracks.length} 首到播放队列`)
+  clearSelection()
 }
 </script>
 
@@ -388,28 +409,6 @@ function showAddPlaylistDialog(track) {
 .detail-info { font-size: 13px; line-height: 2; }
 .detail-info p { margin: 0; }
 .path-text { font-size: 11px; color: var(--text-tertiary); word-break: break-all; }
-
-/* 全局操作菜单 */
-:global(.ctx-menu) {
-  position: fixed; z-index: 9999;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px; padding: 4px 0;
-  min-width: 140px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-}
-:global(.ctx-menu-item) {
-  padding: 8px 16px; font-size: 13px; cursor: pointer;
-  color: var(--text-primary);
-}
-:global(.ctx-menu-item:hover) { background: var(--bg-tertiary); }
-:global(.ctx-menu-divider) {
-  height: 1px; background: var(--border-color);
-  margin: 4px 0;
-}
-:global(.ctx-menu-backdrop) {
-  position: fixed; inset: 0; z-index: 9998;
-}
 
 .locate-btn {
   position: fixed;

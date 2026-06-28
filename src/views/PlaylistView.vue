@@ -24,10 +24,25 @@
               <el-icon><VideoPlay /></el-icon>
               播放全部
             </el-button>
+            <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
+              <el-icon><Select /></el-icon>
+              {{ multiSelectMode ? '退出多选' : '多选' }}
+            </el-button>
             <el-button @click="showRenameDialog">重命名</el-button>
             <el-button type="danger" plain @click="handleDelete">删除歌单</el-button>
           </div>
         </div>
+      </div>
+
+      <!-- 多选工具栏 -->
+      <div v-if="multiSelectMode && selected.size > 0" class="batch-toolbar">
+        <span>已选 <span class="batch-toolbar__count">{{ selected.size }}</span> 首</span>
+        <span class="batch-toolbar__actions">
+          <el-button size="small" @click="batchPlay(playlist.tracks.filter(t => selected.has(t.path)))">播放选中</el-button>
+          <el-button size="small" @click="batchAddQueue(playlist.tracks.filter(t => selected.has(t.path)))">添加到队列</el-button>
+          <el-button size="small" @click="selectAll(playlist.tracks)">全选</el-button>
+          <el-button size="small" @click="clearSelection">取消</el-button>
+        </span>
       </div>
 
       <!-- 列表视图（虚拟滚动） -->
@@ -50,6 +65,7 @@
               v-ripple
               :class="{ playing: currentTrack?.path === track.path }"
               @dblclick="playTrack(track)"
+              @contextmenu.prevent="showContextMenu($event, track)"
             >
               <span class="col-index">
                 <span class="index-num">{{ index + 1 }}</span>
@@ -67,7 +83,8 @@
               </span>
               <span class="col-time">{{ formatDuration(track.duration) }}</span>
               <span class="col-action">
-                <el-button text size="small" @click.stop="removeTrack(track)">
+                <el-checkbox v-if="multiSelectMode" :model-value="isSelected(track)" @change="toggleSelect(track)" />
+                <el-button v-else text size="small" @click.stop="removeTrack(track)">
                   <el-icon><Close /></el-icon>
                 </el-button>
               </span>
@@ -86,6 +103,17 @@
     <div v-else class="empty-state">
       <p>未找到该歌单</p>
     </div>
+
+    <!-- 右键菜单 -->
+    <teleport to="body">
+      <div v-if="ctxMenu.visible" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
+        <div class="ctx-menu-item" @click="ctxAction('play')">播放</div>
+        <div class="ctx-menu-item" @click="ctxAction('addQueue')">添加到队列</div>
+        <div class="ctx-menu-divider"></div>
+        <div class="ctx-menu-item ctx-menu-item--danger" @click="ctxAction('remove')">从歌单移除</div>
+      </div>
+      <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="hideContextMenu"></div>
+    </teleport>
   </div>
 </template>
 
@@ -96,6 +124,7 @@ import { storeToRefs } from 'pinia'
 import { useVirtualList } from '@vueuse/core'
 import { usePlaylistStore } from '@/stores/playlist'
 import { usePlayerStore } from '@/stores/player'
+import { useTrackList } from '@/composables/useTrackList'
 import { formatDuration, qualityClass } from '@/utils/format'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/utils/toast'
@@ -106,6 +135,8 @@ const router = useRouter()
 const playlistStore = usePlaylistStore()
 const playerStore = usePlayerStore()
 const { currentTrack } = storeToRefs(playerStore)
+
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection } = useTrackList()
 
 const playlist = computed(() => {
   return playlistStore.getPlaylist(route.params.id)
@@ -173,6 +204,32 @@ async function handleDelete() {
       router.push('/')
     }
   } catch {}
+}
+
+// 右键菜单动作
+function ctxAction(action) {
+  const track = ctxMenu.value.track
+  hideContextMenu()
+  if (!track) return
+  if (action === 'play') {
+    playTrack(track)
+  } else if (action === 'addQueue') {
+    playerStore.addToQueue(track)
+    ElMessage.success('已添加到播放队列')
+  } else if (action === 'remove') {
+    removeTrack(track)
+  }
+}
+
+// 批量操作
+function batchPlay(tracks) {
+  if (!tracks.length) return
+  playerStore.playAll(tracks, 0)
+}
+function batchAddQueue(tracks) {
+  tracks.forEach(t => playerStore.addToQueue(t))
+  ElMessage.success(`已添加 ${tracks.length} 首到播放队列`)
+  clearSelection()
 }
 </script>
 
