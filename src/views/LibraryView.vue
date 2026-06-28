@@ -23,7 +23,8 @@
       <span>已选 <span class="batch-toolbar__count">{{ selected.size }}</span> 首</span>
       <span class="batch-toolbar__actions">
         <el-button size="small" @click="batchPlay(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">播放选中</el-button>
-        <el-button size="small" @click="batchAddQueue(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">添加到队列</el-button>
+        <el-button size="small" @click="batchAddQueue(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">添加到队尾</el-button>
+        <el-button size="small" @click="batchAddQueueNext(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">添加到下一曲</el-button>
         <el-button size="small" @click="selectAll(libraryStore.filteredTracks)">全选</el-button>
         <el-button size="small" @click="clearSelection">取消</el-button>
       </span>
@@ -176,22 +177,14 @@
     </div>
 
     <!-- 全局操作菜单 -->
-    <teleport to="body">
-      <div
-        v-if="ctxMenu.visible"
-        class="ctx-menu"
-        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
-        @click.stop
-      >
-        <div class="ctx-menu-item" v-ripple @click="contextAction('play')">播放</div>
-        <div class="ctx-menu-item" v-ripple @click="contextAction('addQueue')">添加到队列</div>
-        <div class="ctx-menu-divider"></div>
-        <div class="ctx-menu-item" v-ripple @click="contextAction('addPlaylist')">添加到歌单</div>
-        <div class="ctx-menu-divider"></div>
-        <div class="ctx-menu-item" v-ripple @click="contextAction('info')">音轨信息</div>
-      </div>
-      <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="hideContextMenu"></div>
-    </teleport>
+    <ContextMenu
+      :visible="ctxMenu.visible"
+      :x="ctxMenu.x"
+      :y="ctxMenu.y"
+      :items="menuItems"
+      @close="hideContextMenu"
+      @action="ctxAction"
+    />
   </div>
 </template>
 
@@ -209,6 +202,7 @@ import { formatDuration, formatBitrate, formatSampleRate, qualityClass } from '@
 import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } from '@/utils/scanNotify'
 import MusicCard from '@/components/music/MusicCard.vue'
 import LazyCover from '@/components/LazyCover.vue'
+import ContextMenu from '@/components/music/ContextMenu.vue'
 import { ElMessage } from '@/utils/toast'
 import { useScrollMemory } from '@/composables/useScrollMemory'
 import { useTrackList } from '@/composables/useTrackList'
@@ -232,7 +226,9 @@ onBeforeUnmount(clearScanNotify)
 
 const { currentTrack } = storeToRefs(playerStore)
 
-const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection } = useTrackList()
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems } = useTrackList()
+
+const menuItems = computed(() => buildMenuItems('library'))
 
 useScrollMemory('library-list', () => document.querySelector('.tracks-list-body'))
 useScrollMemory('library-grid', () => document.querySelector('.tracks-grid'))
@@ -251,7 +247,7 @@ watch(() => libraryStore.filteredTracks.length, () => {
   scrollTo(0)
 })
 
-function contextAction(action) {
+function ctxAction(action) {
   const track = ctxMenu.value.track
   hideContextMenu()
   if (!track) return
@@ -259,15 +255,25 @@ function contextAction(action) {
     case 'play':
       playTrack(track)
       break
-    case 'addQueue':
+    case 'addQueueEnd':
       playerStore.addToQueue(track)
-      ElMessage.success('已添加到播放队列')
+      ElMessage.success('已添加到队尾')
       break
-    case 'addPlaylist':
+    case 'addQueueNext':
+      playerStore.addToQueueNext(track)
+      ElMessage.success('已添加到下一曲')
+      break
+    case 'goAlbum':
+      if (track.album) router.push('/album/' + encodeURIComponent(track.album))
+      break
+    case 'goArtist':
+      if (track.artist) router.push('/artist/' + encodeURIComponent(track.artist))
+      break
+    case 'trackInfo':
+      router.push('/track-info?path=' + encodeURIComponent(track.path))
+      break
+    case 'addToPlaylist':
       showAddPlaylistDialog(track)
-      break
-    case 'info':
-      router.push(`/track-info?path=${encodeURIComponent(track.path)}`)
       break
   }
 }
@@ -326,6 +332,13 @@ function batchPlay(tracks) {
 function batchAddQueue(tracks) {
   tracks.forEach(t => playerStore.addToQueue(t))
   ElMessage.success(`已添加 ${tracks.length} 首到播放队列`)
+  clearSelection()
+}
+function batchAddQueueNext(tracks) {
+  tracks.forEach((t, i) => {
+    playerStore.addToQueueNext(t)
+  })
+  ElMessage.success(`已添加 ${tracks.length} 首到下一曲`)
   clearSelection()
 }
 </script>

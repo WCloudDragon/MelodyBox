@@ -21,6 +21,8 @@
   color: var(--text-primary);
 }
 .ctx-menu-item:hover { background: var(--bg-tertiary); }
+.ctx-menu-item--danger { color: #f56c6c; }
+.ctx-menu-item--danger:hover { background: rgba(245,108,108,0.1); }
 .ctx-menu-divider {
   height: 1px; background: var(--border-color);
   margin: 4px 0;

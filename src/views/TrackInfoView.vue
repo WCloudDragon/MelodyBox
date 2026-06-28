@@ -314,7 +314,7 @@ watch(() => route.query.path, (p) => {
 .info-card__body { padding: 8px 0; }
 
 .info-row {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: flex-start; gap: 12px;
   padding: 10px 20px;
 }
 .info-row:hover { background: var(--bg-tertiary); }
@@ -326,8 +326,7 @@ watch(() => route.query.path, (p) => {
 .info-row__value { font-size: 14px; color: var(--text-primary); }
 .info-row__value--muted { color: var(--text-tertiary); font-style: italic; }
 .info-row__value--path {
-  font-size: 12px; color: var(--text-secondary);
-  word-break: break-all; font-family: 'Cascadia Code', 'Consolas', 'Courier New', 'Microsoft YaHei UI', monospace;
+  word-break: break-all;
 }
 .info-row--full { padding: 12px 20px; }
 .info-row--full .info-row__label { min-width: auto; }

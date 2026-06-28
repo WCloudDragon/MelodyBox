@@ -364,10 +364,19 @@ export const usePlayerStore = defineStore('player', () => {
     playMode.value = nextMode
   }
 
-  // 添加到队列
+  // 添加到队尾
   function addToQueue(tracks) {
     const arr = Array.isArray(tracks) ? tracks : [tracks]
     queue.value.push(...arr)
+  }
+
+  // 添加到下一曲（插入到 currentIndex 之后）
+  function addToQueueNext(track) {
+    if (currentIndex.value < 0) {
+      queue.value.push(track)
+    } else {
+      queue.value.splice(currentIndex.value + 1, 0, track)
+    }
   }
 
   // 从队列移除
@@ -447,7 +456,7 @@ export const usePlayerStore = defineStore('player', () => {
     currentTrack, progress, hasNext, hasPrev,
     initAudio, play, pause, resume, togglePlay,
     next, prev, seek, setVolume, toggleMute, togglePlayMode, toggleDesktopLyrics,
-    addToQueue, removeFromQueue, clearQueue, playAll,
+    addToQueue, addToQueueNext, removeFromQueue, clearQueue, playAll,
     saveSettings, loadSettings, saveProgress, restoreProgress,
     getLiveTime
   }

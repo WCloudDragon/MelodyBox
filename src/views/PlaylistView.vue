@@ -39,7 +39,8 @@
         <span>已选 <span class="batch-toolbar__count">{{ selected.size }}</span> 首</span>
         <span class="batch-toolbar__actions">
           <el-button size="small" @click="batchPlay(playlist.tracks.filter(t => selected.has(t.path)))">播放选中</el-button>
-          <el-button size="small" @click="batchAddQueue(playlist.tracks.filter(t => selected.has(t.path)))">添加到队列</el-button>
+          <el-button size="small" @click="batchAddQueue(playlist.tracks.filter(t => selected.has(t.path)))">添加到队尾</el-button>
+          <el-button size="small" @click="batchAddQueueNext(playlist.tracks.filter(t => selected.has(t.path)))">添加到下一曲</el-button>
           <el-button size="small" @click="selectAll(playlist.tracks)">全选</el-button>
           <el-button size="small" @click="clearSelection">取消</el-button>
         </span>
@@ -105,17 +106,14 @@
     </div>
 
     <!-- 右键菜单 -->
-    <teleport to="body">
-      <div v-if="ctxMenu.visible" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
-        <div class="ctx-menu-item" v-ripple @click="ctxAction('play')">播放</div>
-        <div class="ctx-menu-item" v-ripple @click="ctxAction('addQueue')">添加到队列</div>
-        <div class="ctx-menu-divider"></div>
-        <div class="ctx-menu-item ctx-menu-item--danger" v-ripple @click="ctxAction('remove')">从歌单移除</div>
-        <div class="ctx-menu-divider"></div>
-        <div class="ctx-menu-item" v-ripple @click="ctxAction('info')">音轨信息</div>
-      </div>
-      <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="hideContextMenu"></div>
-    </teleport>
+    <ContextMenu
+      :visible="ctxMenu.visible"
+      :x="ctxMenu.x"
+      :y="ctxMenu.y"
+      :items="menuItems"
+      @close="hideContextMenu"
+      @action="ctxAction"
+    />
   </div>
 </template>
 
@@ -131,6 +129,7 @@ import { formatDuration, qualityClass } from '@/utils/format'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/utils/toast'
 import LazyCover from '@/components/LazyCover.vue'
+import ContextMenu from '@/components/music/ContextMenu.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -138,7 +137,9 @@ const playlistStore = usePlaylistStore()
 const playerStore = usePlayerStore()
 const { currentTrack } = storeToRefs(playerStore)
 
-const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection } = useTrackList()
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems } = useTrackList()
+
+const menuItems = computed(() => buildMenuItems('playlist'))
 
 const playlist = computed(() => {
   return playlistStore.getPlaylist(route.params.id)
@@ -213,15 +214,30 @@ function ctxAction(action) {
   const track = ctxMenu.value.track
   hideContextMenu()
   if (!track) return
-  if (action === 'play') {
-    playTrack(track)
-  } else if (action === 'addQueue') {
-    playerStore.addToQueue(track)
-    ElMessage.success('已添加到播放队列')
-  } else if (action === 'remove') {
-    removeTrack(track)
-  } else if (action === 'info') {
-    router.push(`/track-info?path=${encodeURIComponent(track.path)}`)
+  switch (action) {
+    case 'play':
+      playTrack(track)
+      break
+    case 'addQueueEnd':
+      playerStore.addToQueue(track)
+      ElMessage.success('已添加到队尾')
+      break
+    case 'addQueueNext':
+      playerStore.addToQueueNext(track)
+      ElMessage.success('已添加到下一曲')
+      break
+    case 'goAlbum':
+      if (track.album) router.push('/album/' + encodeURIComponent(track.album))
+      break
+    case 'goArtist':
+      if (track.artist) router.push('/artist/' + encodeURIComponent(track.artist))
+      break
+    case 'trackInfo':
+      router.push('/track-info?path=' + encodeURIComponent(track.path))
+      break
+    case 'remove':
+      removeTrack(track)
+      break
   }
 }
 
@@ -233,6 +249,13 @@ function batchPlay(tracks) {
 function batchAddQueue(tracks) {
   tracks.forEach(t => playerStore.addToQueue(t))
   ElMessage.success(`已添加 ${tracks.length} 首到播放队列`)
+  clearSelection()
+}
+function batchAddQueueNext(tracks) {
+  tracks.forEach((t, i) => {
+    playerStore.addToQueueNext(t)
+  })
+  ElMessage.success(`已添加 ${tracks.length} 首到下一曲`)
   clearSelection()
 }
 </script>

@@ -19,7 +19,8 @@
       <span>已选 <span class="batch-toolbar__count">{{ selected.size }}</span> 首</span>
       <span class="batch-toolbar__actions">
         <el-button size="small" @click="batchPlay(filtered.filter(t => selected.has(t.path)))">播放选中</el-button>
-        <el-button size="small" @click="batchAddQueue(filtered.filter(t => selected.has(t.path)))">添加到队列</el-button>
+        <el-button size="small" @click="batchAddQueue(filtered.filter(t => selected.has(t.path)))">添加到队尾</el-button>
+        <el-button size="small" @click="batchAddQueueNext(filtered.filter(t => selected.has(t.path)))">添加到下一曲</el-button>
         <el-button size="small" @click="selectAll(filtered)">全选</el-button>
         <el-button size="small" @click="clearSelection">取消</el-button>
       </span>
@@ -94,15 +95,14 @@
     </div>
 
     <!-- 右键菜单 -->
-    <teleport to="body">
-      <div v-if="ctxMenu.visible" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
-        <div class="ctx-menu-item" v-ripple @click="ctxAction('play')">播放</div>
-        <div class="ctx-menu-item" v-ripple @click="ctxAction('addQueue')">添加到队列</div>
-        <div class="ctx-menu-divider"></div>
-        <div class="ctx-menu-item" v-ripple @click="ctxAction('info')">音轨信息</div>
-      </div>
-      <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="hideContextMenu"></div>
-    </teleport>
+    <ContextMenu
+      :visible="ctxMenu.visible"
+      :x="ctxMenu.x"
+      :y="ctxMenu.y"
+      :items="menuItems"
+      @close="hideContextMenu"
+      @action="ctxAction"
+    />
   </div>
 </template>
 
@@ -118,6 +118,7 @@ import { useLibraryStore } from '@/stores/library'
 import { useTrackList } from '@/composables/useTrackList'
 import { ElMessage } from '@/utils/toast'
 import LazyCover from '@/components/LazyCover.vue'
+import ContextMenu from '@/components/music/ContextMenu.vue'
 
 const API_BASE = 'http://127.0.0.1:5000/api/music'
 
@@ -145,7 +146,9 @@ const libraryStore = useLibraryStore()
 const router = useRouter()
 const { currentTrack } = storeToRefs(playerStore)
 
-const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection } = useTrackList()
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems } = useTrackList()
+
+const menuItems = computed(() => buildMenuItems('default'))
 
 const list = ref([])
 const loading = ref(false)
@@ -256,13 +259,27 @@ function ctxAction(action) {
   const track = ctxMenu.value.track
   hideContextMenu()
   if (!track) return
-  if (action === 'play') {
-    playTrack(track)
-  } else if (action === 'addQueue') {
-    playerStore.addToQueue(track)
-    ElMessage.success('已添加到播放队列')
-  } else if (action === 'info') {
-    router.push(`/track-info?path=${encodeURIComponent(track.path)}`)
+  switch (action) {
+    case 'play':
+      playTrack(track)
+      break
+    case 'addQueueEnd':
+      playerStore.addToQueue(track)
+      ElMessage.success('已添加到队尾')
+      break
+    case 'addQueueNext':
+      playerStore.addToQueueNext(track)
+      ElMessage.success('已添加到下一曲')
+      break
+    case 'goAlbum':
+      if (track.album) router.push('/album/' + encodeURIComponent(track.album))
+      break
+    case 'goArtist':
+      if (track.artist) router.push('/artist/' + encodeURIComponent(track.artist))
+      break
+    case 'trackInfo':
+      router.push('/track-info?path=' + encodeURIComponent(track.path))
+      break
   }
 }
 
@@ -274,6 +291,13 @@ function batchPlay(tracks) {
 function batchAddQueue(tracks) {
   tracks.forEach(t => playerStore.addToQueue(t))
   ElMessage.success(`已添加 ${tracks.length} 首到播放队列`)
+  clearSelection()
+}
+function batchAddQueueNext(tracks) {
+  tracks.forEach((t, i) => {
+    playerStore.addToQueueNext(t)
+  })
+  ElMessage.success(`已添加 ${tracks.length} 首到下一曲`)
   clearSelection()
 }
 
