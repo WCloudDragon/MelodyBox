@@ -31,8 +31,8 @@ export function useTrackList() {
   function buildMenuItems(page) {
     const items = [
       { label: '播放', action: 'play' },
-      { label: '添加到队尾', action: 'addQueueEnd' },
-      { label: '添加到下一曲', action: 'addQueueNext' },
+      { label: '插播至当前播放后', action: 'addQueueNext' },
+      { label: '插播至队列末尾', action: 'addQueueEnd' },
       '-',
     ]
     if (page === 'library') {

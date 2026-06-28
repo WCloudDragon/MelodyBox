@@ -19,8 +19,8 @@
       <span>已选 <span class="batch-toolbar__count">{{ selected.size }}</span> 首</span>
       <span class="batch-toolbar__actions">
         <el-button size="small" @click="batchPlay(filtered.filter(t => selected.has(t.path)))">播放选中</el-button>
-        <el-button size="small" @click="batchAddQueue(filtered.filter(t => selected.has(t.path)))">添加到队尾</el-button>
-        <el-button size="small" @click="batchAddQueueNext(filtered.filter(t => selected.has(t.path)))">添加到下一曲</el-button>
+        <el-button size="small" @click="batchAddQueueNext(filtered.filter(t => selected.has(t.path)))">插播至当前播放后</el-button>
+        <el-button size="small" @click="batchAddQueue(filtered.filter(t => selected.has(t.path)))">插播至队列末尾</el-button>
         <el-button size="small" @click="selectAll(filtered)">全选</el-button>
         <el-button size="small" @click="clearSelection">取消</el-button>
       </span>
@@ -265,11 +265,11 @@ function ctxAction(action) {
       break
     case 'addQueueEnd':
       playerStore.addToQueue(track)
-      ElMessage.success('已添加到队尾')
+      ElMessage.success('已插播至队列末尾')
       break
     case 'addQueueNext':
       playerStore.addToQueueNext(track)
-      ElMessage.success('已添加到下一曲')
+      ElMessage.success('已插播至下一位置')
       break
     case 'goAlbum':
       if (track.album) router.push('/album/' + encodeURIComponent(track.album))
@@ -290,14 +290,14 @@ function batchPlay(tracks) {
 }
 function batchAddQueue(tracks) {
   tracks.forEach(t => playerStore.addToQueue(t))
-  ElMessage.success(`已添加 ${tracks.length} 首到播放队列`)
+  ElMessage.success(`已插播 ${tracks.length} 首至队列末尾`)
   clearSelection()
 }
 function batchAddQueueNext(tracks) {
   tracks.forEach((t, i) => {
     playerStore.addToQueueNext(t)
   })
-  ElMessage.success(`已添加 ${tracks.length} 首到下一曲`)
+  ElMessage.success(`已插播 ${tracks.length} 首至下一位置`)
   clearSelection()
 }
 
