@@ -214,11 +214,11 @@ function startRhythmLoop() {
     const midDelta = Math.max(0, midRaw - _midBaseline)
     _midDeltaSmoothed = _midDeltaSmoothed + (midDelta - _midDeltaSmoothed) * 0.08
 
-    // 能量累积：每次鼓点注入 delta × 0.15，每帧自然衰减 3%
+    // 能量累积：每次鼓点注入 delta × 0.15，每帧衰减 6%（半衰期 ≈ 11 帧 ≈ 0.18s，强调瞬时脉冲）
     _accumulator += lowDelta * 0.15
-    _accumulator *= 0.97
+    _accumulator *= 0.94
     // scale = 基础 + LOW脉冲 + 累积能量 + MID增量脉冲（替代持续 mid 能量，避免炸裂歌曲顶死上限）
-    const sc = Math.round(Math.min(1.5, 1 + _deltaSmoothed * 8 + _accumulator * 3 + _midDeltaSmoothed * 0.6) * 100) / 100
+    const sc = Math.round(Math.min(1.5, 1 + _deltaSmoothed * 5.5 + _accumulator * 2 + _midDeltaSmoothed * 0.4) * 100) / 100
     if (sc !== _prev.scale) { _flowEl.style.setProperty('--flow-scale', sc); _prev.scale = sc }
 
     // 中频能量 → mid 层透明度
