@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { ElMessage } from 'element-plus'
 
 /**
  * 共享的曲目列表交互逻辑：右键菜单 + 多选
@@ -22,6 +23,43 @@ export function useTrackList() {
 
   function hideContextMenu() {
     ctxMenu.value.visible = false
+  }
+
+  /**
+   * 创建统一的右键菜单操作处理器
+   * @param {import('pinia').Store} playerStore
+   * @param {import('vue-router').Router} router
+   * @returns {(action: string) => boolean} handled
+   */
+  function createCtxHandler(playerStore, router) {
+    return function (action) {
+      const track = ctxMenu.value.track
+      hideContextMenu()
+      if (!track || !action) return false
+      switch (action) {
+        case 'play':
+          playerStore.playAll([track], 0)
+          return true
+        case 'addQueueEnd':
+          playerStore.addToQueue(track)
+          ElMessage.success('已插播至队列末尾')
+          return true
+        case 'addQueueNext':
+          playerStore.addToQueueNext(track)
+          ElMessage.success('已插播至下一位置')
+          return true
+        case 'goAlbum':
+          if (track.album) router.push('/album/' + encodeURIComponent(track.album))
+          return true
+        case 'goArtist':
+          if (track.artist) router.push('/artist/' + encodeURIComponent(track.artist))
+          return true
+        case 'trackInfo':
+          router.push('/track-info?path=' + encodeURIComponent(track.path))
+          return true
+      }
+      return false
+    }
   }
 
   /**
@@ -83,6 +121,7 @@ export function useTrackList() {
     ctxMenu,
     showContextMenu,
     hideContextMenu,
+    createCtxHandler,
     buildMenuItems,
     toggleSelectMode,
     isSelected,

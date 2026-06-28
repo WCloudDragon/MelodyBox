@@ -111,7 +111,9 @@ const playerStore = usePlayerStore()
 const router = useRouter()
 const { currentTrack } = storeToRefs(playerStore)
 
-const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems } = useTrackList()
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems } = useTrackList()
+
+const ctxHandler = createCtxHandler(playerStore, router)
 
 const menuItems = computed(() => buildMenuItems('default'))
 
@@ -135,33 +137,8 @@ function playAll() {
   }
 }
 
-// 右键菜单动作
 function ctxAction(action) {
-  const track = ctxMenu.value.track
-  hideContextMenu()
-  if (!track) return
-  switch (action) {
-    case 'play':
-      playTrack(track)
-      break
-    case 'addQueueEnd':
-      playerStore.addToQueue(track)
-      ElMessage.success('已插播至队列末尾')
-      break
-    case 'addQueueNext':
-      playerStore.addToQueueNext(track)
-      ElMessage.success('已插播至下一位置')
-      break
-    case 'goAlbum':
-      if (track.album) router.push('/album/' + encodeURIComponent(track.album))
-      break
-    case 'goArtist':
-      if (track.artist) router.push('/artist/' + encodeURIComponent(track.artist))
-      break
-    case 'trackInfo':
-      router.push('/track-info?path=' + encodeURIComponent(track.path))
-      break
-  }
+  ctxHandler(action)
 }
 
 // 批量操作
