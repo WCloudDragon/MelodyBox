@@ -69,7 +69,7 @@
             >
               <span class="col-index">
                 <span class="index-num">{{ index + 1 }}</span>
-                <el-icon class="play-icon" size="16" @click.stop="playTrack(track)"><VideoPlay /></el-icon>
+                <el-icon class="play-icon" v-ripple size="16" @click.stop="playTrack(track)"><VideoPlay /></el-icon>
               </span>
               <span class="col-title">
                 <LazyCover v-if="track.cover" :src="track.cover" class="row-cover" :thumb-size="72" />
@@ -107,12 +107,12 @@
     <!-- 右键菜单 -->
     <teleport to="body">
       <div v-if="ctxMenu.visible" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
-        <div class="ctx-menu-item" @click="ctxAction('play')">播放</div>
-        <div class="ctx-menu-item" @click="ctxAction('addQueue')">添加到队列</div>
+        <div class="ctx-menu-item" v-ripple @click="ctxAction('play')">播放</div>
+        <div class="ctx-menu-item" v-ripple @click="ctxAction('addQueue')">添加到队列</div>
         <div class="ctx-menu-divider"></div>
-        <div class="ctx-menu-item ctx-menu-item--danger" @click="ctxAction('remove')">从歌单移除</div>
+        <div class="ctx-menu-item ctx-menu-item--danger" v-ripple @click="ctxAction('remove')">从歌单移除</div>
         <div class="ctx-menu-divider"></div>
-        <div class="ctx-menu-item" @click="ctxAction('info')">音轨信息</div>
+        <div class="ctx-menu-item" v-ripple @click="ctxAction('info')">音轨信息</div>
       </div>
       <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="hideContextMenu"></div>
     </teleport>

@@ -62,7 +62,7 @@
               <span class="info-row__label">修改密码</span>
               <span class="info-row__hint">定期更换密码可提升账户安全性</span>
             </div>
-            <button class="action-btn action-btn--primary" @click="showChangePwdDialog">
+            <button class="action-btn action-btn--primary" v-ripple @click="showChangePwdDialog">
               修改
             </button>
           </div>
@@ -77,7 +77,7 @@
             <span class="info-row__label">退出登录</span>
             <span class="info-row__hint">退出当前账户，返回未登录状态</span>
           </div>
-          <button class="action-btn" @click="handleLogout">退出</button>
+          <button class="action-btn" v-ripple @click="handleLogout">退出</button>
         </div>
       </section>
 
@@ -90,6 +90,7 @@
         </p>
         <button
           class="action-btn action-btn--danger"
+          v-ripple
           @click="handleDeleteAccount"
           :disabled="auth.isAdmin"
         >

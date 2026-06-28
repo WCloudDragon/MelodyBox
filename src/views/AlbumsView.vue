@@ -33,7 +33,7 @@
                 <div v-else class="cover-placeholder">
                   <el-icon size="36"><Folder /></el-icon>
                 </div>
-                <div class="cover-overlay" @click.stop="playAlbum(album)">
+                <div class="cover-overlay" v-ripple @click.stop="playAlbum(album)">
                   <el-icon size="36"><VideoPlay /></el-icon>
                 </div>
               </div>

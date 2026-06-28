@@ -71,7 +71,7 @@
           >
             <span class="col-index">
               <span class="index-num">{{ index + 1 }}</span>
-              <el-icon class="play-icon" size="16" @click.stop="playTrack(track)"><VideoPlay /></el-icon>
+              <el-icon class="play-icon" v-ripple size="16" @click.stop="playTrack(track)"><VideoPlay /></el-icon>
             </span>
             <span class="col-title">
               <LazyCover v-if="track.cover" :src="track.cover" class="row-cover" :thumb-size="72" />
@@ -84,7 +84,7 @@
               </div>
             </span>
             <span class="col-album">{{ track.album }}</span>
-            <span class="col-time-text" :title="showRelative ? '点击查看具体时间' : '点击查看相对时间'" @click="showRelative = !showRelative">{{ showRelative ? formatPlayedTime(track.played_at) : formatAbsoluteTime(track.played_at) }}</span>
+            <span class="col-time-text" v-ripple :title="showRelative ? '点击查看具体时间' : '点击查看相对时间'" @click="showRelative = !showRelative">{{ showRelative ? formatPlayedTime(track.played_at) : formatAbsoluteTime(track.played_at) }}</span>
             <span class="col-action">
               <el-checkbox v-if="multiSelectMode" :model-value="isSelected(track)" @change="toggleSelect(track)" />
             </span>
@@ -96,10 +96,10 @@
     <!-- 右键菜单 -->
     <teleport to="body">
       <div v-if="ctxMenu.visible" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
-        <div class="ctx-menu-item" @click="ctxAction('play')">播放</div>
-        <div class="ctx-menu-item" @click="ctxAction('addQueue')">添加到队列</div>
+        <div class="ctx-menu-item" v-ripple @click="ctxAction('play')">播放</div>
+        <div class="ctx-menu-item" v-ripple @click="ctxAction('addQueue')">添加到队列</div>
         <div class="ctx-menu-divider"></div>
-        <div class="ctx-menu-item" @click="ctxAction('info')">音轨信息</div>
+        <div class="ctx-menu-item" v-ripple @click="ctxAction('info')">音轨信息</div>
       </div>
       <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="hideContextMenu"></div>
     </teleport>

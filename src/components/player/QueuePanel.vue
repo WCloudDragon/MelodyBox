@@ -8,7 +8,7 @@
             <span class="queue-card__count">{{ queue.length }} 首</span>
             <div class="queue-card__actions">
               <el-button size="small" text @click="player.clearQueue">清空</el-button>
-              <button class="queue-close" @click="$emit('close')">
+              <button class="queue-close" v-ripple @click="$emit('close')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                 </svg>
@@ -23,6 +23,7 @@
                   :key="track.path"
                   class="queue-item"
                   :class="{ active: index === currentIndex }"
+                  v-ripple
                   @click="player.play(index)"
                 >
                   <div class="queue-item__index">
@@ -40,7 +41,7 @@
                     <div class="queue-item__artist">{{ track.artist.split('/').map(s => s.trim()).join(' / ') }}</div>
                   </div>
                   <span class="queue-item__time">{{ formatDuration(track.duration) }}</span>
-                  <button class="queue-item__remove" @click.stop="player.removeFromQueue(index)" title="移除">
+                  <button class="queue-item__remove" v-ripple @click.stop="player.removeFromQueue(index)" title="移除">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                     </svg>

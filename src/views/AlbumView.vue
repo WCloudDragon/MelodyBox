@@ -58,7 +58,7 @@
           >
             <span class="col-index">
               <span class="index-num">{{ track.track_number || index + 1 + gi * 100 }}</span>
-              <el-icon class="play-icon" size="16" @click.stop="playTrack(track)"><VideoPlay /></el-icon>
+              <el-icon class="play-icon" v-ripple size="16" @click.stop="playTrack(track)"><VideoPlay /></el-icon>
             </span>
             <span class="col-title">
               <span>{{ track.title }}</span>
@@ -83,10 +83,10 @@
     <!-- 右键菜单 -->
     <teleport to="body">
       <div v-if="ctxMenu.visible" class="ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
-        <div class="ctx-menu-item" @click="ctxAction('play')">播放</div>
-        <div class="ctx-menu-item" @click="ctxAction('addQueue')">添加到队列</div>
+        <div class="ctx-menu-item" v-ripple @click="ctxAction('play')">播放</div>
+        <div class="ctx-menu-item" v-ripple @click="ctxAction('addQueue')">添加到队列</div>
         <div class="ctx-menu-divider"></div>
-        <div class="ctx-menu-item" @click="ctxAction('info')">音轨信息</div>
+        <div class="ctx-menu-item" v-ripple @click="ctxAction('info')">音轨信息</div>
       </div>
       <div v-if="ctxMenu.visible" class="ctx-menu-backdrop" @click="hideContextMenu"></div>
     </teleport>

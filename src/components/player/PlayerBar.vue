@@ -36,7 +36,7 @@
       <div class="player-bar__center">
         <transition name="fade">
           <div class="controls" v-show="hovered">
-            <button class="ctrl-btn" :class="{ active: playMode !== 'sequential' }" @click="player.togglePlayMode" :title="playModeLabel">
+            <button class="ctrl-btn" :class="{ active: playMode !== 'sequential' }" v-ripple @click="player.togglePlayMode" :title="playModeLabel">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                 <template v-if="playMode === 'sequential'">
                   <path d="M2 3h2v10H2V3zm4 0h8v2H6V3zm0 4h6v2H6V7zm0 4h8v2H6v-2z"/>
@@ -52,12 +52,12 @@
                 </template>
               </svg>
             </button>
-            <button class="ctrl-btn" :disabled="!hasPrev" @click="player.prev">
+            <button class="ctrl-btn" :disabled="!hasPrev" v-ripple @click="player.prev">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
               </svg>
             </button>
-            <button class="ctrl-btn ctrl-btn--play" @click="player.togglePlay">
+            <button class="ctrl-btn ctrl-btn--play" v-ripple @click="player.togglePlay">
               <svg v-if="isPlaying" width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
               </svg>
@@ -65,18 +65,18 @@
                 <path d="M8 5v14l11-7z"/>
               </svg>
             </button>
-            <button class="ctrl-btn" :disabled="!hasNext" @click="player.next">
+            <button class="ctrl-btn" :disabled="!hasNext" v-ripple @click="player.next">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M16 18h2V6h-2zm-11-7l8.5 6V6z"/>
               </svg>
             </button>
-            <button class="ctrl-btn" :class="{ active: showQueue }" @click="showQueue = !showQueue" title="播放列表">
+            <button class="ctrl-btn" :class="{ active: showQueue }" v-ripple @click="showQueue = !showQueue" title="播放列表">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 14h8v2H3v-2zm10 0h8v6h-8v-6zm2 2h4v2h-4v-2z"/>
               </svg>
               <span class="queue-count" v-if="queue.length">{{ queue.length }}</span>
             </button>
-            <button class="ctrl-btn" :class="{ active: showDesktopLyrics }" @click="player.toggleDesktopLyrics" :title="showDesktopLyrics ? '关闭桌面歌词' : '打开桌面歌词'">
+            <button class="ctrl-btn" :class="{ active: showDesktopLyrics }" v-ripple @click="player.toggleDesktopLyrics" :title="showDesktopLyrics ? '关闭桌面歌词' : '打开桌面歌词'">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 14h8v2H3v-2zm10 0h2v2h-2v-2zm4-4h2v8h-2v-8z"/>
               </svg>
@@ -89,7 +89,7 @@
       <div class="player-bar__right">
         <transition name="fade">
           <div class="volume-area" v-show="hovered">
-            <div class="volume-btn" @click="showVolumePop = !showVolumePop" ref="volumeBtnRef">
+            <div class="volume-btn" v-ripple @click="showVolumePop = !showVolumePop" ref="volumeBtnRef">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <template v-if="isMuted || volume === 0">
                   <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 8.5v7a4.47 4.47 0 002.5-3.5zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>

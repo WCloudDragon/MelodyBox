@@ -3,7 +3,7 @@
     <header class="rd-header">
       <span class="rd-title">律动日志</span>
       <span class="rd-fps">{{ fps }} FPS</span>
-      <button class="rd-close" @click="handleClose">&times;</button>
+      <button class="rd-close" v-ripple @click="handleClose">&times;</button>
     </header>
 
     <template v-if="!hasData">

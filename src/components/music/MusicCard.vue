@@ -1,11 +1,11 @@
 <template>
   <div class="music-card" :data-track-path="track.path" v-ripple @dblclick="$emit('play')">
-    <div class="music-card__cover" @click="$emit('click')">
+    <div class="music-card__cover" v-ripple @click="$emit('click')">
       <LazyCover v-if="track.cover" :src="track.cover" class="music-card__img" :thumb-size="292" />
       <div v-else class="cover-placeholder">
         <el-icon size="32"><Headset /></el-icon>
       </div>
-      <div class="cover-overlay" @click.stop="$emit('play')">
+      <div class="cover-overlay" v-ripple @click.stop="$emit('play')">
         <el-icon size="32"><VideoPlay /></el-icon>
       </div>
     </div>

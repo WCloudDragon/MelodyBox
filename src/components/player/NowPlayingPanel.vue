@@ -2,7 +2,7 @@
   <!-- 窗口控制器风格关闭按钮 — Teleport 到 body 确保独立层级 -->
   <Teleport to="body">
     <Transition name="np-close-btn-fade">
-      <button v-if="visible" class="np-close-btn" @click.stop="$emit('close')" title="关闭全屏歌词">
+      <button v-if="visible" class="np-close-btn" v-ripple @click.stop="$emit('close')" title="关闭全屏歌词">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
           <polyline points="1.5,4.5 6,8.5 10.5,4.5"/>
         </svg>
@@ -71,6 +71,7 @@
                 }"
                 :ref="el => setLineRef(el, index)"
                 :style="lineStyle(index)"
+                v-ripple
                 @click="seekToLine(line.time)"
               >
                 <div class="lyric-line__inner">

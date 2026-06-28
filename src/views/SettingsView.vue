@@ -4,7 +4,7 @@
     <template v-if="page === 'menu'">
       <h1>设置</h1>
       <div class="menu-list">
-        <button class="menu-item" @click="page = 'appearance'">
+        <button class="menu-item" v-ripple @click="page = 'appearance'">
           <div class="menu-item__left">
             <span class="menu-item__icon" style="background: rgba(99,102,241,0.15); color: #818cf8">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -18,7 +18,7 @@
           </div>
           <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
         </button>
-        <button class="menu-item" @click="page = 'player'">
+        <button class="menu-item" v-ripple @click="page = 'player'">
           <div class="menu-item__left">
             <span class="menu-item__icon" style="background: rgba(34,197,94,0.15); color: #4ade80">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -74,7 +74,7 @@
           </div>
           <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
         </button>
-        <button class="menu-item" @click="page = 'about'">
+        <button class="menu-item" v-ripple @click="page = 'about'">
           <div class="menu-item__left">
             <span class="menu-item__icon" style="background: rgba(56,189,248,0.15); color: #38bdf8">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -94,7 +94,7 @@
     <!-- 二级页：外观 -->
     <template v-if="page === 'appearance'">
       <header class="sub-header">
-        <button class="sub-header__back" @click="page = 'menu'">
+        <button class="sub-header__back" v-ripple @click="page = 'menu'">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
         </button>
         <h1 class="sub-header__title">外观</h1>
@@ -191,7 +191,7 @@
     <!-- 二级页：歌词排版 -->
     <template v-if="page === 'lyricStyle'">
       <header class="sub-header">
-        <button class="sub-header__back" @click="page = 'menu'">
+        <button class="sub-header__back" v-ripple @click="page = 'menu'">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
         </button>
         <h1 class="sub-header__title">歌词排版</h1>
@@ -251,7 +251,7 @@
             <span class="setting-title">恢复歌词默认</span>
             <span class="setting-desc">字号 32px · 字重 700 · 翻译 60% · 放大 115%</span>
           </div>
-          <button class="reset-btn" @click="settingsStore.resetLyricsDefaults()">
+          <button class="reset-btn" v-ripple @click="settingsStore.resetLyricsDefaults()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
             </svg>
@@ -264,7 +264,7 @@
     <!-- 二级页：桌面歌词 -->
     <template v-if="page === 'desktopLyric'">
       <header class="sub-header">
-        <button class="sub-header__back" @click="page = 'menu'">
+        <button class="sub-header__back" v-ripple @click="page = 'menu'">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
         </button>
         <h1 class="sub-header__title">桌面歌词</h1>
@@ -313,10 +313,12 @@
           </div>
           <div class="toggle-buttons">
             <button
+              v-ripple
               :class="['toggle-btn', { active: settingsStore.desktopLyricsViewLines === 1 }]"
               @click="settingsStore.desktopLyricsViewLines = 1; settingsStore.saveSettingsImmediate()"
             >1 句</button>
             <button
+              v-ripple
               :class="['toggle-btn', { active: settingsStore.desktopLyricsViewLines === 2 }]"
               @click="settingsStore.desktopLyricsViewLines = 2; settingsStore.saveSettingsImmediate()"
             >2 句</button>
@@ -327,7 +329,7 @@
             <span class="setting-title">恢复桌面歌词默认</span>
             <span class="setting-desc">字号 24px · 放大 120% · 翻译 60%</span>
           </div>
-          <button class="reset-btn" @click="settingsStore.desktopLyricsFontSize = 24; settingsStore.desktopLyricsActiveScale = 120; settingsStore.desktopLyricsTransScale = 60; settingsStore.saveSettingsImmediate()">
+          <button class="reset-btn" v-ripple @click="settingsStore.desktopLyricsFontSize = 24; settingsStore.desktopLyricsActiveScale = 120; settingsStore.desktopLyricsTransScale = 60; settingsStore.saveSettingsImmediate()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
             </svg>
@@ -359,7 +361,7 @@
     <!-- 二级页：关于 -->
     <template v-if="page === 'about'">
       <header class="sub-header">
-        <button class="sub-header__back" @click="page = 'menu'">
+        <button class="sub-header__back" v-ripple @click="page = 'menu'">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
         </button>
         <h1 class="sub-header__title">关于</h1>

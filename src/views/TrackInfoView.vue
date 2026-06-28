@@ -30,8 +30,8 @@
           </div>
         </div>
         <div class="hero-info">
-          <h1 class="hero-title">{{ track.title }}</h1>
-          <p class="hero-artist">{{ track.artist }}</p>
+          <h1 class="hero-title" v-ripple @click="copyText(track.title)" title="点击复制">{{ track.title }}</h1>
+          <p class="hero-artist" v-ripple @click="copyText(track.artist)" title="点击复制">{{ track.artist }}</p>
           <p class="hero-album" v-if="track.album && track.album !== '未知专辑'">{{ track.album }}</p>
           <div class="hero-meta">
             <span v-if="track.year" class="hero-meta__item">{{ track.year }}</span>
@@ -44,108 +44,95 @@
 
       <!-- 信息卡片网格 -->
       <div class="info-grid">
-        <!-- 音质信息 -->
+        <!-- 音频信息 -->
         <div class="info-card">
           <h3 class="info-card__title">
             <el-icon><Headset /></el-icon>
-            音质信息
+            音频信息
           </h3>
           <div class="info-card__body">
-            <div class="info-row">
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(qualityLabel(track.quality))" title="点击复制" v-if="track.quality">
               <span class="info-row__label">音质等级</span>
-              <span class="info-row__value" v-if="track.quality">{{ qualityLabel(track.quality) }}</span>
-              <span class="info-row__value info-row__value--muted" v-else>未知</span>
+              <span class="info-row__value">{{ qualityLabel(track.quality) }}</span>
             </div>
-            <div class="info-row">
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(formatBitrate(track.bitrate))" title="点击复制" v-if="track.bitrate">
               <span class="info-row__label">码率</span>
-              <span class="info-row__value" v-if="track.bitrate">{{ formatBitrate(track.bitrate) }}</span>
-              <span class="info-row__value info-row__value--muted" v-else>未知</span>
+              <span class="info-row__value">{{ formatBitrate(track.bitrate) }}</span>
             </div>
-            <div class="info-row">
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(formatSampleRate(track.sampleRate))" title="点击复制" v-if="track.sampleRate">
               <span class="info-row__label">采样率</span>
-              <span class="info-row__value" v-if="track.sampleRate">{{ formatSampleRate(track.sampleRate) }}</span>
-              <span class="info-row__value info-row__value--muted" v-else>未知</span>
+              <span class="info-row__value">{{ formatSampleRate(track.sampleRate) }}</span>
             </div>
-            <div class="info-row">
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(track.bitDepth + ' bit')" title="点击复制" v-if="track.bitDepth">
               <span class="info-row__label">位深度</span>
-              <span class="info-row__value" v-if="track.bitDepth">{{ track.bitDepth }} bit</span>
-              <span class="info-row__value info-row__value--muted" v-else>未知</span>
+              <span class="info-row__value">{{ track.bitDepth }} bit</span>
+            </div>
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(formatDuration(track.duration))" title="点击复制" v-if="track.duration">
+              <span class="info-row__label">时长</span>
+              <span class="info-row__value">{{ formatDuration(track.duration) }}</span>
             </div>
           </div>
         </div>
 
-        <!-- 文件信息 -->
-        <div class="info-card">
-          <h3 class="info-card__title">
-            <el-icon><Document /></el-icon>
-            文件信息
-          </h3>
-          <div class="info-card__body">
-            <div class="info-row">
-              <span class="info-row__label">文件名</span>
-              <span class="info-row__value" :title="track.path">{{ fileName }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-row__label">文件格式</span>
-              <span class="info-row__value">{{ fileFormat }}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-row__label">文件大小</span>
-              <span class="info-row__value" v-if="track.file_size">{{ formatFileSize(track.file_size) }}</span>
-              <span class="info-row__value info-row__value--muted" v-else>未知</span>
-            </div>
-            <div class="info-row">
-              <span class="info-row__label">修改时间</span>
-              <span class="info-row__value" v-if="track.file_mtime">{{ formatMtime(track.file_mtime) }}</span>
-              <span class="info-row__value info-row__value--muted" v-else>未知</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 专辑/曲目信息 -->
+        <!-- 音乐库信息 -->
         <div class="info-card">
           <h3 class="info-card__title">
             <el-icon><Collection /></el-icon>
-            专辑信息
+            音乐库信息
           </h3>
           <div class="info-card__body">
-            <div class="info-row">
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(track.album)" title="点击复制">
               <span class="info-row__label">专辑</span>
               <span class="info-row__value">{{ track.album || '未知' }}</span>
             </div>
-            <div class="info-row">
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(track.artist)" title="点击复制">
               <span class="info-row__label">歌手</span>
               <span class="info-row__value">{{ track.artist || '未知' }}</span>
             </div>
-            <div class="info-row">
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(String(track.year))" title="点击复制" v-if="track.year">
               <span class="info-row__label">发行年份</span>
-              <span class="info-row__value" v-if="track.year">{{ track.year }}</span>
-              <span class="info-row__value info-row__value--muted" v-else>未知</span>
+              <span class="info-row__value">{{ track.year }}</span>
             </div>
-            <div class="info-row">
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(track.genre)" title="点击复制" v-if="track.genre && track.genre !== '未知'">
               <span class="info-row__label">流派</span>
-              <span class="info-row__value" v-if="track.genre && track.genre !== '未知'">{{ track.genre }}</span>
-              <span class="info-row__value info-row__value--muted" v-else>未知</span>
+              <span class="info-row__value">{{ track.genre }}</span>
             </div>
-            <div class="info-row" v-if="track.disc_number > 0">
+            <div class="info-row info-row--copyable" v-ripple @click="copyText('Disc ' + track.disc_number + ' · #' + (track.track_number || '-'))" title="点击复制" v-if="track.disc_number > 0">
               <span class="info-row__label">碟号 / 曲目号</span>
               <span class="info-row__value">Disc {{ track.disc_number }} · #{{ track.track_number || '-' }}</span>
             </div>
-            <div class="info-row" v-else-if="track.track_number > 0">
+            <div class="info-row info-row--copyable" v-ripple @click="copyText('#' + track.track_number)" title="点击复制" v-else-if="track.track_number > 0">
               <span class="info-row__label">曲目号</span>
               <span class="info-row__value">#{{ track.track_number }}</span>
             </div>
           </div>
         </div>
 
-        <!-- 文件路径 -->
-        <div class="info-card">
+        <!-- 文件信息 -->
+        <div class="info-card info-card--full">
           <h3 class="info-card__title">
             <el-icon><FolderOpened /></el-icon>
-            文件路径
+            文件信息
           </h3>
           <div class="info-card__body">
-            <div class="info-row info-row--full">
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(fileName)" title="点击复制">
+              <span class="info-row__label">文件名</span>
+              <span class="info-row__value" :title="track.path">{{ fileName }}</span>
+            </div>
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(fileFormat)" title="点击复制">
+              <span class="info-row__label">文件格式</span>
+              <span class="info-row__value">{{ fileFormat }}</span>
+            </div>
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(formatFileSize(track.file_size))" title="点击复制" v-if="track.file_size">
+              <span class="info-row__label">文件大小</span>
+              <span class="info-row__value">{{ formatFileSize(track.file_size) }}</span>
+            </div>
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(formatMtime(track.file_mtime))" title="点击复制" v-if="track.file_mtime">
+              <span class="info-row__label">修改时间</span>
+              <span class="info-row__value">{{ formatMtime(track.file_mtime) }}</span>
+            </div>
+            <div class="info-row info-row--copyable" v-ripple @click="copyText(track.path)" title="点击复制">
+              <span class="info-row__label">文件路径</span>
               <span class="info-row__value info-row__value--path">{{ track.path }}</span>
             </div>
           </div>
@@ -161,6 +148,7 @@ import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useLibraryStore } from '@/stores/library'
 import { formatDuration, qualityClass } from '@/utils/format'
+import { ElMessage } from '@/utils/toast'
 import LazyCover from '@/components/LazyCover.vue'
 
 const route = useRoute()
@@ -181,6 +169,13 @@ const fileFormat = computed(() => {
   const ext = track.value.path.split('.').pop()?.toUpperCase()
   return ext || '未知'
 })
+
+function copyText(text) {
+  if (!text) return
+  navigator.clipboard.writeText(text).then(() => {
+    ElMessage.success('已复制: ' + text)
+  })
+}
 
 function formatBitrate(bps) {
   if (!bps) return ''
@@ -274,8 +269,8 @@ watch(() => route.query.path, (p) => {
   color: var(--text-tertiary);
 }
 .hero-info { flex: 1; min-width: 0; }
-.hero-title { font-size: 32px; font-weight: 700; margin: 0 0 8px; line-height: 1.2; }
-.hero-artist { font-size: 18px; color: var(--text-secondary); margin: 0 0 4px; }
+.hero-title { font-size: 32px; font-weight: 700; margin: 0 0 8px; line-height: 1.2; cursor: pointer; }
+.hero-artist { font-size: 18px; color: var(--text-secondary); margin: 0 0 4px; cursor: pointer; }
 .hero-album { font-size: 15px; color: var(--text-tertiary); margin: 0 0 16px; }
 .hero-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .hero-meta__item {
@@ -299,7 +294,7 @@ watch(() => route.query.path, (p) => {
   border: 1px solid var(--border-color);
   border-radius: 12px; overflow: hidden;
 }
-.info-card:last-child { grid-column: 1 / -1; }
+.info-card--full { grid-column: 1 / -1; }
 .info-card__title {
   display: flex; align-items: center; gap: 8px;
   margin: 0; padding: 14px 20px;
@@ -315,6 +310,7 @@ watch(() => route.query.path, (p) => {
   padding: 10px 20px;
 }
 .info-row:hover { background: var(--bg-tertiary); }
+.info-row--copyable { cursor: pointer; }
 .info-row__label {
   font-size: 13px; color: var(--text-tertiary);
   white-space: nowrap; min-width: 80px;

@@ -8,7 +8,7 @@
     </div>
     <div class="title-bar__drag"></div>
     <div class="title-bar__controls" :class="{ 'title-bar__controls--lyrics': lyricsVisible }">
-      <button class="title-btn" @click="onFullscreen" :title="isFs ? '退出全屏' : '全屏'">
+      <button class="title-btn" v-ripple @click="onFullscreen" :title="isFs ? '退出全屏' : '全屏'">
         <svg v-if="!isFs" width="12" height="12" viewBox="0 0 12 12">
           <polyline points="1,5 1,1 5,1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
           <polyline points="7,1 11,1 11,5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
@@ -20,10 +20,10 @@
           <polyline points="1,7 5,7 5,11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
         </svg>
       </button>
-      <button class="title-btn" @click="onMinimize" title="最小化">
+      <button class="title-btn" v-ripple @click="onMinimize" title="最小化">
         <svg width="12" height="12" viewBox="0 0 12 12"><rect y="5" width="12" height="1.5" fill="currentColor"/></svg>
       </button>
-      <button class="title-btn" @click="onMaximize" title="最大化">
+      <button class="title-btn" v-ripple @click="onMaximize" title="最大化">
         <svg v-if="!isMax" width="12" height="12" viewBox="0 0 12 12">
           <rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
         </svg>
@@ -32,7 +32,7 @@
           <rect x="0" y="3" width="9" height="9" fill="var(--bg-secondary)" stroke="currentColor" stroke-width="1.5"/>
         </svg>
       </button>
-      <button class="title-btn title-btn--close" @click="onClose" title="关闭">
+      <button class="title-btn title-btn--close" v-ripple @click="onClose" title="关闭">
         <svg width="12" height="12" viewBox="0 0 12 12">
           <line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="1.5"/>
           <line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="1.5"/>

@@ -33,7 +33,7 @@
                 <div v-else class="avatar-placeholder">
                   <el-icon size="40"><User /></el-icon>
                 </div>
-                <div class="avatar-overlay" @click.stop="playArtist(artist)">
+                <div class="avatar-overlay" v-ripple @click.stop="playArtist(artist)">
                   <el-icon size="36"><VideoPlay /></el-icon>
                 </div>
               </div>
