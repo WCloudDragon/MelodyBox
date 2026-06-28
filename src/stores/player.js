@@ -91,6 +91,14 @@ export const usePlayerStore = defineStore('player', () => {
 
     audio.value.addEventListener('timeupdate', () => {
       currentTime.value = audio.value.currentTime + _seekOffset
+      // 最低试听 30 秒计为一次有效播放（对齐 Spotify 标准）
+      if (!_playTracked && audio.value.currentTime >= 30) {
+        const track = currentTrack.value
+        if (track) {
+          _playTracked = true
+          _trackPlay(track)
+        }
+      }
     })
     audio.value.addEventListener('loadedmetadata', () => {
       // seek 偏移时流时长是裁剪后的，不要覆盖完整时长
@@ -99,6 +107,12 @@ export const usePlayerStore = defineStore('player', () => {
       }
     })
     audio.value.addEventListener('ended', () => {
+      // 短曲（不足 30 秒）播完也计为有效播放
+      if (!_playTracked) {
+        _playTracked = true
+        const track = currentTrack.value
+        if (track) _trackPlay(track)
+      }
       next()
     })
     audio.value.addEventListener('error', (e) => {
@@ -165,10 +179,6 @@ export const usePlayerStore = defineStore('player', () => {
       audio.value.src = track.url
       audio.value.play().then(() => {
         isPlaying.value = true
-        if (!_playTracked) {
-          _playTracked = true
-          _trackPlay(track)
-        }
       }).catch(err => {
         if (err.name === 'AbortError') return
         console.error('播放失败:', track.path, err)

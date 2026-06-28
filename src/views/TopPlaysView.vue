@@ -90,9 +90,32 @@ import { useVirtualList } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { Search } from '@element-plus/icons-vue'
 import { usePlayerStore } from '@/stores/player'
+import { useLibraryStore } from '@/stores/library'
 import LazyCover from '@/components/LazyCover.vue'
 
+const API_BASE = 'http://127.0.0.1:5000/api/music'
+
+let _audioPort = 51234
+async function _initAudioPort() {
+  try {
+    if (window.electronAPI) {
+      const port = await window.electronAPI.getAudioServerPort()
+      if (port) _audioPort = port
+    }
+  } catch {}
+}
+function coverUrl(coverPath) {
+  if (!coverPath) return ''
+  if (coverPath.startsWith('http://') || coverPath.startsWith('https://')) return coverPath
+  return `${API_BASE}/cover?path=${encodeURIComponent(coverPath)}`
+}
+function pathToUrl(filePath) {
+  if (!filePath) return ''
+  return `http://127.0.0.1:${_audioPort}/audio?path=${encodeURIComponent(filePath)}`
+}
+
 const playerStore = usePlayerStore()
+const libraryStore = useLibraryStore()
 const { currentTrack } = storeToRefs(playerStore)
 
 const list = ref([])
@@ -153,19 +176,26 @@ watch(() => filtered.value.length, () => { scrollTo(0) })
 async function refresh() {
   loading.value = true
   try {
+    await _initAudioPort()
     const res = await fetch('http://127.0.0.1:5000/api/stats/top?limit=100')
     const data = await res.json()
-    list.value = Array.isArray(data) ? data.map(item => ({
-      path: item.file_path || '',
-      title: item.title || '未知歌曲',
-      artist: item.artist || '未知歌手',
-      album: item.album || '',
-      cover: item.cover_url || '',
-      play_count: item.play_count || 0,
-      last_played: item.last_played,
-      duration: 0,
-      quality: ''
-    })) : []
+    const libMap = new Map(libraryStore.tracks.map(t => [t.path, t]))
+    list.value = Array.isArray(data) ? data.map(item => {
+      const lib = libMap.get(item.file_path)
+      return {
+        path: item.file_path || '',
+        title: item.title || lib?.title || '未知歌曲',
+        artist: item.artist || lib?.artist || '未知歌手',
+        album: item.album || lib?.album || '',
+        cover: coverUrl(item.cover_url || lib?.cover || ''),
+        url: pathToUrl(item.file_path || ''),
+        lyrics: lib?.lyrics || '',
+        duration: lib?.duration || 0,
+        quality: lib?.quality || '',
+        play_count: item.play_count || 0,
+        last_played: item.last_played,
+      }
+    }) : []
   } catch {
     // 后端未启动时静默
   } finally {

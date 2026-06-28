@@ -5,6 +5,8 @@ __pycache__/
 
 # 数据库
 *.db
+*.db-shm
+*.db-wal
 
 # 打包产物
 build/

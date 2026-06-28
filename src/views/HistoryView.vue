@@ -68,7 +68,7 @@
               </div>
             </span>
             <span class="col-album">{{ track.album }}</span>
-            <span class="col-time-text">{{ formatPlayedTime(track.played_at) }}</span>
+            <span class="col-time-text" :title="showRelative ? '点击查看具体时间' : '点击查看相对时间'" @click="showRelative = !showRelative">{{ showRelative ? formatPlayedTime(track.played_at) : formatAbsoluteTime(track.played_at) }}</span>
             <span class="col-action">
               <el-button text size="small" @click.stop.prevent="playTrack(track)">
                 <el-icon><VideoPlay /></el-icon>
@@ -88,9 +88,32 @@ import { useVirtualList } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { Search } from '@element-plus/icons-vue'
 import { usePlayerStore } from '@/stores/player'
+import { useLibraryStore } from '@/stores/library'
 import LazyCover from '@/components/LazyCover.vue'
 
+const API_BASE = 'http://127.0.0.1:5000/api/music'
+
+let _audioPort = 51234
+async function _initAudioPort() {
+  try {
+    if (window.electronAPI) {
+      const port = await window.electronAPI.getAudioServerPort()
+      if (port) _audioPort = port
+    }
+  } catch {}
+}
+function coverUrl(coverPath) {
+  if (!coverPath) return ''
+  if (coverPath.startsWith('http://') || coverPath.startsWith('https://')) return coverPath
+  return `${API_BASE}/cover?path=${encodeURIComponent(coverPath)}`
+}
+function pathToUrl(filePath) {
+  if (!filePath) return ''
+  return `http://127.0.0.1:${_audioPort}/audio?path=${encodeURIComponent(filePath)}`
+}
+
 const playerStore = usePlayerStore()
+const libraryStore = useLibraryStore()
 const { currentTrack } = storeToRefs(playerStore)
 
 const list = ref([])
@@ -112,6 +135,19 @@ function formatPlayedTime(raw) {
     if (diffHour < 24) return `${diffHour} 小时前`
     const pad = n => String(n).padStart(2, '0')
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  } catch {
+    return raw
+  }
+}
+
+const showRelative = ref(true)
+
+function formatAbsoluteTime(raw) {
+  if (!raw) return ''
+  try {
+    const d = new Date(raw)
+    const pad = n => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
   } catch {
     return raw
   }
@@ -152,18 +188,25 @@ watch(() => filtered.value.length, () => { scrollTo(0) })
 async function refresh() {
   loading.value = true
   try {
+    await _initAudioPort()
     const res = await fetch('http://127.0.0.1:5000/api/stats/recent?limit=100')
     const data = await res.json()
-    list.value = Array.isArray(data) ? data.map(item => ({
-      path: item.file_path || '',
-      title: item.title || '未知歌曲',
-      artist: item.artist || '未知歌手',
-      album: item.album || '',
-      cover: item.cover_url || '',
-      played_at: item.played_at,
-      duration: 0,
-      quality: ''
-    })) : []
+    const libMap = new Map(libraryStore.tracks.map(t => [t.path, t]))
+    list.value = Array.isArray(data) ? data.map(item => {
+      const lib = libMap.get(item.file_path)
+      return {
+        path: item.file_path || '',
+        title: item.title || lib?.title || '未知歌曲',
+        artist: item.artist || lib?.artist || '未知歌手',
+        album: item.album || lib?.album || '',
+        cover: coverUrl(item.cover_url || lib?.cover || ''),
+        url: pathToUrl(item.file_path || ''),
+        lyrics: lib?.lyrics || '',
+        duration: lib?.duration || 0,
+        quality: lib?.quality || '',
+        played_at: item.played_at,
+      }
+    }) : []
   } catch {
     // 后端未启动时静默
   } finally {
@@ -229,6 +272,7 @@ refresh()
 .row-cover { width: 44px; height: 44px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
 .row-cover--empty { background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); }
 .col-album { font-size: 14px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-time-text { font-size: 13px; color: var(--text-tertiary); white-space: nowrap; }
+.col-time-text { font-size: 13px; color: var(--text-tertiary); white-space: nowrap; cursor: pointer; user-select: none; }
+.col-time-text:hover { color: var(--accent-color); }
 .col-action { text-align: center; }
 </style>
