@@ -285,8 +285,8 @@ def add_song_to_playlist(id):
         )
         db.commit()
 
-        # 如果歌单封面为空，设置为第一首添加歌曲的封面
-        if not playlist['cover_url'] and song['cover_url']:
+        # 始终更新歌单封面为最新添加歌曲的封面
+        if song['cover_url']:
             cursor.execute(
                 "UPDATE playlists SET cover_url = ?, updated_at = datetime('now','localtime') WHERE id = ?",
                 (song['cover_url'], id)

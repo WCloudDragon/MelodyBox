@@ -10,7 +10,7 @@
     <div v-if="playlist" class="playlist-content">
       <div class="playlist-header">
         <div class="playlist-cover">
-          <LazyCover v-if="playlist.cover" :src="playlist.cover" />
+          <LazyCover v-if="playlist.cover_url" :src="playlist.cover_url" />
           <div v-else class="cover-placeholder">
             <el-icon size="48"><Document /></el-icon>
           </div>

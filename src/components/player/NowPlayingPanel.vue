@@ -17,14 +17,14 @@
         <Transition name="bg-fade">
           <img v-if="currentTrack?.cover" :key="currentTrack?.path" :src="currentTrack.cover" class="np-bg__img" decoding="async" />
         </Transition>
-        <!-- 动态流光：多色块模糊漂移产生流体流动感 -->
-        <div v-if="settings.enableDynamicBg && flowColors" class="np-bg__flow">
-          <div class="np-bg__blob np-bg__blob--1" :style="{ '--c': flowColors.highlight }"></div>
-          <div class="np-bg__blob np-bg__blob--2" :style="{ '--c': flowColors.mid }"></div>
-          <div class="np-bg__blob np-bg__blob--3" :style="{ '--c': flowColors.shadow }"></div>
-          <div class="np-bg__blob np-bg__blob--4" :style="{ '--c': flowColors.highlight }"></div>
-          <div class="np-bg__blob np-bg__blob--5" :style="{ '--c': flowColors.mid }"></div>
-          <div class="np-bg__blob np-bg__blob--6" :style="{ '--c': flowColors.shadow }"></div>
+        <!-- 动态流光：6 张径向渐变 PNG 光球 -->
+        <div v-if="settings.enableDynamicBg && flowBlobs" class="np-bg__flow">
+          <img :src="flowBlobs[0]" class="np-bg__blob np-bg__blob--1" decoding="async" />
+          <img :src="flowBlobs[1]" class="np-bg__blob np-bg__blob--2" decoding="async" />
+          <img :src="flowBlobs[2]" class="np-bg__blob np-bg__blob--3" decoding="async" />
+          <img :src="flowBlobs[3]" class="np-bg__blob np-bg__blob--4" decoding="async" />
+          <img :src="flowBlobs[4]" class="np-bg__blob np-bg__blob--5" decoding="async" />
+          <img :src="flowBlobs[5]" class="np-bg__blob np-bg__blob--6" decoding="async" />
         </div>
       </div>
 
@@ -129,6 +129,48 @@ const coverArtRef = ref(null)
 
 // ==================== 动态流光背景（封面主色驱动渐变流动） ====================
 const flowColors = ref(null)
+const flowBlobs = ref(null)   // 6 张预渲染径向渐变 PNG Data URL
+
+// hex → RGB 分量
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return { r, g, b }
+}
+
+// Canvas 生成径向渐变 PNG（400×400），中心不透明 → 边缘同色零透
+function generateBlobPNG(hex, size = 400) {
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  const { r, g, b } = hexToRgb(hex)
+  const cx = size / 2
+  const gradient = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx)
+  gradient.addColorStop(0,    `rgba(${r},${g},${b},1)`)    // 中心：完全不透明
+  gradient.addColorStop(0.35, `rgba(${r},${g},${b},0.95)`)  // 35%：保持高不透明
+  gradient.addColorStop(0.6,  `rgba(${r},${g},${b},0.6)`)   // 60%：开始淡出
+  gradient.addColorStop(0.85, `rgba(${r},${g},${b},0.15)`)  // 85%：很淡
+  gradient.addColorStop(1,    `rgba(${r},${g},${b},0)`)     // 边缘：同色零透，避免 soft-light 黑边
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, size, size)
+  return canvas.toDataURL('image/png')
+}
+
+// 3 色 → 6 张 PNG（每色 2 张）
+function generateFlowBlobs(colors) {
+  if (!colors) { flowBlobs.value = null; return }
+  const { highlight, mid, shadow } = colors
+  flowBlobs.value = [
+    generateBlobPNG(highlight),
+    generateBlobPNG(mid),
+    generateBlobPNG(shadow),
+    generateBlobPNG(highlight),
+    generateBlobPNG(mid),
+    generateBlobPNG(shadow),
+  ]
+}
 
 // HTTP cover URL → thumb:// URL，绕过 Flask 直读本地缩略图，零 HTTP 开销
 function toThumbUrl(coverUrl, size = 332) {
@@ -148,20 +190,24 @@ function toThumbUrl(coverUrl, size = 332) {
 watch(() => currentTrack.value?.cover, async (cover) => {
   if (!cover || !settings.enableDynamicBg) {
     flowColors.value = null
+    flowBlobs.value = null
     return
   }
   const colors = await extractCoverColors(toThumbUrl(cover))
   if (currentTrack.value?.cover !== cover) return // 避免竞态：封面已切换
   flowColors.value = colors
+  generateFlowBlobs(colors)
 })
 
 // 开关变化时，若关则清除；若开且当前有封面则立即提取
 watch(() => settings.enableDynamicBg, async (on) => {
-  if (!on) { flowColors.value = null; return }
+  if (!on) { flowColors.value = null; flowBlobs.value = null; return }
   const cover = currentTrack.value?.cover
   if (cover) {
     const colors = await extractCoverColors(toThumbUrl(cover))
+    if (currentTrack.value?.cover !== cover) return
     flowColors.value = colors
+    generateFlowBlobs(colors)
   }
 })
 
@@ -1078,12 +1124,10 @@ onBeforeUnmount(() => {
 }
 .np-bg__blob {
   position: absolute;
-  border-radius: 50%;
-  background: var(--c, transparent);
-  filter: blur(45px);
+  /* 径向渐变已预渲染到 PNG 中，无 blur/filter 开销 */
   opacity: 0.7;
+  display: block;
   will-change: top, left, transform;
-  transition: background 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .np-bg__blob--1 { --base-dur: 14s; width: 45%; height: 45%; top: 10%; left: 10%; animation-name: blob-float-1; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
 .np-bg__blob--2 { --base-dur: 17s; width: 50%; height: 50%; top: 50%; left: 60%; animation: blob-float-2 17s ease-in-out infinite 2s; }

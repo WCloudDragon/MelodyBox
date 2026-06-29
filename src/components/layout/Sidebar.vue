@@ -48,7 +48,8 @@
           :class="{ active: $route.params.id === pl.id }"
           @mouseenter="playlistStore.ensureTracksLoaded(pl.id)"
         >
-          <el-icon><Document /></el-icon>
+          <img v-if="pl.cover_url" :src="pl.cover_url" class="nav-item__cover" />
+          <el-icon v-else><Document /></el-icon>
           <span class="truncate">{{ pl.name }}</span>
           <span class="count">{{ pl.trackCount || pl.tracks.length }}</span>
         </router-link>
@@ -171,6 +172,12 @@ async function handleCreatePlaylist() {
   margin-left: auto;
   font-size: 11px;
   color: var(--text-tertiary);
+}
+.nav-item__cover {
+  width: 1em; height: 1em;
+  border-radius: 3px;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 .user-badge {
   margin-left: auto;

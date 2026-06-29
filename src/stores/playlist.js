@@ -128,9 +128,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
       const pl = playlists.value.find(p => p.id === playlistId)
       if (pl) {
         pl.trackCount = (pl.trackCount || 0) + 1
-        if (!pl.cover_url && track.cover) {
-          pl.cover_url = track.cover
-        }
+        if (track.cover) pl.cover_url = track.cover
         triggerRef(playlists)
       }
       // 清除缓存，下次加载时刷新
