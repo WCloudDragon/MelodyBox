@@ -149,7 +149,7 @@ const libraryStore = useLibraryStore()
 const router = useRouter()
 const { currentTrack } = storeToRefs(playerStore)
 
-const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems } = useTrackList()
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems, showAddPlaylistDialog } = useTrackList()
 
 const ctxHandler = createCtxHandler(playerStore, router)
 
@@ -248,7 +248,8 @@ function playTrack(track) {
 }
 
 function ctxAction(action) {
-  ctxHandler(action)
+  if (ctxHandler(action)) return
+  if (action === 'addToPlaylist') showAddPlaylistDialog(ctxMenu.value.track)
 }
 
 function batchPlay(tracks) {

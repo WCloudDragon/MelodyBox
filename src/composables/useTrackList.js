@@ -1,5 +1,6 @@
-import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, h } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { usePlaylistStore } from '@/stores/playlist'
 
 /**
  * 共享的曲目列表交互逻辑：右键菜单 + 多选
@@ -76,9 +77,9 @@ export function useTrackList() {
       { label: '插播至队列末尾', action: 'addQueueEnd' },
       '-',
     ]
-    if (page === 'library') {
+    if (page !== 'playlist') {
       items.push({ label: '添加到歌单', action: 'addToPlaylist' }, '-')
-    } else if (page === 'playlist') {
+    } else {
       items.push({ label: '从歌单移除', action: 'remove', danger: true }, '-')
     }
     items.push(
@@ -88,6 +89,51 @@ export function useTrackList() {
       { label: '音轨信息', action: 'trackInfo' }
     )
     return items
+  }
+
+  // --- 添加到歌单（多选弹窗） ---
+  function showAddPlaylistDialog(track) {
+    const playlistStore = usePlaylistStore()
+    const pls = playlistStore.playlists
+    if (pls.length === 0) {
+      ElMessage.warning('暂无歌单，请先创建歌单')
+      return
+    }
+    if (pls.length === 1) {
+      playlistStore.addToPlaylist(pls[0].id, track)
+      ElMessage.success(`已添加到「${pls[0].name}」`)
+      return
+    }
+
+    const selected = new Set()
+    const checkItems = pls.map(pl =>
+      h('label', { style: 'display:flex;align-items:center;gap:10px;padding:6px 0;cursor:pointer;font-size:14px' }, [
+        h('input', {
+          type: 'checkbox',
+          value: pl.id,
+          style: 'width:16px;height:16px;accent-color:var(--accent-color,#6366f1)',
+          onChange: (e) => { if (e.target.checked) selected.add(pl.id); else selected.delete(pl.id) }
+        }),
+        h('span', pl.name)
+      ])
+    )
+
+    ElMessageBox({
+      title: '添加到歌单',
+      message: h('div', { style: 'max-height:280px;overflow-y:auto' }, checkItems),
+      confirmButtonText: '添加',
+      showCancelButton: true,
+      cancelButtonText: '取消'
+    }).then(() => {
+      if (selected.size === 0) {
+        ElMessage.warning('未选择任何歌单')
+        return
+      }
+      for (const id of selected) {
+        playlistStore.addToPlaylist(id, track)
+      }
+      ElMessage.success(`已添加到 ${selected.size} 个歌单`)
+    }).catch(() => {})
   }
 
   // --- 多选 ---
@@ -127,6 +173,7 @@ export function useTrackList() {
     hideContextMenu,
     createCtxHandler,
     buildMenuItems,
+    showAddPlaylistDialog,
     toggleSelectMode,
     isSelected,
     toggleSelect,

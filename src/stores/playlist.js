@@ -157,9 +157,9 @@ export const usePlaylistStore = defineStore('playlist', () => {
     } catch {}
   }
 
-  // 获取歌单
+  // 获取歌单（route.params.id 是字符串，数据库 id 是数字，松散比较）
   function getPlaylist(id) {
-    return playlists.value.find(p => p.id === id)
+    return playlists.value.find(p => p.id == id)
   }
 
   const totalTracks = computed(() => {

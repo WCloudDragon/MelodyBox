@@ -360,8 +360,8 @@ def parse_metadata(file_path):
     except Exception as e:
         print(f'[scanner] 解析失败: {file_path} - {e}')
 
-    # 计算指纹：md5(title|artist|album)
-    fp_str = f"{result['title']}|{result['artist']}|{result['album']}"
+    # 计算指纹：md5(title|artist|album) — 与 stats.make_fingerprint 保持一致
+    fp_str = f"{result['title']}|{result['artist']}|{result['album']}".strip().lower()
     result['fingerprint'] = hashlib.md5(fp_str.encode()).hexdigest()
 
     return result
@@ -428,6 +428,16 @@ def _reconnect_orphaned_play_stats(cursor, song_id, fingerprint):
         return
     cursor.execute(
         'UPDATE play_stats SET song_id = ? WHERE song_id IS NULL AND fingerprint = ?',
+        (song_id, fingerprint)
+    )
+
+
+def _reconnect_orphaned_play_history(cursor, song_id, fingerprint):
+    """将指纹匹配的孤立 play_history 记录重新关联到新插入的歌曲"""
+    if not fingerprint:
+        return
+    cursor.execute(
+        'UPDATE play_history SET song_id = ? WHERE song_id IS NULL AND fingerprint = ?',
         (song_id, fingerprint)
     )
 
@@ -539,9 +549,10 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
             if song_id is not None:
                 _handle_song_relations(cursor, song_id, meta)
 
-                # ---- 新插入的歌曲：重连孤立的 play_stats 记录 ----
+                # ---- 新插入的歌曲：重连孤立的 play_stats / play_history 记录 ----
                 if is_new:
                     _reconnect_orphaned_play_stats(cursor, song_id, meta['fingerprint'])
+                    _reconnect_orphaned_play_history(cursor, song_id, meta['fingerprint'])
 
         except Exception as e:
             print(f'[scanner] DB错误: {file_path} - {e}')

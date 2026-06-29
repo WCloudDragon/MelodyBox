@@ -227,7 +227,7 @@ onBeforeUnmount(clearScanNotify)
 
 const { currentTrack } = storeToRefs(playerStore)
 
-const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems } = useTrackList()
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems, showAddPlaylistDialog } = useTrackList()
 
 const ctxHandler = createCtxHandler(playerStore, router)
 
@@ -289,16 +289,6 @@ function scrollToCurrentTrack() {
     const el = document.querySelector(`.tracks-grid [data-track-path="${currentTrack.value.path}"]`)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
-}
-
-function showAddPlaylistDialog(track) {
-  if (playlistStore.playlists.length === 0) {
-    ElMessage.warning('暂无歌单，请先创建歌单')
-    return
-  }
-  // 简单实现：添加到第一个歌单
-  playlistStore.addToPlaylist(playlistStore.playlists[0].id, track)
-  ElMessage.success(`已添加到「${playlistStore.playlists[0].name}」`)
 }
 
 // 批量操作

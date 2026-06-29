@@ -112,7 +112,7 @@ const playerStore = usePlayerStore()
 const router = useRouter()
 const { currentTrack } = storeToRefs(playerStore)
 
-const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems } = useTrackList()
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems, showAddPlaylistDialog } = useTrackList()
 
 const ctxHandler = createCtxHandler(playerStore, router)
 
@@ -155,7 +155,8 @@ function playAll() {
 }
 
 function ctxAction(action) {
-  ctxHandler(action)
+  if (ctxHandler(action)) return
+  if (action === 'addToPlaylist') showAddPlaylistDialog(ctxMenu.value.track)
 }
 
 // 批量操作
