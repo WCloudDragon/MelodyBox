@@ -40,6 +40,7 @@ def row_to_song(row):
         'file_mtime': row['file_mtime'],
         'disc_number': row['disc_number'],
         'track_number': row['track_number'],
+        'lang': row['lang'] or '',
     }
 
 

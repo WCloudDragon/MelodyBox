@@ -44,6 +44,109 @@
         </div>
       </div>
 
+      <!-- AI 智能推荐 -->
+      <section class="section">
+        <div class="section__header">
+          <h3>
+            <span class="section__icon">✨</span> AI 智能推荐
+          </h3>
+          <el-button text type="primary" size="small" @click="refreshRecommendations" :loading="aiStore.isLoading">
+            刷新
+          </el-button>
+        </div>
+
+        <!-- embedding 未生成提示 -->
+        <div v-if="(aiStore.embeddingStatus.pending > 0 || generatingEmbeddings) && libraryStore.tracks.length > 0" class="embedding-banner">
+          <!-- 依赖未安装 -->
+          <div v-if="aiStore.embeddingStatus.st_available === false" class="embedding-banner__content">
+            <span>需要安装 fastembed 以启用 AI 推荐</span>
+            <el-button type="primary" size="small" @click="copyInstallCmd">
+              复制安装命令
+            </el-button>
+          </div>
+          <!-- 环境准备 / 模型下载中 -->
+          <div v-else-if="aiStore.isDownloading || aiStore.downloadProgress.status === 'restarting'" class="embedding-banner__content" style="flex-direction: column; align-items: stretch; gap: 10px;">
+            <!-- 正在重启以启用 GPU -->
+            <template v-if="aiStore.downloadProgress.status === 'restarting'">
+              <span style="font-weight: 600; color: var(--accent-color);">正在重启以启用 GPU 加速...</span>
+              <div class="progress-bar-wrap">
+                <div class="progress-bar progress-bar--indeterminate"></div>
+              </div>
+              <span style="font-size: 12px; color: var(--text-secondary);">应用重启后将自动使用 GPU 继续生成向量</span>
+            </template>
+            <!-- 准备环境（GPU 检测 / pip install 等） -->
+            <template v-else-if="aiStore.downloadProgress.status === 'preparing'">
+              <span style="font-weight: 600;">正在准备环境...</span>
+              <div class="progress-bar-wrap">
+                <div class="progress-bar progress-bar--indeterminate"></div>
+              </div>
+              <span style="font-size: 12px; color: var(--text-secondary);">{{ aiStore.downloadProgress.message }}</span>
+            </template>
+            <!-- 下载模型 -->
+            <template v-else>
+              <span style="font-weight: 600;">正在下载 AI 模型...</span>
+              <div class="progress-bar-wrap">
+                <div class="progress-bar" :style="{ width: aiStore.downloadProgress.percent + '%' }"></div>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
+                <span>{{ aiStore.downloadProgress.message }}</span>
+                <span v-if="aiStore.downloadProgress.percent > 0">{{ aiStore.downloadProgress.percent }}%</span>
+              </div>
+            </template>
+            <span v-if="aiStore.downloadProgress.status === 'error'" style="color: #ef4444; font-size: 12px;">
+              下载失败: {{ aiStore.downloadProgress.message }}（请检查网络后重试）
+            </span>
+          </div>
+          <!-- embedding 生成中 -->
+          <div v-else-if="generatingEmbeddings" class="embedding-banner__content" style="flex-direction: column; align-items: stretch; gap: 10px;">
+            <span style="font-weight: 600;">正在生成语义向量...</span>
+            <div class="progress-bar-wrap">
+              <div
+                class="progress-bar progress-bar--active"
+                :style="{ width: aiStore.embeddingStatus.total > 0 ? (aiStore.embeddingStatus.done / aiStore.embeddingStatus.total * 100) + '%' : '0%' }"
+              ></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
+              <span>{{ aiStore.embeddingStatus.done }} / {{ aiStore.embeddingStatus.total }} 首</span>
+              <span v-if="aiStore.embeddingStatus.total > 0">{{ (aiStore.embeddingStatus.done / aiStore.embeddingStatus.total * 100).toFixed(0) }}%</span>
+            </div>
+          </div>
+          <!-- 依赖已安装，待生成 -->
+          <div v-else class="embedding-banner__content">
+            <span>AI 推荐需要先生成歌曲语义向量（每首约4KB）</span>
+            <el-button
+              type="primary"
+              size="small"
+              @click="handleGenerateEmbeddings"
+              :loading="false"
+            >
+              一键生成向量
+            </el-button>
+          </div>
+        </div>
+
+        <!-- AI 推荐列表 -->
+        <div v-if="aiStore.embeddingStatus.ready && aiRecommendations.length > 0" class="tracks-grid">
+          <div
+            v-for="track in aiRecommendations"
+            :key="track.song_id"
+            class="ai-track-card"
+            @click="playAiTrack(track)"
+          >
+            <MusicCard :track="track" @play="playAiTrack(track)" />
+            <div class="ai-track-card__reason" :title="'匹配度: ' + (track.score * 100).toFixed(1) + '%'">
+              {{ track.reason }}
+            </div>
+          </div>
+        </div>
+
+        <!-- 加载中 -->
+        <div v-if="aiStore.isLoading && aiStore.embeddingStatus.ready" class="loading-hint">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          <span>正在分析你的音乐偏好...</span>
+        </div>
+      </section>
+
       <!-- 最近播放 / 推荐 -->
       <section class="section">
         <div class="section__header">
@@ -90,9 +193,10 @@
 
 <script setup>
 defineOptions({ name: 'HomeView' })
-import { computed, watch, onBeforeUnmount } from 'vue'
+import { computed, watch, onBeforeUnmount, ref } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
+import { useAiStore } from '@/stores/ai'
 import { formatTotalDuration } from '@/utils/format'
 import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } from '@/utils/scanNotify'
 import MusicCard from '@/components/music/MusicCard.vue'
@@ -100,6 +204,7 @@ import { useScrollMemory } from '@/composables/useScrollMemory'
 
 const libraryStore = useLibraryStore()
 const playerStore = usePlayerStore()
+const aiStore = useAiStore()
 
 // 扫描进度通知
 watch(() => libraryStore.isScanning, (scanning) => {
@@ -134,6 +239,98 @@ function playTrack(track) {
     playerStore.playAll(libraryStore.tracks, idx)
   }
 }
+
+// ==================== AI 推荐 ====================
+
+const generatingEmbeddings = ref(false)
+
+const aiRecommendations = computed(() => {
+  return aiStore.recommendations.slice(0, 12)
+})
+
+async function handleGenerateEmbeddings() {
+  // 先获取当前模型路径配置
+  let modelPath = '默认路径'
+  try {
+    const res = await fetch('http://127.0.0.1:5000/api/ai/model-dir')
+    if (res.ok) {
+      const data = await res.json()
+      modelPath = data.model_cache_dir || 'C:\\Users\\用户名\\.cache\\huggingface'
+    }
+  } catch {}
+
+  const { ElMessageBox } = await import('element-plus')
+  try {
+    await ElMessageBox.confirm(
+      `即将生成所有歌曲的语义向量（每首约4KB），首次运行需下载 multilingual-e5-large 模型（约 2.2GB）。\n\n模型存放路径: ${modelPath}\n\n当前曲库共 ${libraryStore.tracks.length} 首歌曲，生成后可启用AI智能推荐。`,
+      '确认生成 AI 向量',
+      {
+        confirmButtonText: '开始生成',
+        cancelButtonText: '取消',
+        type: 'info',
+        dangerouslyUseHTMLString: false
+      }
+    )
+  } catch {
+    return  // 用户取消
+  }
+
+  generatingEmbeddings.value = true
+  // 启动模型下载进度轮询（generateEmbeddings 内部先下载模型再生成向量）
+  aiStore.pollDownloadProgress(1500)
+  await aiStore.generateEmbeddings()
+  // 轮询状态直到完成
+  const stop = aiStore.pollEmbeddingStatus(2000, async () => {
+    generatingEmbeddings.value = false
+    await aiStore.loadRecommendations()
+  }, () => {
+    // 生成停滞（进程重启等）：恢复按钮状态，用户可重新点击
+    generatingEmbeddings.value = false
+  })
+  // 如果 generateEmbeddings 已经完成（pending=0 的情况），即时清理
+  setTimeout(async () => {
+    await aiStore.loadEmbeddingStatus()
+    if (aiStore.embeddingStatus.pending === 0) {
+      stop()
+      generatingEmbeddings.value = false
+      await aiStore.loadRecommendations()
+    }
+  }, 500)
+}
+
+async function refreshRecommendations() {
+  await aiStore.loadRecommendations()
+}
+
+async function copyInstallCmd() {
+  const cmd = 'pip install fastembed langdetect'
+  try {
+    await navigator.clipboard.writeText(cmd)
+    alert('已复制: ' + cmd)
+  } catch {
+    prompt('请复制以下命令运行:', cmd)
+  }
+}
+
+function playAiTrack(track) {
+  const allTracks = libraryStore.tracks
+  if (allTracks.length === 0) return
+  // 在曲库中查找对应的歌曲
+  const idx = allTracks.findIndex(t => t.path === track.file_path)
+  if (idx !== -1) {
+    playerStore.playAll(allTracks, idx)
+  }
+}
+
+// 监听曲库变化，曲库更新后自动刷新推荐
+watch(() => libraryStore.tracks.length, async (newLen) => {
+  if (newLen > 0) {
+    await aiStore.loadEmbeddingStatus()
+    if (aiStore.embeddingStatus.ready) {
+      await aiStore.loadRecommendations()
+    }
+  }
+})
 </script>
 
 <style scoped>
@@ -191,4 +388,67 @@ function playTrack(track) {
 .album-card__name { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
 .album-card__artist { font-size: 12px; color: var(--text-tertiary); }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* AI 推荐 */
+.section__icon { margin-right: 4px; }
+
+.embedding-banner {
+  background: linear-gradient(135deg, var(--accent-color-10, rgba(99, 102, 241, 0.1)), var(--bg-secondary));
+  border: 1px solid var(--accent-color-30, rgba(99, 102, 241, 0.3));
+  border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;
+}
+.embedding-banner__content {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  font-size: 13px; color: var(--text-secondary);
+}
+
+.progress-bar-wrap {
+  height: 6px; background: var(--bg-primary); border-radius: 3px; overflow: hidden;
+}
+.progress-bar {
+  height: 100%; background: var(--accent-color, #6366f1); border-radius: 3px;
+  transition: width 0.6s ease;
+  min-width: 2%;
+}
+.progress-bar--active {
+  background: linear-gradient(90deg, var(--accent-color, #6366f1), #818cf8);
+  background-size: 200% 100%;
+  animation: progressShimmer 1.5s ease-in-out infinite;
+}
+@keyframes progressShimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.progress-bar--indeterminate {
+  width: 40% !important;
+  animation: indeterminateSlide 1.8s ease-in-out infinite;
+}
+
+@keyframes indeterminateSlide {
+  0% { margin-left: 0; }
+  50% { margin-left: 55%; }
+  100% { margin-left: 0; }
+}
+
+.ai-track-card {
+  position: relative;
+}
+.ai-track-card__reason {
+  position: absolute; bottom: 8px; left: 8px; right: 8px;
+  background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(6px);
+  border-radius: 6px; padding: 4px 8px;
+  font-size: 11px; color: #fff; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: 0; transition: opacity 0.2s;
+  pointer-events: none;
+}
+.ai-track-card:hover .ai-track-card__reason {
+  opacity: 1;
+}
+
+.loading-hint {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 24px; color: var(--text-tertiary); font-size: 13px;
+}
 </style>

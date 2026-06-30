@@ -1,0 +1,154 @@
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+
+const AI_BASE = 'http://127.0.0.1:5000/api/ai'
+
+export const useAiStore = defineStore('ai', () => {
+  const recommendations = ref([])
+  const isLoaded = ref(false)
+  const isLoading = ref(false)
+
+  // Embedding 状态
+  const embeddingStatus = ref({ total: 0, done: 0, pending: 0, ready: false, st_available: null })
+  const isGenerating = ref(false)
+
+  // 模型下载进度
+  const downloadProgress = ref({
+    status: 'idle',       // idle | downloading | completed | error
+    percent: 0,
+    downloaded_mb: 0,
+    total_mb: 0,
+    message: ''
+  })
+  const isDownloading = ref(false)
+
+  /** 加载 AI 推荐 */
+  async function loadRecommendations(limit = 20) {
+    isLoading.value = true
+    try {
+      const res = await fetch(`${AI_BASE}/recommend?limit=${limit}`)
+      if (!res.ok) {
+        recommendations.value = []
+        isLoaded.value = true
+        return
+      }
+      const data = await res.json()
+      // 修复封面 URL
+      for (const s of data) {
+        if (s.cover_url && !s.cover_url.startsWith('http')) {
+          s.cover_url = `http://127.0.0.1:5000/api/music/cover?path=${encodeURIComponent(s.cover_url)}`
+        }
+        // 补全前端需要的字段
+        s.path = s.file_path
+        s.cover = s.cover_url
+        s.url = `http://127.0.0.1:51234/audio?path=${encodeURIComponent(s.file_path)}`
+      }
+      recommendations.value = data
+      isLoaded.value = true
+    } catch {
+      isLoaded.value = true
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /** 获取 embedding 生成状态 */
+  async function loadEmbeddingStatus() {
+    try {
+      const res = await fetch(`${AI_BASE}/embedding/status`)
+      if (res.ok) {
+        embeddingStatus.value = await res.json()
+      }
+    } catch {}
+  }
+
+  /** 轮询模型下载进度 */
+  function pollDownloadProgress(intervalMs = 1500) {
+    isDownloading.value = true
+    downloadProgress.value = { status: 'preparing', percent: 0, downloaded_mb: 0, total_mb: 0, message: '检测 GPU 环境中...' }
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`${AI_BASE}/model-download/progress`)
+        if (res.ok) {
+          downloadProgress.value = await res.json()
+          const st = downloadProgress.value.status
+          // preparing/downloading 继续轮询；idle/completed/error/restarting 停止
+          if (st === 'completed' || st === 'error' || st === 'restarting' || st === 'idle') {
+            clearInterval(timer)
+            isDownloading.value = false
+          }
+        }
+      } catch {
+        // 下载中/重启中后端不可达，静默
+      }
+    }, intervalMs)
+    return () => {
+      clearInterval(timer)
+      isDownloading.value = false
+    }
+  }
+
+  /** 触发 embedding 生成（异步，完成需轮询状态） */
+  async function generateEmbeddings() {
+    try {
+      isGenerating.value = true
+      const res = await fetch(`${AI_BASE}/embedding/generate`, { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        return data
+      }
+    } catch (e) {
+      console.error('[ai] embedding 生成触发失败:', e)
+    } finally {
+      isGenerating.value = false
+    }
+    return null
+  }
+
+  /** 轮询 embedding 生成进度 */
+  function pollEmbeddingStatus(intervalMs = 2000, onDone, onStall) {
+    let lastDone = -1
+    let stallCount = 0
+    const timer = setInterval(async () => {
+      await loadEmbeddingStatus()
+      if (embeddingStatus.value.pending === 0) {
+        clearInterval(timer)
+        if (onDone) onDone()
+        return
+      }
+      // 检测生成停滞（可能是进程重启导致后端线程丢失）
+      // CPU 模式下每批 32 首可能耗时 20-30s，设定 60s 超时防止误判
+      if (embeddingStatus.value.done === lastDone) {
+        stallCount++
+        if (stallCount >= 30) {  // 60 秒无变化 → 认为进程已重启，需要重新触发
+          clearInterval(timer)
+          if (onStall) onStall()
+          return
+        }
+      } else {
+        lastDone = embeddingStatus.value.done
+        stallCount = 0
+      }
+    }, intervalMs)
+    return () => clearInterval(timer)
+  }
+
+  // 初始化
+  loadRecommendations()
+  loadEmbeddingStatus()
+
+  return {
+    recommendations,
+    isLoaded,
+    isLoading,
+    embeddingStatus,
+    isGenerating,
+    downloadProgress,
+    isDownloading,
+    loadRecommendations,
+    loadEmbeddingStatus,
+    generateEmbeddings,
+    pollEmbeddingStatus,
+    pollDownloadProgress
+  }
+})

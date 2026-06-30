@@ -2,6 +2,13 @@ from flask import Flask, g
 from flask_cors import CORS
 from config.config import Config
 import os
+
+# 国内网络环境自动使用 huggingface 镜像（hf-mirror.com）
+# 确保模型下载、fastembed 等组件不受 DNS 污染影响
+os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')
+# Windows 下不支持软链接，关闭无关警告
+os.environ.setdefault('HF_HUB_DISABLE_SYMLINKS_WARNING', '1')
+
 import sqlite3
 
 def init_db(app):
@@ -54,6 +61,8 @@ def init_db(app):
             disc_number INTEGER DEFAULT 0,
             track_number INTEGER DEFAULT 0,
             fingerprint TEXT DEFAULT '',
+            lang TEXT DEFAULT '',
+            embedding BLOB DEFAULT NULL,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime'))
         )
@@ -69,11 +78,14 @@ def init_db(app):
         ('bit_depth', 'INTEGER DEFAULT 0'),
         ('quality', 'TEXT DEFAULT ""'),
         ('fingerprint', 'TEXT DEFAULT ""'),
+        ('lang', 'TEXT DEFAULT ""'),
+        ('embedding', 'BLOB DEFAULT NULL'),
     ]:
         try: cursor.execute(f'ALTER TABLE songs ADD COLUMN {col} {col_def}')
         except sqlite3.OperationalError: pass
 
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_songs_fingerprint ON songs(fingerprint)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_songs_lang ON songs(lang)')
 
     # ========== 3. artists ==========
     cursor.execute('''
@@ -247,11 +259,15 @@ def init_db(app):
             api_base TEXT DEFAULT '',
             model TEXT DEFAULT 'gpt-3.5-turbo',
             is_active INTEGER DEFAULT 0,
+            model_cache_dir TEXT DEFAULT '',
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     ''')
+    # 兼容旧表
+    try: cursor.execute("ALTER TABLE ai_api_config ADD COLUMN model_cache_dir TEXT DEFAULT ''")
+    except sqlite3.OperationalError: pass
 
     # ========== 13. banners ==========
     cursor.execute('''
@@ -332,6 +348,26 @@ def get_db(app):
     return conn
 
 
+def _init_ai_model_dir(app):
+    """从数据库读取并设置 AI 模型缓存路径"""
+    try:
+        with app.app_context():
+            db = app.get_db()
+            cursor = db.cursor()
+            cursor.execute(
+                'SELECT model_cache_dir FROM ai_api_config WHERE user_id = 1'
+            )
+            row = cursor.fetchone()
+            cursor.close()
+            db.close()
+            if row and row['model_cache_dir']:
+                from services.embedding import set_cache_dir
+                set_cache_dir(row['model_cache_dir'])
+                print(f'[app] AI 模型缓存路径: {row["model_cache_dir"]}')
+    except Exception:
+        pass
+
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
@@ -348,6 +384,7 @@ def create_app():
     from routes.playlist import playlist_bp
     from routes.settings import settings_bp
     from routes.folders import folders_bp
+    from routes.ai import ai_bp
 
     app.register_blueprint(music_bp)
     app.register_blueprint(auth_bp)
@@ -355,6 +392,7 @@ def create_app():
     app.register_blueprint(playlist_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(folders_bp)
+    app.register_blueprint(ai_bp)
 
     @app.route('/api/health')
     def health():
@@ -362,6 +400,9 @@ def create_app():
 
     app.get_db = lambda: get_db(app)
     app.db_path = app.config['DB_PATH']
+
+    # 从数据库初始化 AI 模型缓存路径
+    _init_ai_model_dir(app)
 
     return app
 

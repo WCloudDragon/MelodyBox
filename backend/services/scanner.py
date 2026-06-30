@@ -8,6 +8,15 @@ from mutagen.flac import FLAC
 from mutagen.id3 import ID3, APIC
 from mutagen.flac import Picture
 
+# langdetect 可选依赖，缺失时检测返回空字符串
+try:
+    from langdetect import detect, DetectorFactory
+    DetectorFactory.seed = 0
+    _LANGDETECT_OK = True
+except ImportError:
+    _LANGDETECT_OK = False
+    print('[scanner] 警告: langdetect 未安装，语言检测将跳过。pip install langdetect')
+
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.aac', '.m4a', '.wma', '.ape'}
 
 # 缩略图生成进度（全局，供 API 轮询）
@@ -190,6 +199,29 @@ def pre_generate_thumbs_batch(cover_paths, max_workers=4):
     _thumb_progress['scanning'] = False
 
 
+def detect_language(title, lyrics, artist=''):
+    """
+    检测歌曲语言。
+    优先用歌词检测（文本更长更准确），歌词不足时用标题+艺术家。
+    返回 ISO 639-1 语言代码（zh/ja/en/ko/de/ru/...），失败返回 ''。
+    """
+    if not _LANGDETECT_OK:
+        return ''
+
+    # 优先用歌词（取前 800 字符足够判断语言）
+    text = (lyrics or '').strip()[:800]
+    if len(text) < 15:
+        text = f"{title} {artist}".strip()
+    if len(text) < 5:
+        return ''
+
+    try:
+        lang = detect(text)
+        return lang
+    except Exception:
+        return ''
+
+
 def clean_lyrics(text):
     """清洗歌词中的转义字符：\n \r \xa0 \t 等还原为实际字符"""
     if not text:
@@ -303,7 +335,8 @@ def parse_metadata(file_path):
         'file_mtime': 0,
         'disc_number': 0,
         'track_number': 0,
-        'fingerprint': ''
+        'fingerprint': '',
+        'lang': ''
     }
 
     try:
@@ -364,6 +397,9 @@ def parse_metadata(file_path):
     fp_str = f"{result['title']}|{result['artist']}|{result['album']}".strip().lower()
     result['fingerprint'] = hashlib.md5(fp_str.encode()).hexdigest()
 
+    # 检测语言
+    result['lang'] = detect_language(result['title'], result['lyrics'], result['artist'])
+
     return result
 
 
@@ -390,6 +426,36 @@ def _upsert_album(cursor, album_name, cover_url, year, genre):
     cursor.execute('SELECT id FROM albums WHERE title = ? AND year = ?', (name, year))
     row = cursor.fetchone()
     return row['id'] if row else None
+
+
+def _maybe_generate_embedding(db_conn, song_id, meta):
+    """
+    增量生成单首歌曲的 embedding 向量。
+    仅在 fastembed 可用时执行，失败静默跳过。
+    """
+    try:
+        from services.embedding import (
+            is_available, build_song_text, encode_text, embedding_to_blob
+        )
+        if not is_available():
+            return
+
+        # 构建文本并编码
+        song_info = {**meta, 'id': song_id}
+        text = build_song_text(song_info)
+        emb = encode_text(text)
+        blob = embedding_to_blob(emb)
+
+        cursor = db_conn.cursor()
+        cursor.execute(
+            'UPDATE songs SET embedding = ? WHERE id = ?',
+            (blob, song_id)
+        )
+        cursor.close()
+        print(f'[scanner] embedding 已生成: {meta.get("title", "")[:20]}')
+    except Exception as e:
+        # 静默失败，不影响扫描主流程
+        pass
 
 
 def _handle_song_relations(cursor, song_id, meta):
@@ -502,8 +568,8 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
                     INSERT INTO songs (title, artist, album, cover_url, lyrics, year, genre,
                         duration, bitrate, sample_rate, bit_depth, quality,
                         file_size, file_mtime, file_path,
-                        disc_number, track_number, fingerprint)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        disc_number, track_number, fingerprint, lang)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     meta['title'], meta['artist'], meta['album'], meta['cover_url'],
                     meta['lyrics'], meta['year'], meta['genre'], meta['duration'],
@@ -511,18 +577,22 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
                     meta['file_size'], meta['file_mtime'],
                     file_path,
                     meta['disc_number'], meta['track_number'],
-                    meta['fingerprint']
+                    meta['fingerprint'], meta['lang']
                 ))
                 song_id = cursor.lastrowid
                 inserted += 1
+
+                # 增量生成 embedding（不阻塞扫描流程）
+                db_conn.commit()
+                _maybe_generate_embedding(db_conn, song_id, meta)
             else:
-                # 更新已有歌曲（含 fingerprint）
+                # 更新已有歌曲（含 fingerprint、lang）
                 cursor.execute('''
                     UPDATE songs SET title=?, artist=?, album=?, cover_url=?,
                         lyrics=?, year=?, genre=?, duration=?, bitrate=?,
                         sample_rate=?, bit_depth=?, quality=?,
                         file_size=?, file_mtime=?,
-                        disc_number=?, track_number=?, fingerprint=?,
+                        disc_number=?, track_number=?, fingerprint=?, lang=?,
                         updated_at=datetime('now','localtime')
                     WHERE file_path=?
                 ''', (
@@ -531,7 +601,7 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
                     meta['bitrate'], meta['sample_rate'], meta['bit_depth'], meta['quality'],
                     meta['file_size'], meta['file_mtime'],
                     meta['disc_number'], meta['track_number'],
-                    meta['fingerprint'],
+                    meta['fingerprint'], meta['lang'],
                     file_path
                 ))
                 # 获取 song_id
@@ -539,6 +609,11 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
                 row = cursor.fetchone()
                 song_id = row['id'] if row else None
                 updated += 1
+
+                # 元数据更新后重新生成 embedding
+                if song_id is not None:
+                    db_conn.commit()
+                    _maybe_generate_embedding(db_conn, song_id, meta)
 
                 # 更新时先清除旧的关联关系再重建
                 if song_id is not None:

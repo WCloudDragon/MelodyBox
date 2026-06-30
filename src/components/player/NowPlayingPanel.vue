@@ -404,6 +404,8 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
   const coverUrl = currentTrack.value?.cover
   if (!coverUrl) return Promise.resolve()
 
+  // 确保封面已解码后再启动动画，消除首次触发时 background-image 实时解码卡顿
+  return _ensureCoverReady(coverUrl).then(() => {
   const toW = toRect.width, toH = toRect.height
   const fromW = fromRect.width, fromH = fromRect.height
 
@@ -438,10 +440,12 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
     borderRadius: `${clipStartBR}px`, boxShadow: 'none', zIndex: '0'
   })
 
-  const imgEl = document.createElement('div')
+  const imgEl = document.createElement('img')
+  imgEl.src = coverUrl
   Object.assign(imgEl.style, {
     position: 'absolute', inset: '0', zIndex: '1',
-    backgroundImage: `url(${coverUrl})`, backgroundSize: 'cover', backgroundPosition: 'center',
+    width: '100%', height: '100%',
+    objectFit: 'cover', objectPosition: 'center',
     clipPath: `inset(0 round ${clipStartBR}px)`,
     willChange: 'clip-path'
   })
@@ -499,6 +503,7 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
       flyerCleanup = null
     }
   })
+  }) // _ensureCoverReady().then()
 }
 
 /** 面板展开：封面从播放栏飞入 */
@@ -1043,6 +1048,23 @@ function _preloadOne(url) {
       _coverCache.delete(_coverCache.keys().next().value)
     }
   }).catch(() => {})
+}
+
+// 确保封面已解码就绪：优先命中 _coverCache，未命中时主动加载
+function _ensureCoverReady(url) {
+  if (!url) return Promise.resolve()
+  if (_coverCache.has(url)) return Promise.resolve()
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.src = url
+    img.decode().then(() => {
+      _coverCache.set(url, img)
+      while (_coverCache.size > PRELOAD_WINDOW * 2 + 1) {
+        _coverCache.delete(_coverCache.keys().next().value)
+      }
+      resolve()
+    }).catch(() => resolve()) // 即使加载失败也不阻塞飞行动画
+  })
 }
 
 // 当前索引或队列变化时，预取邻近封面

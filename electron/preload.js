@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 文件夹选择
   selectFolder: () => ipcRenderer.invoke('dialog:selectFolder'),
+  selectSingleFolder: () => ipcRenderer.invoke('dialog:selectSingleFolder'),
 
   // 音乐扫描（仅返回文件路径）
   scanMusic: (dirPaths) => ipcRenderer.invoke('music:scan', dirPaths),

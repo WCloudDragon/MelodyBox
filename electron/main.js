@@ -524,6 +524,15 @@ ipcMain.handle('dialog:selectFolder', async () => {
   return result.canceled ? [] : result.filePaths
 })
 
+// 选择单个文件夹
+ipcMain.handle('dialog:selectSingleFolder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory']
+  })
+  if (result.canceled || result.filePaths.length === 0) return null
+  return result.filePaths[0]
+})
+
 // ==================== 文件路径转音频 URL ====================
 
 // 将本地文件路径转换为 HTTP 音频流 URL

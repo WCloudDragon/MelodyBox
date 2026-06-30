@@ -74,6 +74,22 @@
           </div>
           <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
         </button>
+        <button class="menu-item" v-ripple @click="page = 'ai'">
+          <div class="menu-item__left">
+            <span class="menu-item__icon" style="background: rgba(129,140,248,0.15); color: #818cf8">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2a4 4 0 1 0 0 8 4 4 0 1 0 0-8z"/>
+                <path d="M8 14c-3.3 0-6 2.7-6 6v1h20v-1c0-3.3-2.7-6-6-6H8z"/>
+                <path d="M17.5 5.5c1.5 0 3 1 3.5 2.5M6.5 5.5c-1.5 0-3 1-3.5 2.5"/>
+              </svg>
+            </span>
+            <div class="menu-item__text">
+              <span class="menu-item__title">AI 推荐</span>
+              <span class="menu-item__desc">模型缓存路径</span>
+            </div>
+          </div>
+          <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+        </button>
         <button class="menu-item" v-ripple @click="page = 'about'">
           <div class="menu-item__left">
             <span class="menu-item__icon" style="background: rgba(56,189,248,0.15); color: #38bdf8">
@@ -358,6 +374,50 @@
       </section>
     </template>
 
+    <!-- 二级页：AI 推荐 -->
+    <template v-if="page === 'ai'">
+      <header class="sub-header">
+        <button class="sub-header__back" v-ripple @click="page = 'menu'">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+        </button>
+        <h1 class="sub-header__title">AI 推荐</h1>
+      </header>
+      <section class="settings-section">
+        <div class="setting-row">
+          <div class="setting-label">
+            <span class="setting-title">模型缓存路径</span>
+            <span class="setting-desc">BGE-M3 模型的存放目录（首次生成向量时下载，约 2.5GB）</span>
+          </div>
+        </div>
+        <div style="padding: 0 20px; margin-bottom: 16px;">
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <span v-if="!modelDirInput" style="color: var(--text-secondary); font-size: 13px;">默认: C:\Users\用户名\.cache\huggingface</span>
+            <span v-else class="model-path-text">{{ modelDirInput }}</span>
+            <el-button @click="pickModelDir" style="flex-shrink: 0;">
+              📁 选择文件夹
+            </el-button>
+            <el-button
+              v-if="modelDirInput"
+              @click="modelDirInput = ''"
+              link
+              type="danger"
+              style="flex-shrink: 0;"
+            >
+              清除
+            </el-button>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <el-button type="primary" @click="saveModelDir" :loading="savingModelDir">
+              保存
+            </el-button>
+          </div>
+          <div v-if="modelDirSaved" style="margin-top: 8px; font-size: 12px; color: var(--color-success, #22c55e);">
+            {{ needRestart ? '已保存。模型已加载，下次启动生效。' : '已保存，下次生成向量时生效。' }}
+          </div>
+        </div>
+      </section>
+    </template>
+
     <!-- 二级页：关于 -->
     <template v-if="page === 'about'">
       <header class="sub-header">
@@ -402,12 +462,72 @@
 
 <script setup>
 defineOptions({ name: 'SettingsView' })
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useScrollMemory } from '@/composables/useScrollMemory'
 
 const settingsStore = useSettingsStore()
 const page = ref('menu')
+
+// ==================== AI 模型路径 ====================
+const AI_BASE = 'http://127.0.0.1:5000/api/ai'
+
+const modelDirInput = ref('')
+const savingModelDir = ref(false)
+const modelDirSaved = ref(false)
+const needRestart = ref(false)
+
+async function loadModelDir() {
+  try {
+    const res = await fetch(`${AI_BASE}/model-dir`)
+    if (res.ok) {
+      const data = await res.json()
+      modelDirInput.value = data.model_cache_dir || ''
+    }
+  } catch {}
+}
+
+async function pickModelDir() {
+  try {
+    if (window.electronAPI?.selectSingleFolder) {
+      const dir = await window.electronAPI.selectSingleFolder()
+      if (dir) modelDirInput.value = dir
+    } else {
+      // 非 Electron 环境回退到手动输入
+      const input = prompt('请输入模型缓存路径（留空使用默认）:', modelDirInput.value)
+      if (input !== null) modelDirInput.value = input.trim()
+    }
+  } catch {
+    const input = prompt('请输入模型缓存路径:', modelDirInput.value)
+    if (input !== null) modelDirInput.value = input.trim()
+  }
+}
+
+async function saveModelDir() {
+  savingModelDir.value = true
+  modelDirSaved.value = false
+  try {
+    const res = await fetch(`${AI_BASE}/model-dir`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model_cache_dir: modelDirInput.value })
+    })
+    if (res.ok) {
+      const data = await res.json()
+      needRestart.value = data.need_restart || false
+      modelDirSaved.value = true
+    }
+  } catch (e) {
+    console.error('[settings] 保存模型路径失败:', e)
+  } finally {
+    savingModelDir.value = false
+  }
+}
+
+// 进入 AI 页面时加载当前配置
+watch(page, (val) => {
+  if (val === 'ai') loadModelDir()
+})
 
 useScrollMemory('settings', () => document.querySelector('.main-content'))
 </script>
@@ -473,6 +593,11 @@ useScrollMemory('settings', () => document.querySelector('.main-content'))
   padding: 16px 0; gap: 24px;
 }
 .setting-row:not(:last-child) { border-bottom: 1px solid var(--border-color); }
+
+.model-path-text {
+  font-size: 13px; color: var(--accent-color, #6366f1);
+  max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .setting-row--slider {
   flex-direction: column; align-items: stretch;

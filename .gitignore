@@ -31,6 +31,7 @@ node_modules/
 .env
 .venv/
 venv/
+backend/vendor/
 
 # IDE
 .vscode/
