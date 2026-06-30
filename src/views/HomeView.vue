@@ -290,6 +290,7 @@ const LANG_NAME_MAP = {
   af: '南非荷兰语', so: '索马里语', bg: '保加利亚语',
   uk: '乌克兰语', sk: '斯洛伐克语', sl: '斯洛文尼亚语',
   el: '希腊语', he: '希伯来语', bn: '孟加拉语', ta: '泰米尔语',
+  inst: '纯音乐',
 }
 
 // 语言码规范化：zh-cn/zh-tw → zh
@@ -300,7 +301,7 @@ function normalizedLangCode(code) {
 
 // 常见语言（单独展示）
 const COMMON_LANG_CODES = new Set([
-  'zh', 'ja', 'en', 'ko', 'de', 'ru', 'fr', 'es', 'pt', 'it', 'vi', 'nl',
+  'inst', 'zh', 'ja', 'en', 'ko', 'de', 'ru', 'fr', 'es', 'pt', 'it', 'vi', 'nl',
   'sv', 'no', 'da', 'fi', 'tr', 'pl', 'ar', 'th', 'id', 'hi',
 ])
 

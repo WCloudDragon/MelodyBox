@@ -207,7 +207,7 @@ def recommend_comprehensive(db, user_history_song_ids, limit=20, seed=None):
 # ==================== 按语言推荐 ====================
 
 # 常见语言列表，"其他"分类排除这些
-_COMMON_LANGS = {'zh', 'zh-cn', 'zh-tw', 'ja', 'en', 'ko', 'de', 'ru',
+_COMMON_LANGS = {'inst', 'zh', 'zh-cn', 'zh-tw', 'ja', 'en', 'ko', 'de', 'ru',
                  'fr', 'es', 'pt', 'it', 'vi', 'nl', 'sv', 'no', 'da',
                  'fi', 'tr', 'pl', 'ar', 'th', 'id', 'hi'}
 

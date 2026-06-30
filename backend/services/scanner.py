@@ -212,20 +212,17 @@ def detect_language(title, lyrics, artist=''):
 
     lyrics = (lyrics or '').strip()
 
-    # 纯音乐占位文本：固定格式 "纯音乐,请欣赏" / "纯音乐，请欣赏"，跳过歌词
+    # 纯音乐占位文本：固定格式 "纯音乐,请欣赏" / "纯音乐，请欣赏"
     _INSTRUMENTAL_PLACEHOLDERS = ['纯音乐,请欣赏', '纯音乐，请欣赏', '纯音乐 请欣赏']
-    is_instrumental = any(p in lyrics for p in _INSTRUMENTAL_PLACEHOLDERS)
+    if any(p in lyrics for p in _INSTRUMENTAL_PLACEHOLDERS):
+        return 'inst'
 
-    if is_instrumental:
-        # 纯音乐：只用标题 + 歌手判断
-        text = f"{title} {artist}".strip()
-    else:
-        # 优先用歌词（取前 800 字符足够判断语言）
-        text = lyrics[:800]
-        # 剥离 LRC 时间戳 [mm:ss.xx] 和元数据标签（如 [ti:]、[ar:]）
-        text = re.sub(r'\[\d{2}:\d{2}[.\d]*\]', '', text)
-        text = re.sub(r'\[\w{2}:[^\]]*\]', '', text)
-        text = text.strip()
+    # 优先用歌词（取前 800 字符足够判断语言）
+    text = lyrics[:800]
+    # 剥离 LRC 时间戳 [mm:ss.xx] 和元数据标签（如 [ti:]、[ar:]）
+    text = re.sub(r'\[\d{2}:\d{2}[.\d]*\]', '', text)
+    text = re.sub(r'\[\w{2}:[^\]]*\]', '', text)
+    text = text.strip()
         if len(text) < 15:
             text = f"{title} {artist}".strip()
 
