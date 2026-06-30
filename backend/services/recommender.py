@@ -206,18 +206,32 @@ def recommend_comprehensive(db, user_history_song_ids, limit=20, seed=None):
 
 # ==================== 按语言推荐 ====================
 
+# 常见语言列表，"其他"分类排除这些
+_COMMON_LANGS = {'zh', 'zh-cn', 'zh-tw', 'ja', 'en', 'ko', 'de', 'ru',
+                 'fr', 'es', 'pt', 'it', 'vi', 'nl', 'sv', 'no', 'da',
+                 'fi', 'tr', 'pl', 'ar', 'th', 'id', 'hi'}
+
+
 def recommend_by_language(db, lang, user_history_song_ids, limit=20, seed=None):
     """
     按语言推荐：SQL 过滤 lang，再用 embedding 语义相似度排序。
+    支持 lang=other 匹配所有非通用语言。
     """
     all_songs, id_to_embedding, id_to_info = _load_all_songs(db)
 
-    # 过滤目标语言（支持前缀匹配：zh 匹配 zh-cn/zh-tw）
-    def _lang_match(song_lang):
-        sl = (song_lang or '').strip().lower()
-        if not sl:
-            return False
-        return sl == lang or sl.startswith(lang + '-')
+    if lang == 'other':
+        def _lang_match(song_lang):
+            sl = (song_lang or '').strip().lower()
+            return bool(sl) and sl not in _COMMON_LANGS
+        lang_label = '其他语言'
+    else:
+        def _lang_match(song_lang):
+            sl = (song_lang or '').strip().lower()
+            if not sl:
+                return False
+            return sl == lang or sl.startswith(lang + '-')
+        lang_label = LANG_NAMES.get(lang, lang)
+
     target_songs = [s for s in all_songs if _lang_match(s.get('lang'))]
     if not target_songs:
         return []
@@ -277,7 +291,6 @@ def recommend_by_language(db, lang, user_history_song_ids, limit=20, seed=None):
     else:
         top = scored[:limit]
 
-    lang_label = LANG_NAMES.get(lang, lang)
     return [_song_to_result(s, score, f"{lang_label}歌曲推荐") for score, s in top]
 
 

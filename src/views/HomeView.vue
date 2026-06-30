@@ -298,18 +298,34 @@ function normalizedLangCode(code) {
   return code
 }
 
+// 常见语言（单独展示）
+const COMMON_LANG_CODES = new Set([
+  'zh', 'ja', 'en', 'ko', 'de', 'ru', 'fr', 'es', 'pt', 'it', 'vi', 'nl',
+  'sv', 'no', 'da', 'fi', 'tr', 'pl', 'ar', 'th', 'id', 'hi',
+])
+
 // 可用的语言列表（从 embedding status 接口获取，去重 zh-cn/zh-tw → 中文）
 const availableLangs = computed(() => {
   const langs = aiStore.embeddingStatus.langs || []
   const seen = new Set()
-  const result = []
+  const common = []
+  let hasOther = false
   for (const code of langs) {
     const key = normalizedLangCode(code)
     if (seen.has(key)) continue
     seen.add(key)
-    result.push({ code: key, label: LANG_NAME_MAP[key] || code })
+    if (COMMON_LANG_CODES.has(key)) {
+      common.push({ code: key, label: LANG_NAME_MAP[key] || code })
+    } else {
+      hasOther = true
+    }
   }
-  return result
+  // 按语言名排序
+  common.sort((a, b) => a.label.localeCompare(b.label, 'zh'))
+  if (hasOther) {
+    common.push({ code: 'other', label: '其他' })
+  }
+  return common
 })
 
 const aiRecommendations = computed(() => {
