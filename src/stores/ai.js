@@ -8,6 +8,11 @@ export const useAiStore = defineStore('ai', () => {
   const isLoaded = ref(false)
   const isLoading = ref(false)
 
+  // 当前推荐模式
+  const currentMode = ref('comprehensive')
+  // 推荐模式子选项（语言/情绪等）
+  const currentSub = ref(null)
+
   // Embedding 状态
   const embeddingStatus = ref({ total: 0, done: 0, pending: 0, ready: false, st_available: null })
   const isGenerating = ref(false)
@@ -26,7 +31,11 @@ export const useAiStore = defineStore('ai', () => {
   async function loadRecommendations(limit = 20) {
     isLoading.value = true
     try {
-      const res = await fetch(`${AI_BASE}/recommend?limit=${limit}`)
+      let url = `${AI_BASE}/recommend?limit=${limit}&mode=${currentMode.value}`
+      if (currentSub.value != null) {
+        url += `&${currentSub.value}`
+      }
+      const res = await fetch(url)
       if (!res.ok) {
         recommendations.value = []
         isLoaded.value = true
@@ -52,6 +61,13 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
+  /** 切换推荐模式 */
+  async function setMode(mode, subValue = null) {
+    currentMode.value = mode
+    currentSub.value = subValue
+    await loadRecommendations()
+  }
+
   /** 获取 embedding 生成状态 */
   async function loadEmbeddingStatus() {
     try {
@@ -72,7 +88,6 @@ export const useAiStore = defineStore('ai', () => {
         if (res.ok) {
           downloadProgress.value = await res.json()
           const st = downloadProgress.value.status
-          // preparing/downloading 继续轮询；idle/completed/error/restarting 停止
           if (st === 'completed' || st === 'error' || st === 'restarting' || st === 'idle') {
             clearInterval(timer)
             isDownloading.value = false
@@ -116,11 +131,9 @@ export const useAiStore = defineStore('ai', () => {
         if (onDone) onDone()
         return
       }
-      // 检测生成停滞（可能是进程重启导致后端线程丢失）
-      // CPU 模式下每批 32 首可能耗时 20-30s，设定 60s 超时防止误判
       if (embeddingStatus.value.done === lastDone) {
         stallCount++
-        if (stallCount >= 30) {  // 60 秒无变化 → 认为进程已重启，需要重新触发
+        if (stallCount >= 30) {
           clearInterval(timer)
           if (onStall) onStall()
           return
@@ -141,11 +154,14 @@ export const useAiStore = defineStore('ai', () => {
     recommendations,
     isLoaded,
     isLoading,
+    currentMode,
+    currentSub,
     embeddingStatus,
     isGenerating,
     downloadProgress,
     isDownloading,
     loadRecommendations,
+    setMode,
     loadEmbeddingStatus,
     generateEmbeddings,
     pollEmbeddingStatus,

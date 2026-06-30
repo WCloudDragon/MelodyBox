@@ -55,73 +55,77 @@
           </el-button>
         </div>
 
+        <!-- 推荐模式选择 -->
+        <div v-if="aiStore.embeddingStatus.ready" class="rec-tabs">
+          <button
+            v-for="tab in recTabs"
+            :key="tab.key"
+            class="rec-tab"
+            :class="{ 'rec-tab--active': activeRecTab === tab.key }"
+            @click="switchRecMode(tab.key)"
+          >{{ tab.label }}</button>
+        </div>
+
+        <!-- 模式子选项 -->
+        <div v-if="activeRecTab === 'language' && aiStore.embeddingStatus.ready" class="rec-sub-row">
+          <button
+            v-for="l in availableLangs"
+            :key="l.code"
+            class="rec-chip"
+            :class="{ 'rec-chip--active': langFilter === l.code }"
+            @click="selectLang(l.code)"
+          >{{ l.label }}</button>
+        </div>
+        <div v-if="activeRecTab === 'mood' && aiStore.embeddingStatus.ready" class="rec-sub-row">
+          <button
+            v-for="m in moods"
+            :key="m.key"
+            class="rec-chip"
+            :class="{ 'rec-chip--active': moodFilter === m.key }"
+            @click="selectMood(m.key)"
+          >{{ m.label }}</button>
+        </div>
+
         <!-- embedding 未生成提示 -->
         <div v-if="(aiStore.embeddingStatus.pending > 0 || generatingEmbeddings) && libraryStore.tracks.length > 0" class="embedding-banner">
-          <!-- 依赖未安装 -->
           <div v-if="aiStore.embeddingStatus.st_available === false" class="embedding-banner__content">
             <span>需要安装 fastembed 以启用 AI 推荐</span>
             <el-button type="primary" size="small" @click="copyInstallCmd">
               复制安装命令
             </el-button>
           </div>
-          <!-- 环境准备 / 模型下载中 -->
           <div v-else-if="aiStore.isDownloading || aiStore.downloadProgress.status === 'restarting'" class="embedding-banner__content" style="flex-direction: column; align-items: stretch; gap: 10px;">
-            <!-- 正在重启以启用 GPU -->
             <template v-if="aiStore.downloadProgress.status === 'restarting'">
               <span style="font-weight: 600; color: var(--accent-color);">正在重启以启用 GPU 加速...</span>
-              <div class="progress-bar-wrap">
-                <div class="progress-bar progress-bar--indeterminate"></div>
-              </div>
+              <div class="progress-bar-wrap"><div class="progress-bar progress-bar--indeterminate"></div></div>
               <span style="font-size: 12px; color: var(--text-secondary);">应用重启后将自动使用 GPU 继续生成向量</span>
             </template>
-            <!-- 准备环境（GPU 检测 / pip install 等） -->
             <template v-else-if="aiStore.downloadProgress.status === 'preparing'">
               <span style="font-weight: 600;">正在准备环境...</span>
-              <div class="progress-bar-wrap">
-                <div class="progress-bar progress-bar--indeterminate"></div>
-              </div>
+              <div class="progress-bar-wrap"><div class="progress-bar progress-bar--indeterminate"></div></div>
               <span style="font-size: 12px; color: var(--text-secondary);">{{ aiStore.downloadProgress.message }}</span>
             </template>
-            <!-- 下载模型 -->
             <template v-else>
               <span style="font-weight: 600;">正在下载 AI 模型...</span>
-              <div class="progress-bar-wrap">
-                <div class="progress-bar" :style="{ width: aiStore.downloadProgress.percent + '%' }"></div>
-              </div>
+              <div class="progress-bar-wrap"><div class="progress-bar" :style="{ width: aiStore.downloadProgress.percent + '%' }"></div></div>
               <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
                 <span>{{ aiStore.downloadProgress.message }}</span>
                 <span v-if="aiStore.downloadProgress.percent > 0">{{ aiStore.downloadProgress.percent }}%</span>
               </div>
             </template>
-            <span v-if="aiStore.downloadProgress.status === 'error'" style="color: #ef4444; font-size: 12px;">
-              下载失败: {{ aiStore.downloadProgress.message }}（请检查网络后重试）
-            </span>
+            <span v-if="aiStore.downloadProgress.status === 'error'" style="color: #ef4444; font-size: 12px;">下载失败: {{ aiStore.downloadProgress.message }}（请检查网络后重试）</span>
           </div>
-          <!-- embedding 生成中 -->
           <div v-else-if="generatingEmbeddings" class="embedding-banner__content" style="flex-direction: column; align-items: stretch; gap: 10px;">
             <span style="font-weight: 600;">正在生成语义向量...</span>
-            <div class="progress-bar-wrap">
-              <div
-                class="progress-bar progress-bar--active"
-                :style="{ width: aiStore.embeddingStatus.total > 0 ? (aiStore.embeddingStatus.done / aiStore.embeddingStatus.total * 100) + '%' : '0%' }"
-              ></div>
-            </div>
+            <div class="progress-bar-wrap"><div class="progress-bar progress-bar--active" :style="{ width: aiStore.embeddingStatus.total > 0 ? (aiStore.embeddingStatus.done / aiStore.embeddingStatus.total * 100) + '%' : '0%' }"></div></div>
             <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
               <span>{{ aiStore.embeddingStatus.done }} / {{ aiStore.embeddingStatus.total }} 首</span>
               <span v-if="aiStore.embeddingStatus.total > 0">{{ (aiStore.embeddingStatus.done / aiStore.embeddingStatus.total * 100).toFixed(0) }}%</span>
             </div>
           </div>
-          <!-- 依赖已安装，待生成 -->
           <div v-else class="embedding-banner__content">
             <span>AI 推荐需要先生成歌曲语义向量（每首约4KB）</span>
-            <el-button
-              type="primary"
-              size="small"
-              @click="handleGenerateEmbeddings"
-              :loading="false"
-            >
-              一键生成向量
-            </el-button>
+            <el-button type="primary" size="small" @click="handleGenerateEmbeddings" :loading="false">一键生成向量</el-button>
           </div>
         </div>
 
@@ -138,6 +142,11 @@
               {{ track.reason }}
             </div>
           </div>
+        </div>
+
+        <!-- 空状态 -->
+        <div v-if="aiStore.embeddingStatus.ready && aiRecommendations.length === 0 && !aiStore.isLoading" class="loading-hint">
+          <span>该分类暂无推荐结果</span>
         </div>
 
         <!-- 加载中 -->
@@ -244,6 +253,65 @@ function playTrack(track) {
 
 const generatingEmbeddings = ref(false)
 
+// 推荐模式
+const recTabs = [
+  { key: 'comprehensive', label: '综合推荐' },
+  { key: 'language',      label: '按语言' },
+  { key: 'mood',          label: '按情绪' },
+  { key: 'hidden_gem',    label: '冷门宝藏' },
+]
+const activeRecTab = ref('comprehensive')
+const langFilter = ref(null)
+const moodFilter = ref(null)
+
+// 情绪选项
+const moods = [
+  { key: 'sad',       label: '😢 伤感' },
+  { key: 'energetic', label: '🔥 激昂' },
+  { key: 'calm',      label: '🌙 舒缓' },
+  { key: 'upbeat',    label: '💃 动感' },
+  { key: 'fresh',     label: '🍃 清新' },
+  { key: 'romantic',  label: '💕 浪漫' },
+  { key: 'inspire',   label: '🌟 励志' },
+]
+
+// 完整语言名称映射
+const LANG_NAME_MAP = {
+  zh: '中文', 'zh-cn': '中文', 'zh-tw': '中文',
+  ja: '日语', en: '英语', ko: '韩语',
+  de: '德语', ru: '俄语', fr: '法语', es: '西班牙语',
+  pt: '葡萄牙语', it: '意大利语', nl: '荷兰语',
+  pl: '波兰语', sv: '瑞典语', no: '挪威语', da: '丹麦语',
+  fi: '芬兰语', cs: '捷克语', ro: '罗马尼亚语', hu: '匈牙利语',
+  tr: '土耳其语', ar: '阿拉伯语', hi: '印地语', th: '泰语',
+  vi: '越南语', id: '印尼语', ms: '马来语',
+  tl: '菲律宾语', sw: '斯瓦希里语',
+  ca: '加泰罗尼亚语', et: '爱沙尼亚语', hr: '克罗地亚语',
+  af: '南非荷兰语', so: '索马里语', bg: '保加利亚语',
+  uk: '乌克兰语', sk: '斯洛伐克语', sl: '斯洛文尼亚语',
+  el: '希腊语', he: '希伯来语', bn: '孟加拉语', ta: '泰米尔语',
+}
+
+// 语言码规范化：zh-cn/zh-tw → zh
+function normalizedLangCode(code) {
+  if (code?.startsWith('zh')) return 'zh'
+  return code
+}
+
+// 可用的语言列表（从 embedding status 接口获取，去重 zh-cn/zh-tw → 中文）
+const availableLangs = computed(() => {
+  const langs = aiStore.embeddingStatus.langs || []
+  const seen = new Set()
+  const result = []
+  for (const code of langs) {
+    const key = normalizedLangCode(code)
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push({ code: key, label: LANG_NAME_MAP[key] || code })
+  }
+  return result
+})
+
 const aiRecommendations = computed(() => {
   return aiStore.recommendations.slice(0, 12)
 })
@@ -296,6 +364,30 @@ async function handleGenerateEmbeddings() {
       await aiStore.loadRecommendations()
     }
   }, 500)
+}
+
+async function switchRecMode(key) {
+  if (key === activeRecTab.value) return
+  activeRecTab.value = key
+  langFilter.value = null
+  moodFilter.value = null
+
+  if (key === 'comprehensive') {
+    await aiStore.setMode('comprehensive')
+  } else if (key === 'hidden_gem') {
+    await aiStore.setMode('hidden_gem')
+  }
+  // language / mood 等子选项选择后再触发请求
+}
+
+async function selectLang(code) {
+  langFilter.value = code
+  await aiStore.setMode('language', `lang=${code}`)
+}
+
+async function selectMood(key) {
+  moodFilter.value = key
+  await aiStore.setMode('mood', `mood=${key}`)
 }
 
 async function refreshRecommendations() {
@@ -450,5 +542,36 @@ watch(() => libraryStore.tracks.length, async (newLen) => {
 .loading-hint {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   padding: 24px; color: var(--text-tertiary); font-size: 13px;
+}
+
+/* ---- 推荐模式 Tab ---- */
+.rec-tabs {
+  display: flex; gap: 4px; margin-bottom: 12px;
+  background: var(--bg-elevated); border-radius: 10px; padding: 4px;
+}
+.rec-tab {
+  flex: 1; border: none; background: transparent; color: var(--text-secondary);
+  font-size: 13px; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+  transition: all 0.2s; white-space: nowrap;
+}
+.rec-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
+.rec-tab--active {
+  color: #fff; background: var(--accent-color); font-weight: 600;
+}
+.rec-tab--active:hover { background: var(--accent-color); color: #fff; }
+
+/* ---- 模式子选项 Row ---- */
+.rec-sub-row {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px;
+}
+.rec-chip {
+  border: 1px solid var(--border-color); background: var(--bg-elevated);
+  color: var(--text-secondary); font-size: 12px; padding: 5px 14px;
+  border-radius: 20px; cursor: pointer; transition: all 0.2s;
+}
+.rec-chip:hover { border-color: var(--accent-color); color: var(--accent-color); }
+.rec-chip--active {
+  background: var(--accent-color); border-color: var(--accent-color);
+  color: #fff; font-weight: 600;
 }
 </style>

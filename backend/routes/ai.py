@@ -34,6 +34,16 @@ def embedding_status():
         total = cursor.fetchone()['total']
         cursor.execute('SELECT COUNT(*) as done FROM songs WHERE embedding IS NOT NULL')
         done = cursor.fetchone()['done']
+
+        # 可用的语言列表（在 close 前查询，只返回歌曲数 >= 20 的语言）
+        cursor.execute('''
+            SELECT lang, COUNT(*) as cnt FROM songs
+            WHERE lang != "" AND embedding IS NOT NULL
+            GROUP BY lang HAVING cnt >= 20
+            ORDER BY cnt DESC
+        ''')
+        langs = [row['lang'] for row in cursor.fetchall()]
+
         cursor.close()
         db.close()
 
@@ -51,7 +61,8 @@ def embedding_status():
             'pending': total - done,
             'ready': done > 0,
             'st_available': is_available(),
-            'provider': provider
+            'provider': provider,
+            'langs': langs
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -148,27 +159,16 @@ def get_recommendations():
     获取 AI 推荐歌曲。
 
     查询参数:
+        mode  (str, 默认 comprehensive): 推荐模式
+              - comprehensive  : 综合推荐
+              - language       : 按语言推荐（需传 lang 参数）
+              - mood           : 按情绪推荐（需传 mood 参数）
+              - similar        : 相似歌曲（需传 song_id 参数）
+              - hidden_gem     : 冷门宝藏
+        lang  (str, 可选): ISO 639-1 语言代码，如 zh/ja/en/ko/de/ru
+        mood  (str, 可选): 情绪关键词 sad/energetic/calm/upbeat/fresh/romantic/inspire
+        song_id (int, 可选): mode=similar 时的参考歌曲 ID
         limit (int, 默认 20, 最大 50): 返回推荐数量
-
-    响应:
-        [{
-            "song_id": 1,
-            "title": "...",
-            "artist": "...",
-            "album": "...",
-            "cover_url": "...",
-            "file_path": "...",
-            "genre": "...",
-            "year": 2020,
-            "duration": 240,
-            "lang": "zh",
-            "reason": "同为 流行 风格",
-            "score": 0.8523
-        }, ...]
-
-    说明:
-        - 基于用户最近播放历史 + embedding 语义相似度 + 流派 + 语种偏好
-        - 无播放历史时返回全库热门歌曲（冷启动）
     """
     try:
         from services.embedding import is_available
@@ -203,13 +203,20 @@ def get_recommendations():
         # 调用推荐引擎
         from services.recommender import recommend as do_recommend
 
+        # 推荐参数
+        mode = request.args.get('mode', 'comprehensive', type=str)
+        lang = request.args.get('lang', type=str)
+        mood = request.args.get('mood', type=str)
+        song_id = request.args.get('song_id', type=int)
+
         # 需要重新获取带 Row factory 的连接
         db2 = get_db()
         # 种子：可用请求参数指定，否则用当前时间戳确保每次刷新不同
         seed = request.args.get('seed', type=int)
         if seed is None:
             seed = int(time.time() * 1000) % (2 ** 31)
-        results = do_recommend(db2, history_ids, limit=limit, seed=seed)
+        results = do_recommend(db2, history_ids, mode=mode, limit=limit, seed=seed,
+                               lang=lang, mood=mood, song_id=song_id)
 
         # 处理封面 URL
         for r in results:

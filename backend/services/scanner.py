@@ -203,17 +203,41 @@ def detect_language(title, lyrics, artist=''):
     """
     检测歌曲语言。
     优先用歌词检测（文本更长更准确），歌词不足时用标题+艺术家。
+    纯音乐占位文本（"纯音乐，请欣赏"）会被跳过，直接用标题+艺术家判定。
+    带字符集启发式规则：含假名→日语，含谚文→韩语，克服 langdetect 短文本误判。
     返回 ISO 639-1 语言代码（zh/ja/en/ko/de/ru/...），失败返回 ''。
     """
     if not _LANGDETECT_OK:
         return ''
 
-    # 优先用歌词（取前 800 字符足够判断语言）
-    text = (lyrics or '').strip()[:800]
-    if len(text) < 15:
+    lyrics = (lyrics or '').strip()
+
+    # 纯音乐占位文本：固定格式 "纯音乐,请欣赏" / "纯音乐，请欣赏"，跳过歌词
+    _INSTRUMENTAL_PLACEHOLDERS = ['纯音乐,请欣赏', '纯音乐，请欣赏', '纯音乐 请欣赏']
+    is_instrumental = any(p in lyrics for p in _INSTRUMENTAL_PLACEHOLDERS)
+
+    if is_instrumental:
+        # 纯音乐：只用标题 + 歌手判断
         text = f"{title} {artist}".strip()
+    else:
+        # 优先用歌词（取前 800 字符足够判断语言）
+        text = lyrics[:800]
+        if len(text) < 15:
+            text = f"{title} {artist}".strip()
+
     if len(text) < 5:
         return ''
+
+    # 字符集启发式（优先级高于 langdetect，解决短文本误判）
+    # 日语假名：平假名 U+3040-309F，片假名 U+30A0-30FF
+    has_kana = any('\u3040' <= c <= '\u309f' or '\u30a0' <= c <= '\u30ff' for c in text)
+    if has_kana:
+        return 'ja'
+
+    # 韩语谚文：U+AC00-D7AF（音节），U+1100-11FF（字母）
+    has_hangul = any('\uac00' <= c <= '\ud7af' or '\u1100' <= c <= '\u11ff' for c in text)
+    if has_hangul:
+        return 'ko'
 
     try:
         lang = detect(text)
