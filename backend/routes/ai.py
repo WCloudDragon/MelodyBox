@@ -111,7 +111,7 @@ def generate_embeddings():
             with flask_app.app_context():
                 db2 = get_db()
                 cursor2 = db2.cursor()
-                batch_size = 32
+                batch_size = 5
 
                 try:
                     # 分批生成 + 分批写入，确保前端轮询能实时看到进度

@@ -222,6 +222,10 @@ def detect_language(title, lyrics, artist=''):
     else:
         # 优先用歌词（取前 800 字符足够判断语言）
         text = lyrics[:800]
+        # 剥离 LRC 时间戳 [mm:ss.xx] 和元数据标签（如 [ti:]、[ar:]）
+        text = re.sub(r'\[\d{2}:\d{2}[.\d]*\]', '', text)
+        text = re.sub(r'\[\w{2}:[^\]]*\]', '', text)
+        text = text.strip()
         if len(text) < 15:
             text = f"{title} {artist}".strip()
 
@@ -241,6 +245,20 @@ def detect_language(title, lyrics, artist=''):
         has_hangul = any('\uac00' <= c <= '\ud7af' or '\u1100' <= c <= '\u11ff' for c in text)
         if has_hangul:
             return 'ko'
+
+    # 大量 CJK 汉字 + 无假名/谚文 → 必为中文（langdetect 对文学化中文有误判）
+    # 使用比例制：CJK 占比 > 70% 且无假名无谚文 → 中文
+    # 日文虽大量用汉字，但必混假名；韩文虽用汉字，但必混谚文
+    cjk_count = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+    if cjk_count >= 20:
+        # 检查假名和谚文（在整个 text 中）
+        has_kana_any = any('\u3040' <= c <= '\u309f' or '\u30a0' <= c <= '\u30ff' for c in text)
+        has_hangul_any = any('\uac00' <= c <= '\ud7af' or '\u1100' <= c <= '\u11ff' for c in text)
+        if not has_kana_any and not has_hangul_any:
+            # 计算 CJK 汉字占非空白字符比例
+            non_space = len([c for c in text if not c.isspace()])
+            if non_space > 0 and cjk_count / non_space >= 0.7:
+                return 'zh-cn'
 
     try:
         lang = detect(text)
