@@ -35,11 +35,11 @@ def embedding_status():
         cursor.execute('SELECT COUNT(*) as done FROM songs WHERE embedding IS NOT NULL')
         done = cursor.fetchone()['done']
 
-        # 可用的语言列表（在 close 前查询，只返回歌曲数 >= 20 的语言）
+        # 可用的语言列表（在 close 前查询）
         cursor.execute('''
             SELECT lang, COUNT(*) as cnt FROM songs
             WHERE lang != "" AND embedding IS NOT NULL
-            GROUP BY lang HAVING cnt >= 20
+            GROUP BY lang
             ORDER BY cnt DESC
         ''')
         langs = [row['lang'] for row in cursor.fetchall()]
