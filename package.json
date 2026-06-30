@@ -49,7 +49,7 @@
       "allowToChangeInstallationDirectory": true,
       "runAfterFinish": true,
       "shortcutName": "MelodyBox"
-    },
+    }
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",

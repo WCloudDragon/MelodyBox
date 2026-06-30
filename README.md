@@ -4,6 +4,8 @@
 
 > 演示视频：[bilibili](https://b23.tv/y0j0fFq)
 
+![MelodyBox 全屏歌词页](public/demo.png)
+
 ---
 
 ## 性能实测
