@@ -228,16 +228,19 @@ def detect_language(title, lyrics, artist=''):
     if len(text) < 5:
         return ''
 
-    # 字符集启发式（优先级高于 langdetect，解决短文本误判）
-    # 日语假名：平假名 U+3040-309F，片假名 U+30A0-30FF
-    has_kana = any('\u3040' <= c <= '\u309f' or '\u30a0' <= c <= '\u30ff' for c in text)
-    if has_kana:
-        return 'ja'
+    # 字符集启发式：仅短文本时覆盖 langdetect（长文本 langdetect 更可靠）
+    # 含少量外文字符的歌词（如作曲者名含谚文）不应误判
+    SHORT_TEXT_THRESHOLD = 30
+    if len(text) < SHORT_TEXT_THRESHOLD:
+        # 日语假名：平假名 U+3040-309F，片假名 U+30A0-30FF
+        has_kana = any('\u3040' <= c <= '\u309f' or '\u30a0' <= c <= '\u30ff' for c in text)
+        if has_kana:
+            return 'ja'
 
-    # 韩语谚文：U+AC00-D7AF（音节），U+1100-11FF（字母）
-    has_hangul = any('\uac00' <= c <= '\ud7af' or '\u1100' <= c <= '\u11ff' for c in text)
-    if has_hangul:
-        return 'ko'
+        # 韩语谚文：U+AC00-D7AF（音节），U+1100-11FF（字母）
+        has_hangul = any('\uac00' <= c <= '\ud7af' or '\u1100' <= c <= '\u11ff' for c in text)
+        if has_hangul:
+            return 'ko'
 
     try:
         lang = detect(text)
@@ -452,36 +455,6 @@ def _upsert_album(cursor, album_name, cover_url, year, genre):
     return row['id'] if row else None
 
 
-def _maybe_generate_embedding(db_conn, song_id, meta):
-    """
-    增量生成单首歌曲的 embedding 向量。
-    仅在 fastembed 可用时执行，失败静默跳过。
-    """
-    try:
-        from services.embedding import (
-            is_available, build_song_text, encode_text, embedding_to_blob
-        )
-        if not is_available():
-            return
-
-        # 构建文本并编码
-        song_info = {**meta, 'id': song_id}
-        text = build_song_text(song_info)
-        emb = encode_text(text)
-        blob = embedding_to_blob(emb)
-
-        cursor = db_conn.cursor()
-        cursor.execute(
-            'UPDATE songs SET embedding = ? WHERE id = ?',
-            (blob, song_id)
-        )
-        cursor.close()
-        print(f'[scanner] embedding 已生成: {meta.get("title", "")[:20]}')
-    except Exception as e:
-        # 静默失败，不影响扫描主流程
-        pass
-
-
 def _handle_song_relations(cursor, song_id, meta):
     """处理歌曲的艺术家和专辑关联关系"""
     # ---- 艺术家 ----
@@ -605,18 +578,15 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
                 ))
                 song_id = cursor.lastrowid
                 inserted += 1
-
-                # 增量生成 embedding（不阻塞扫描流程）
-                db_conn.commit()
-                _maybe_generate_embedding(db_conn, song_id, meta)
             else:
-                # 更新已有歌曲（含 fingerprint、lang）
+                # 更新已有歌曲（含 fingerprint、lang），清空旧的 embedding 以便重新生成
                 cursor.execute('''
                     UPDATE songs SET title=?, artist=?, album=?, cover_url=?,
                         lyrics=?, year=?, genre=?, duration=?, bitrate=?,
                         sample_rate=?, bit_depth=?, quality=?,
                         file_size=?, file_mtime=?,
                         disc_number=?, track_number=?, fingerprint=?, lang=?,
+                        embedding = NULL,
                         updated_at=datetime('now','localtime')
                     WHERE file_path=?
                 ''', (
@@ -633,11 +603,6 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
                 row = cursor.fetchone()
                 song_id = row['id'] if row else None
                 updated += 1
-
-                # 元数据更新后重新生成 embedding
-                if song_id is not None:
-                    db_conn.commit()
-                    _maybe_generate_embedding(db_conn, song_id, meta)
 
                 # 更新时先清除旧的关联关系再重建
                 if song_id is not None:
