@@ -257,7 +257,7 @@ def detect_language(title, lyrics, artist=''):
         if not has_kana_any and not has_hangul_any:
             # 计算 CJK 汉字占非空白字符比例
             non_space = len([c for c in text if not c.isspace()])
-            if non_space > 0 and cjk_count / non_space >= 0.7:
+            if non_space > 0 and cjk_count / non_space >= 0.5:
                 return 'zh-cn'
 
     try:
