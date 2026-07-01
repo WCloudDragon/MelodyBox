@@ -386,12 +386,12 @@
         <div class="setting-row">
           <div class="setting-label">
             <span class="setting-title">模型缓存路径</span>
-            <span class="setting-desc">BGE-M3 模型的存放目录（首次生成向量时下载，约 2.5GB）</span>
+            <span class="setting-desc">multilingual-e5-large 模型的存放目录（首次生成向量时下载，约 2.1GB）</span>
           </div>
         </div>
         <div style="padding: 0 20px; margin-bottom: 16px;">
           <div style="display: flex; gap: 8px; align-items: center;">
-            <span v-if="!modelDirInput" style="color: var(--text-secondary); font-size: 13px;">默认: C:\Users\用户名\.cache\huggingface</span>
+            <span v-if="!modelDirInput" style="color: var(--text-secondary); font-size: 13px;">默认: {{ modelDefaultPath }}</span>
             <span v-else class="model-path-text">{{ modelDirInput }}</span>
             <el-button @click="pickModelDir" style="flex-shrink: 0;">
               📁 选择文件夹
@@ -473,6 +473,7 @@ const page = ref('menu')
 const AI_BASE = 'http://127.0.0.1:5000/api/ai'
 
 const modelDirInput = ref('')
+const modelDefaultPath = ref('')
 const savingModelDir = ref(false)
 const modelDirSaved = ref(false)
 const needRestart = ref(false)
@@ -483,6 +484,7 @@ async function loadModelDir() {
     if (res.ok) {
       const data = await res.json()
       modelDirInput.value = data.model_cache_dir || ''
+      modelDefaultPath.value = data.default_path || '系统临时目录\\fastembed_cache'
     }
   } catch {}
 }

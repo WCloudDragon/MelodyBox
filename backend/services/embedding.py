@@ -87,11 +87,14 @@ def get_cache_dir():
 
 
 def _model_blobs_dir():
-    """fastembed 下载的模型 blobs 目录"""
+    """fastembed 下载的模型 blobs 目录（与 _get_model 保持相同的 cache_dir 回退逻辑）"""
     import huggingface_hub.constants as hf_const
-    root = _CACHE_DIR if _CACHE_DIR else hf_const.HF_HUB_CACHE
-    # huggingface_hub 缓存路径格式: models--{org}--{repo} → 实际对应
-    # 例如 qdrant/multilingual-e5-large-onnx → models--qdrant--multilingual-e5-large-onnx
+    root = _CACHE_DIR
+    if not root:
+        from config.config import Config
+        root = Config.AI_MODEL_CACHE_DIR
+    if not root:
+        root = hf_const.HF_HUB_CACHE
     slug = _MODEL_HF_REPO.replace('/', '--')
     return os.path.join(root, f'models--{slug}', 'blobs')
 

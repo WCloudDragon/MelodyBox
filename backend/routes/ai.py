@@ -10,6 +10,12 @@ import time
 ai_bp = Blueprint('ai', __name__, url_prefix='/api/ai')
 
 
+def _get_fastembed_default_cache_dir():
+    """返回 fastembed 在不设置 cache_dir 时的默认缓存路径"""
+    import tempfile, os
+    return os.path.join(tempfile.gettempdir(), 'fastembed_cache')
+
+
 @ai_bp.before_request
 def handle_preflight():
     if request.method == 'OPTIONS':
@@ -259,7 +265,8 @@ def get_model_dir():
         cursor.close()
         db.close()
         return jsonify({
-            'model_cache_dir': row['model_cache_dir'] if row else ''
+            'model_cache_dir': row['model_cache_dir'] if row else '',
+            'default_path': _get_fastembed_default_cache_dir(),
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
