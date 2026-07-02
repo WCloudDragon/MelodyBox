@@ -215,6 +215,7 @@ import { useModal } from '@/composables/useModal'
 const libraryStore = useLibraryStore()
 const playerStore = usePlayerStore()
 const aiStore = useAiStore()
+const modal = useModal()
 
 // 扫描进度通知
 watch(() => libraryStore.isScanning, (scanning) => {
@@ -345,7 +346,6 @@ async function handleGenerateEmbeddings() {
     }
   } catch {}
 
-  const modal = useModal()
   try {
     await modal.confirm({
       title: '确认生成 AI 向量',
