@@ -56,7 +56,7 @@
         </div>
 
         <!-- 推荐模式选择 -->
-        <div v-if="aiStore.embeddingStatus.ready" class="rec-tabs">
+        <div v-if="aiStore.embeddingStatus.pending === 0" class="rec-tabs">
           <button
             v-for="tab in recTabs"
             :key="tab.key"
@@ -67,7 +67,7 @@
         </div>
 
         <!-- 模式子选项 -->
-        <div v-if="activeRecTab === 'language' && aiStore.embeddingStatus.ready" class="rec-sub-row">
+        <div v-if="activeRecTab === 'language' && aiStore.embeddingStatus.pending === 0" class="rec-sub-row">
           <button
             v-for="l in availableLangs"
             :key="l.code"
@@ -76,7 +76,7 @@
             @click="selectLang(l.code)"
           >{{ l.label }}</button>
         </div>
-        <div v-if="activeRecTab === 'mood' && aiStore.embeddingStatus.ready" class="rec-sub-row">
+        <div v-if="activeRecTab === 'mood' && aiStore.embeddingStatus.pending === 0" class="rec-sub-row">
           <button
             v-for="m in moods"
             :key="m.key"
@@ -130,7 +130,7 @@
         </div>
 
         <!-- AI 推荐列表 -->
-        <div v-if="aiStore.embeddingStatus.ready && aiRecommendations.length > 0" class="tracks-grid">
+        <div v-if="aiStore.embeddingStatus.pending === 0 && aiRecommendations.length > 0" class="tracks-grid">
           <div
             v-for="track in aiRecommendations"
             :key="track.song_id"
@@ -145,12 +145,12 @@
         </div>
 
         <!-- 空状态 -->
-        <div v-if="aiStore.embeddingStatus.ready && aiRecommendations.length === 0 && !aiStore.isLoading" class="loading-hint">
+        <div v-if="aiStore.embeddingStatus.pending === 0 && aiRecommendations.length === 0 && !aiStore.isLoading" class="loading-hint">
           <span>该分类暂无推荐结果</span>
         </div>
 
         <!-- 加载中 -->
-        <div v-if="aiStore.isLoading && aiStore.embeddingStatus.ready" class="loading-hint">
+        <div v-if="aiStore.isLoading && aiStore.embeddingStatus.pending === 0" class="loading-hint">
           <el-icon class="is-loading"><Loading /></el-icon>
           <span>正在分析你的音乐偏好...</span>
         </div>
@@ -435,7 +435,7 @@ function playAiTrack(track) {
 watch(() => libraryStore.tracks.length, async (newLen) => {
   if (newLen > 0) {
     await aiStore.loadEmbeddingStatus()
-    if (aiStore.embeddingStatus.ready) {
+    if (aiStore.embeddingStatus.pending === 0) {
       await aiStore.loadRecommendations()
     }
   }

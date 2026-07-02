@@ -223,8 +223,8 @@ def detect_language(title, lyrics, artist=''):
     text = re.sub(r'\[\d{2}:\d{2}[.\d]*\]', '', text)
     text = re.sub(r'\[\w{2}:[^\]]*\]', '', text)
     text = text.strip()
-        if len(text) < 15:
-            text = f"{title} {artist}".strip()
+    if len(text) < 15:
+        text = f"{title} {artist}".strip()
 
     if len(text) < 5:
         return ''

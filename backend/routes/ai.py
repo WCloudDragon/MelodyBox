@@ -50,6 +50,10 @@ def embedding_status():
         ''')
         langs = [row['lang'] for row in cursor.fetchall()]
 
+        # 检查情绪分数是否已预计算
+        cursor.execute('SELECT COUNT(*) as cnt FROM song_mood_scores')
+        mood_scores_ready = cursor.fetchone()['cnt'] > 0
+
         cursor.close()
         db.close()
 
@@ -68,7 +72,8 @@ def embedding_status():
             'ready': done > 0,
             'st_available': is_available(),
             'provider': provider,
-            'langs': langs
+            'langs': langs,
+            'mood_scores_ready': mood_scores_ready
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -138,6 +143,18 @@ def generate_embeddings():
                         print(f'[embedding] 进度: {current}/{total}')
 
                     print(f'[embedding] 完成: {total} 首歌曲的 embedding 已生成')
+
+                    # 顺带计算情绪分数
+                    try:
+                        print('[mood] 开始计算情绪分数...')
+                        from services.recommender import compute_all_mood_scores
+                        mood_db = get_db()
+                        mood_count = compute_all_mood_scores(mood_db)
+                        mood_db.close()
+                        print(f'[mood] 情绪分数计算完成: {mood_count} 条记录')
+                    except Exception as e:
+                        print(f'[mood] 情绪分数计算失败: {e}')
+
                 except Exception as e:
                     print(f'[embedding] 生成失败: {e}')
                     db2.rollback()
@@ -235,6 +252,54 @@ def get_recommendations():
     except Exception as e:
         import traceback
         traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== 情绪分数刷新 ====================
+
+@ai_bp.route('/mood-scores/refresh', methods=['POST'])
+def refresh_mood_scores():
+    """
+    为已有 embedding 的歌曲刷新情绪分数。
+    异步执行，完成后情绪推荐即可免模型查询。
+    """
+    from services.embedding import is_available
+    if not is_available():
+        return jsonify({
+            'error': 'fastembed 未安装。请在终端运行: pip install fastembed'
+        }), 503
+
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('SELECT COUNT(*) as cnt FROM songs WHERE embedding IS NOT NULL')
+        count = cursor.fetchone()['cnt']
+        cursor.close()
+        db.close()
+
+        if count == 0:
+            return jsonify({'success': True, 'message': '没有已生成 embedding 的歌曲'})
+
+        flask_app = current_app._get_current_object()
+
+        def _refresh_async():
+            with flask_app.app_context():
+                try:
+                    from services.recommender import compute_all_mood_scores
+                    mood_db = get_db()
+                    mood_count = compute_all_mood_scores(mood_db)
+                    mood_db.close()
+                    print(f'[mood] 情绪分数刷新完成: {mood_count} 条记录')
+                except Exception as e:
+                    print(f'[mood] 情绪分数刷新失败: {e}')
+
+        threading.Thread(target=_refresh_async, daemon=True).start()
+        return jsonify({
+            'success': True,
+            'message': f'开始为 {count} 首歌曲计算情绪分数...'
+        })
+
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 

@@ -316,6 +316,19 @@ def init_db(app):
             added_at TEXT DEFAULT (datetime('now','localtime'))
         )
     ''')
+
+    # ========== 17. song_mood_scores ==========
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS song_mood_scores (
+            song_id INTEGER NOT NULL,
+            mood TEXT NOT NULL,
+            score REAL NOT NULL,
+            PRIMARY KEY (song_id, mood),
+            FOREIGN KEY (song_id) REFERENCES songs(id) ON DELETE CASCADE
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mood_scores ON song_mood_scores(mood, score DESC)')
+
     conn.commit()
     cursor.close()
     conn.close()

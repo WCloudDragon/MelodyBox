@@ -14,7 +14,7 @@ export const useAiStore = defineStore('ai', () => {
   const currentSub = ref(null)
 
   // Embedding 状态
-  const embeddingStatus = ref({ total: 0, done: 0, pending: 0, ready: false, st_available: null })
+  const embeddingStatus = ref({ total: 0, done: 0, pending: 0, ready: false, st_available: null, mood_scores_ready: false })
   const isGenerating = ref(false)
 
   // 模型下载进度
@@ -146,6 +146,20 @@ export const useAiStore = defineStore('ai', () => {
     return () => clearInterval(timer)
   }
 
+  /** 刷新情绪分数（预计算，之后情绪推荐免模型） */
+  async function refreshMoodScores() {
+    try {
+      const res = await fetch(`${AI_BASE}/mood-scores/refresh`, { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        return data
+      }
+    } catch (e) {
+      console.error('[ai] 情绪分数刷新触发失败:', e)
+    }
+    return null
+  }
+
   // 初始化
   loadRecommendations()
   loadEmbeddingStatus()
@@ -165,6 +179,7 @@ export const useAiStore = defineStore('ai', () => {
     loadEmbeddingStatus,
     generateEmbeddings,
     pollEmbeddingStatus,
-    pollDownloadProgress
+    pollDownloadProgress,
+    refreshMoodScores
   }
 })

@@ -36,6 +36,51 @@ MOOD_LABELS = {
 }
 
 
+def compute_all_mood_scores(db):
+    """
+    为所有已有 embedding 的歌曲计算与 7 种情绪的余弦相似度，存入 song_mood_scores 表。
+
+    需要在模型已加载后调用（内部会调用 encode_text）。
+    返回写入的记录数。
+    """
+    from services.embedding import encode_text, blob_to_embedding
+
+    # 加载全库歌曲 embedding
+    cursor = db.cursor()
+    cursor.execute('SELECT id, embedding FROM songs WHERE embedding IS NOT NULL')
+    rows = cursor.fetchall()
+
+    if not rows:
+        cursor.close()
+        return 0
+
+    song_embs = [(row['id'], blob_to_embedding(row['embedding'])) for row in rows]
+    cursor.close()
+
+    # 编码 7 种情绪查询文本
+    print('[mood] 编码 7 种情绪查询向量...')
+    mood_vecs = {}
+    for mood_key, query_text in MOOD_QUERIES.items():
+        mood_vecs[mood_key] = encode_text(query_text)
+    print(f'[mood] 情绪查询向量编码完成，共 {len(mood_vecs)} 种')
+
+    # 逐首计算 -> 逐行写入
+    cursor = db.cursor()
+    cursor.execute('DELETE FROM song_mood_scores')  # 全量刷新
+    count = 0
+    for song_id, song_emb in song_embs:
+        for mood_key, mood_vec in mood_vecs.items():
+            score = float(cosine_similarity(song_emb, mood_vec))
+            cursor.execute(
+                'INSERT INTO song_mood_scores (song_id, mood, score) VALUES (?, ?, ?)',
+                (song_id, mood_key, score)
+            )
+            count += 1
+    db.commit()
+    cursor.close()
+    return count
+
+
 def cosine_similarity(a, b):
     """计算两个向量的余弦相似度"""
     dot = np.dot(a, b)
@@ -298,9 +343,59 @@ def recommend_by_language(db, lang, user_history_song_ids, limit=20, seed=None):
 
 def recommend_by_mood(db, mood, user_history_song_ids, limit=20, seed=None):
     """
-    按情绪推荐：用情绪关键词编码为向量 → embedding 语义搜索。
-    不依赖历史，纯基于情绪的全局搜索。
+    按情绪推荐：从 song_mood_scores 表直接查询预计算好的分数。
+    不再需要加载模型，纯 SQL 查询。
     """
+    mood_label = MOOD_LABELS.get(mood, mood)
+    mood_query_text = MOOD_QUERIES.get(mood)
+    if not mood_query_text:
+        return []
+
+    # 从预计算表中查询
+    history_ids = set(user_history_song_ids)
+    cursor = db.cursor()
+
+    # 先查总数判断是否有数据
+    cursor.execute('SELECT COUNT(*) as cnt FROM song_mood_scores WHERE mood = ?', (mood,))
+    if cursor.fetchone()['cnt'] == 0:
+        cursor.close()
+        # 回退：实时计算（首次生成 embedding 后才会存表）
+        return _recommend_by_mood_fallback(db, mood, user_history_song_ids, limit, seed, mood_label)
+
+    placeholders = ','.join(['?'] * len(history_ids)) if history_ids else '1=1'
+    history_filter = f'AND s.id NOT IN ({placeholders})' if history_ids else ''
+
+    cursor.execute(f'''
+        SELECT s.id, s.title, s.artist, s.album, s.cover_url, s.file_path,
+               s.genre, s.year, s.duration, s.lang, s.lyrics,
+               ms.score
+        FROM song_mood_scores ms
+        JOIN songs s ON ms.song_id = s.id
+        WHERE ms.mood = ? {history_filter}
+        ORDER BY ms.score DESC
+        LIMIT ?
+    ''', [mood] + (list(history_ids) if history_ids else []) + [limit])
+
+    rows = cursor.fetchall()
+    cursor.close()
+
+    if not rows:
+        return []
+
+    results = [_song_to_result(dict(row), row['score'], f"{mood_label}歌曲推荐") for row in rows]
+
+    # 种子抖动
+    if seed is not None and len(results) > limit:
+        rng = np.random.RandomState(seed)
+        jittered = [(r['score'] + rng.uniform(-0.03, 0.03), r) for r in results]
+        jittered.sort(key=lambda x: x[0], reverse=True)
+        return [r for _, r in jittered[:limit]]
+
+    return results
+
+
+def _recommend_by_mood_fallback(db, mood, user_history_song_ids, limit, seed, mood_label):
+    """回退：实时编码情绪向量并做余弦相似度（旧逻辑，song_mood_scores 表为空时使用）"""
     from services.embedding import encode_text
 
     mood_text = MOOD_QUERIES.get(mood)
@@ -311,10 +406,7 @@ def recommend_by_mood(db, mood, user_history_song_ids, limit=20, seed=None):
     if not all_songs:
         return []
 
-    # 编码情绪查询
     query_vec = encode_text(mood_text)
-
-    # 计算所有歌曲与情绪查询的相似度
     history_ids = set(user_history_song_ids)
     scored = []
     for s in all_songs:
@@ -325,7 +417,6 @@ def recommend_by_mood(db, mood, user_history_song_ids, limit=20, seed=None):
 
     scored.sort(key=lambda x: x[0], reverse=True)
 
-    # 种子抖动
     if seed is not None and len(scored) > limit:
         rng = np.random.RandomState(seed)
         pool_size = min(len(scored), limit * 3)
@@ -336,7 +427,6 @@ def recommend_by_mood(db, mood, user_history_song_ids, limit=20, seed=None):
     else:
         top = scored[:limit]
 
-    mood_label = MOOD_LABELS.get(mood, mood)
     return [_song_to_result(s, score, f"{mood_label}歌曲推荐") for score, s in top]
 
 
