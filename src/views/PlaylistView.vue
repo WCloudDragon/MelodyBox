@@ -127,7 +127,7 @@ import { usePlaylistStore } from '@/stores/playlist'
 import { usePlayerStore } from '@/stores/player'
 import { useTrackList } from '@/composables/useTrackList'
 import { formatDuration, qualityClass } from '@/utils/format'
-import { ElMessageBox } from 'element-plus'
+import { useModal } from '@/composables/useModal'
 import { ElMessage } from '@/utils/toast'
 import LazyCover from '@/components/LazyCover.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
@@ -135,6 +135,7 @@ import ContextMenu from '@/components/music/ContextMenu.vue'
 const route = useRoute()
 const router = useRouter()
 const playlistStore = usePlaylistStore()
+const modal = useModal()
 const playerStore = usePlayerStore()
 const { currentTrack } = storeToRefs(playerStore)
 
@@ -186,9 +187,11 @@ function removeTrack(track) {
 
 async function showRenameDialog() {
   try {
-    const { value } = await ElMessageBox.prompt('请输入新名称', '重命名歌单', {
-      confirmButtonText: '确认',
-      inputValue: playlist.value?.name
+    const value = await modal.prompt({
+      title: '重命名歌单',
+      message: '请输入新名称',
+      confirmText: '确认',
+      inputDefault: playlist.value?.name
     })
     if (value?.trim() && playlist.value) {
       playlistStore.renamePlaylist(playlist.value.id, value.trim())
@@ -199,10 +202,11 @@ async function showRenameDialog() {
 
 async function handleDelete() {
   try {
-    await ElMessageBox.confirm('确定要删除该歌单吗？此操作不可恢复。', '删除歌单', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning'
+    await modal.confirm({
+      title: '删除歌单',
+      message: '确定要删除该歌单吗？此操作不可恢复。',
+      confirmText: '删除',
+      danger: true
     })
     if (playlist.value) {
       playlistStore.deletePlaylist(playlist.value.id)

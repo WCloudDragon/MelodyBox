@@ -63,7 +63,7 @@
 defineOptions({ name: 'FoldersView' })
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useLibraryStore } from '@/stores/library'
-import { ElMessageBox } from 'element-plus'
+import { useModal } from '@/composables/useModal'
 import { ElMessage } from '@/utils/toast'
 import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } from '@/utils/scanNotify'
 import { Plus, Refresh, Delete, FolderOpened, Loading } from '@element-plus/icons-vue'
@@ -71,6 +71,7 @@ import { useScrollMemory } from '@/composables/useScrollMemory'
 
 const API_BASE = 'http://127.0.0.1:5000/api/folders'
 const libraryStore = useLibraryStore()
+const modal = useModal()
 const isElectron = computed(() => !!window.electronAPI)
 
 const folders = ref([])
@@ -184,11 +185,11 @@ async function handleAddFolder() {
 
 async function handleRescan(folder) {
   try {
-    await ElMessageBox.confirm(
-      `重新扫描 ${folder.path}？`,
-      '重新扫描',
-      { confirmButtonText: '确认', cancelButtonText: '取消', type: 'info' }
-    )
+    await modal.confirm({
+      title: '重新扫描',
+      message: `重新扫描 ${folder.path}？`,
+      confirmText: '确认',
+    })
     rescanning.value = folder.id
     const res = await fetch(`${API_BASE}/${folder.id}/rescan`, { method: 'POST' })
     const data = await res.json()
@@ -203,11 +204,12 @@ async function handleRescan(folder) {
 
 async function handleRemove(folder) {
   try {
-    await ElMessageBox.confirm(
-      `确定移除「${folder.path}」吗？\n该目录下的 ${folder.trackCount} 首歌曲将从库中清除。`,
-      '确认移除',
-      { confirmButtonText: '确认移除', cancelButtonText: '取消', type: 'warning' }
-    )
+    await modal.confirm({
+      title: '确认移除',
+      message: `确定移除「${folder.path}」吗？\n该目录下的 ${folder.trackCount} 首歌曲将从库中清除。`,
+      confirmText: '确认移除',
+      danger: true
+    })
     const res = await fetch(`${API_BASE}/${folder.id}`, { method: 'DELETE' })
     const data = await res.json()
     if (!res.ok) { ElMessage.error(data.error); return }

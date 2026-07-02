@@ -32,6 +32,23 @@
 
     <!-- 桌面歌词浮窗 -->
     <DesktopLyrics />
+
+    <!-- 全局模态弹窗 -->
+    <ModalDialog
+      :visible="modalState.visible"
+      :title="modalState.title"
+      :message="modalState.message"
+      :mode="modalState.mode"
+      :confirm-text="modalState.confirmText"
+      :cancel-text="modalState.cancelText"
+      :danger="modalState.danger"
+      :input-type="modalState.inputType"
+      :input-placeholder="modalState.inputPlaceholder"
+      :input-default="modalState.inputDefault"
+      :input-validator="modalState.inputValidator"
+      @confirm="handleModalConfirm"
+      @cancel="handleModalCancel"
+    />
   </div>
 </template>
 
@@ -47,6 +64,8 @@ import PlayerBar from '@/components/player/PlayerBar.vue'
 import NowPlayingPanel from '@/components/player/NowPlayingPanel.vue'
 import DesktopLyrics from '@/components/player/DesktopLyrics.vue'
 import ProgressPanel from '@/components/ProgressPanel.vue'
+import ModalDialog from '@/components/ModalDialog.vue'
+import { createModalProvider } from '@/composables/useModal'
 
 const playerStore = usePlayerStore()
 const settingsStore = useSettingsStore()
@@ -85,6 +104,9 @@ provide('toggleNowPlaying', () => {
   }
 })
 provide('coverOriginRect', coverOriginRect)
+
+// 全局模态弹窗
+const { state: modalState, handleConfirm: handleModalConfirm, handleCancel: handleModalCancel } = createModalProvider()
 
 function handleClose() {
   panelFading.value = false

@@ -107,13 +107,14 @@ defineOptions({ name: 'UserView' })
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { ElMessageBox } from 'element-plus'
+import { useModal } from '@/composables/useModal'
 import { ElMessage } from '@/utils/toast'
 import { User, WarningFilled } from '@element-plus/icons-vue'
 import { useScrollMemory } from '@/composables/useScrollMemory'
 
 const router = useRouter()
 const auth = useAuthStore()
+const modal = useModal()
 
 useScrollMemory('user', () => document.querySelector('.main-content'))
 
@@ -134,8 +135,10 @@ function formatDate(dateStr) {
 
 async function handleLogout() {
   try {
-    await ElMessageBox.confirm('确定要退出登录吗？', '退出登录', {
-      confirmButtonText: '退出', cancelButtonText: '取消', type: 'info'
+    await modal.confirm({
+      title: '退出登录',
+      message: '确定要退出登录吗？',
+      confirmText: '退出',
     })
     auth.logout()
     ElMessage.success('已退出登录')
@@ -145,15 +148,21 @@ async function handleLogout() {
 
 async function showChangePwdDialog() {
   try {
-    const { value: oldPwd } = await ElMessageBox.prompt('请输入旧密码', '修改密码', {
-      confirmButtonText: '下一步', cancelButtonText: '取消',
-      inputType: 'password', inputPlaceholder: '旧密码'
+    const oldPwd = await modal.prompt({
+      title: '修改密码',
+      message: '请输入旧密码',
+      confirmText: '下一步',
+      inputType: 'password',
+      inputPlaceholder: '旧密码'
     })
     if (!oldPwd) return
 
-    const { value: newPwd } = await ElMessageBox.prompt('请输入新密码（至少6位）', '修改密码', {
-      confirmButtonText: '确认修改', cancelButtonText: '取消',
-      inputType: 'password', inputPlaceholder: '新密码',
+    const newPwd = await modal.prompt({
+      title: '修改密码',
+      message: '请输入新密码（至少6位）',
+      confirmText: '确认修改',
+      inputType: 'password',
+      inputPlaceholder: '新密码',
       inputValidator: (v) => v && v.length >= 6 ? true : '密码至少6位'
     })
     if (!newPwd) return
@@ -171,14 +180,18 @@ async function showChangePwdDialog() {
 
 async function handleDeleteAccount() {
   try {
-    await ElMessageBox.confirm(
-      '注销后所有个人数据将被永久删除且不可恢复。确定继续？',
-      '注销账户',
-      { confirmButtonText: '确认注销', cancelButtonText: '取消', type: 'error', confirmButtonClass: 'el-button--danger' }
-    )
-    const { value: pwd } = await ElMessageBox.prompt('请输入密码确认注销', '注销账户', {
-      confirmButtonText: '确认注销', cancelButtonText: '取消',
-      inputType: 'password', inputPlaceholder: '输入密码'
+    await modal.confirm({
+      title: '注销账户',
+      message: '注销后所有个人数据将被永久删除且不可恢复。确定继续？',
+      confirmText: '确认注销',
+      danger: true
+    })
+    const pwd = await modal.prompt({
+      title: '注销账户',
+      message: '请输入密码确认注销',
+      confirmText: '确认注销',
+      inputType: 'password',
+      inputPlaceholder: '输入密码'
     })
     if (!pwd) return
     await auth.deleteAccount(pwd)

@@ -96,11 +96,12 @@ import { Plus, Moon, Sunny, Monitor, UserFilled, Timer, TrendCharts } from '@ele
 import { usePlaylistStore } from '@/stores/playlist'
 import { useSettingsStore } from '@/stores/settings'
 import { useAuthStore } from '@/stores/auth'
-import { ElMessageBox } from 'element-plus'
+import { useModal } from '@/composables/useModal'
 
 const playlistStore = usePlaylistStore()
 const settings = useSettingsStore()
 const auth = useAuthStore()
+const modal = useModal()
 
 const themeOptions = [
   { value: 'light', icon: Sunny, label: '浅色' },
@@ -115,9 +116,10 @@ function setTheme(value) {
 
 async function handleCreatePlaylist() {
   try {
-    const { value } = await ElMessageBox.prompt('请输入歌单名称', '新建歌单', {
-      confirmButtonText: '创建',
-      cancelButtonText: '取消',
+    const value = await modal.prompt({
+      title: '新建歌单',
+      message: '请输入歌单名称',
+      confirmText: '创建',
       inputPlaceholder: '我的歌单'
     })
     if (value?.trim()) {

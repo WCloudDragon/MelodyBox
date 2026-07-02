@@ -210,6 +210,7 @@ import { formatTotalDuration } from '@/utils/format'
 import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } from '@/utils/scanNotify'
 import MusicCard from '@/components/music/MusicCard.vue'
 import { useScrollMemory } from '@/composables/useScrollMemory'
+import { useModal } from '@/composables/useModal'
 
 const libraryStore = useLibraryStore()
 const playerStore = usePlayerStore()
@@ -344,18 +345,13 @@ async function handleGenerateEmbeddings() {
     }
   } catch {}
 
-  const { ElMessageBox } = await import('element-plus')
+  const modal = useModal()
   try {
-    await ElMessageBox.confirm(
-      `即将生成所有歌曲的语义向量（每首约4KB），首次运行需下载 multilingual-e5-large 模型（约 2.2GB）。\n\n模型存放路径: ${modelPath}\n\n当前曲库共 ${libraryStore.tracks.length} 首歌曲，生成后可启用AI智能推荐。`,
-      '确认生成 AI 向量',
-      {
-        confirmButtonText: '开始生成',
-        cancelButtonText: '取消',
-        type: 'info',
-        dangerouslyUseHTMLString: false
-      }
-    )
+    await modal.confirm({
+      title: '确认生成 AI 向量',
+      message: `即将生成所有歌曲的语义向量（每首约4KB），首次运行需下载 multilingual-e5-large 模型（约 2.2GB）。\n\n模型存放路径: ${modelPath}\n\n当前曲库共 ${libraryStore.tracks.length} 首歌曲，生成后可启用AI智能推荐。`,
+      confirmText: '开始生成',
+    })
   } catch {
     return  // 用户取消
   }
