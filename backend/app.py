@@ -2,12 +2,27 @@ from flask import Flask, g
 from flask_cors import CORS
 from config.config import Config
 import os
+import sys
 
 # 国内网络环境自动使用 huggingface 镜像（hf-mirror.com）
 # 确保模型下载、fastembed 等组件不受 DNS 污染影响
 os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')
 # Windows 下不支持软链接，关闭无关警告
 os.environ.setdefault('HF_HUB_DISABLE_SYMLINKS_WARNING', '1')
+
+# 将项目 bin 目录加入 PATH，确保 Python 进程能找到 ffmpeg
+# （librosa 加载 mp3 等格式需要 ffmpeg）
+def _ensure_ffmpeg_path():
+    if getattr(sys, 'frozen', False):
+        # PyInstaller 打包：exe 在 flask-dist/，bin 在 ../bin/
+        bin_dir = os.path.join(os.path.dirname(sys.executable), '..', 'bin')
+    else:
+        bin_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'bin')
+    if os.path.isdir(bin_dir):
+        os.environ['PATH'] = bin_dir + os.pathsep + os.environ.get('PATH', '')
+        os.environ.setdefault('AUDIOREAD_FFMPEG_PATH', os.path.join(bin_dir, 'ffmpeg.exe'))
+
+_ensure_ffmpeg_path()
 
 import sqlite3
 
@@ -63,6 +78,7 @@ def init_db(app):
             fingerprint TEXT DEFAULT '',
             lang TEXT DEFAULT '',
             embedding BLOB DEFAULT NULL,
+            audio_embedding BLOB DEFAULT NULL,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime'))
         )
@@ -80,6 +96,7 @@ def init_db(app):
         ('fingerprint', 'TEXT DEFAULT ""'),
         ('lang', 'TEXT DEFAULT ""'),
         ('embedding', 'BLOB DEFAULT NULL'),
+        ('audio_embedding', 'BLOB DEFAULT NULL'),
     ]:
         try: cursor.execute(f'ALTER TABLE songs ADD COLUMN {col} {col_def}')
         except sqlite3.OperationalError: pass

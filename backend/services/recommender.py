@@ -9,7 +9,7 @@ AI 推荐引擎
 - hidden_gem     : 冷门宝藏
 """
 import numpy as np
-from services.embedding import blob_to_embedding, get_model_dim
+from services.embedding import blob_to_embedding, get_model_dim, get_audio_model_dim
 
 
 # 语言名映射（含 zh-cn/zh-tw 变体）
@@ -92,23 +92,28 @@ def cosine_similarity(a, b):
 
 
 def _load_all_songs(db):
-    """加载全库有 embedding 的歌曲"""
+    """加载全库有 embedding 的歌曲（文本 + 音频）"""
     cursor = db.cursor()
     cursor.execute(
         'SELECT id, title, artist, album, cover_url, file_path, '
-        'genre, year, duration, lang, embedding, lyrics '
+        'genre, year, duration, lang, embedding, audio_embedding, lyrics '
         'FROM songs WHERE embedding IS NOT NULL'
     )
     all_songs = [dict(row) for row in cursor.fetchall()]
     cursor.close()
 
     id_to_embedding = {}
+    id_to_audio_embedding = {}
     id_to_info = {}
     for s in all_songs:
         emb = blob_to_embedding(s['embedding'])
         id_to_embedding[s['id']] = emb
+        # 音频 embedding 可能为 NULL（旧数据或生成中）
+        if s['audio_embedding'] is not None:
+            audio_emb = blob_to_embedding(s['audio_embedding'])
+            id_to_audio_embedding[s['id']] = audio_emb
         id_to_info[s['id']] = s
-    return all_songs, id_to_embedding, id_to_info
+    return all_songs, id_to_embedding, id_to_audio_embedding, id_to_info
 
 
 def _song_to_result(s, score, reason):
@@ -175,13 +180,16 @@ def _build_reason(song, similar_song):
 
 def recommend_comprehensive(db, user_history_song_ids, limit=20, seed=None):
     """
-    综合推荐：embedding 余弦相似度 + 流派匹配 + 语种偏好。
-    公式: score = 0.6 * cosine_similarity + 0.2 * genre_match + 0.2 * lang_preference
+    综合推荐：文本语义 + 音频特征 + 流派匹配 + 语种偏好。
+    公式: score = 0.40 * text_sim + 0.30 * audio_sim + 0.15 * genre_match + 0.15 * lang_pref
+    当音频 embedding 不可用时，回退到纯文本模式 (0.60 / 0.20 / 0.20)。
     """
-    all_songs, id_to_embedding, id_to_info = _load_all_songs(db)
+    all_songs, id_to_embedding, id_to_audio_embedding, id_to_info = _load_all_songs(db)
 
     if len(all_songs) < 2:
         return []
+
+    has_audio = len(id_to_audio_embedding) > 0
 
     # 获取用户播放历史
     cursor = db.cursor()
@@ -200,7 +208,7 @@ def recommend_comprehensive(db, user_history_song_ids, limit=20, seed=None):
     if not history:
         return _cold_start(db, limit)
 
-    # 用户向量（加权平均）
+    # 用户文本向量（加权平均）
     dim = get_model_dim()
     n = len(history)
     weights = np.linspace(1.0, 0.3, n)
@@ -213,6 +221,22 @@ def recommend_comprehensive(db, user_history_song_ids, limit=20, seed=None):
     if total_weight > 0:
         user_vector /= total_weight
 
+    # 用户音频向量（加权平均，仅当有历史音频 embedding 时）
+    user_audio_vector = None
+    if has_audio:
+        audio_dim = get_audio_model_dim()
+        user_audio_vector = np.zeros(audio_dim)
+        audio_total_weight = 0
+        for i, h in enumerate(history):
+            if h['id'] in id_to_audio_embedding:
+                audio_emb = id_to_audio_embedding[h['id']]
+                user_audio_vector += audio_emb * weights[i]
+                audio_total_weight += weights[i]
+        if audio_total_weight > 0:
+            user_audio_vector /= audio_total_weight
+        else:
+            user_audio_vector = None
+
     lang_pref = _collect_lang_preference(history)
 
     # 评分
@@ -221,12 +245,27 @@ def recommend_comprehensive(db, user_history_song_ids, limit=20, seed=None):
     for s in all_songs:
         if s['id'] in history_ids:
             continue
+
         emb = id_to_embedding[s['id']]
-        emb_sim = float(cosine_similarity(user_vector, emb))
+        text_sim = float(cosine_similarity(user_vector, emb))
+
+        # 音频相似度
+        audio_sim = 0.0
+        audio_available = False
+        if has_audio and user_audio_vector is not None and s['id'] in id_to_audio_embedding:
+            audio_sim = float(cosine_similarity(user_audio_vector, id_to_audio_embedding[s['id']]))
+            audio_available = True
+
         genre_score = max((_genre_match_score(h.get('genre', ''), s.get('genre', '')) for h in history), default=0.5)
         lang = (s.get('lang') or '').strip()
         lang_score = lang_pref.get(lang, 0.1)
-        score = 0.6 * emb_sim + 0.2 * genre_score + 0.2 * lang_score
+
+        if audio_available:
+            score = 0.40 * text_sim + 0.30 * audio_sim + 0.15 * genre_score + 0.15 * lang_score
+        else:
+            # 回退纯文本模式
+            score = 0.60 * text_sim + 0.20 * genre_score + 0.20 * lang_score
+
         scored.append((score, s))
 
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -262,7 +301,7 @@ def recommend_by_language(db, lang, user_history_song_ids, limit=20, seed=None):
     按语言推荐：SQL 过滤 lang，再用 embedding 语义相似度排序。
     支持 lang=other 匹配所有非通用语言。
     """
-    all_songs, id_to_embedding, id_to_info = _load_all_songs(db)
+    all_songs, id_to_embedding, _, id_to_info = _load_all_songs(db)
 
     if lang == 'other':
         def _lang_match(song_lang):
@@ -402,7 +441,8 @@ def _recommend_by_mood_fallback(db, mood, user_history_song_ids, limit, seed, mo
     if not mood_text:
         return []
 
-    all_songs, id_to_embedding, id_to_info = _load_all_songs(db)
+    all_songs, id_to_embedding, _, id_to_info = _load_all_songs(db)
+
     if not all_songs:
         return []
 
@@ -434,7 +474,7 @@ def _recommend_by_mood_fallback(db, mood, user_history_song_ids, limit, seed, mo
 
 def recommend_similar(db, song_id, limit=20):
     """给定一首歌曲，找 Top-N 相似歌曲"""
-    all_songs, id_to_embedding, id_to_info = _load_all_songs(db)
+    all_songs, id_to_embedding, _, id_to_info = _load_all_songs(db)
 
     if len(all_songs) < 2:
         return []
@@ -466,7 +506,7 @@ def recommend_hidden_gems(db, user_history_song_ids, limit=20, seed=None):
     冷门宝藏：低播放次数 + 高语义相似度。
     找用户可能喜欢但很少被播放的歌曲。
     """
-    all_songs, id_to_embedding, id_to_info = _load_all_songs(db)
+    all_songs, id_to_embedding, _, id_to_info = _load_all_songs(db)
 
     if len(all_songs) < 2:
         return []

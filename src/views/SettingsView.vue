@@ -386,7 +386,7 @@
         <div class="setting-row">
           <div class="setting-label">
             <span class="setting-title">模型缓存路径</span>
-            <span class="setting-desc">multilingual-e5-large 模型的存放目录（首次生成向量时下载，约 2.1GB）</span>
+            <span class="setting-desc">E5 文本模型（~2.2GB）+ MERT 音频模型（~200MB）的存放目录</span>
           </div>
         </div>
         <div style="padding: 0 20px; margin-bottom: 16px;">

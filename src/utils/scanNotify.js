@@ -63,6 +63,9 @@ export function closeScanNotify(progress, onDone) {
 function startThumbPoll(onDone) {
   stopThumbPoll()
 
+  // 防止并发调用：如果已在轮询中（_thumbId 已存在），直接返回
+  if (_thumbId) return
+
   // 先检查是否已完成，避免一闪而过
   fetch(`${FOLDERS_API}/thumb-progress`).then(r => r.json()).then(p => {
     if (p.scanning && p.total > 0) {
@@ -75,8 +78,8 @@ function startThumbPoll(onDone) {
       if (onDone) onDone()
     } else if (p.scanning) {
       // 后端刚开始，还没统计到数量 —— 等 500ms 重试
+      _thumbId = addProgress({ type: 'thumb', title: '正在生成缩略图...', current: 0, total: 0, path: '准备中...' })
       setTimeout(() => {
-        _thumbId = addProgress({ type: 'thumb', title: '正在生成缩略图...', current: 0, total: 0, path: '准备中...' })
         startThumbInterval(onDone)
       }, 500)
     } else {

@@ -16,12 +16,12 @@ import numpy as np
 
 # 全局单例，延迟加载
 _MODEL = None
+_CPU_MODEL = None  # CPU 专用模型（并行编码时使用，避免与 GPU 模型冲突）
 _MODEL_DIM = 1024
 _MODEL_NAME = 'intfloat/multilingual-e5-large'
 # 模型在 HF 上的实际 ONNX 仓库（fastembed 会从这里下载）
 _MODEL_HF_REPO = 'qdrant/multilingual-e5-large-onnx'
 # 预计模型大小（ONNX ≈ 2.24GB）
-_MODEL_EXPECTED_BYTES = 2400000000
 _FASTEMBED_OK = None
 _MODEL_PROVIDER = None  # 当前使用的推理后端，如 'CUDAExecutionProvider'
 _CACHE_DIR = None       # 用户自定义模型缓存目录
@@ -36,6 +36,19 @@ _download_progress = {
     'total_mb': 0,
     'message': '',
 }
+_e5_downloaded = threading.Event()  # E5 模型就绪时 set()
+
+
+def _resolve_cache_dir():
+    """解析 E5 模型缓存目录（统一到 Config.resolve_model_dir + e5 子目录）"""
+    from config.config import Config
+    root = Config.resolve_model_dir()
+    return os.path.join(root, 'e5')
+
+
+def wait_for_e5_download(timeout=600):
+    """等待 E5 模型下载完成（供 worker 线程调用）"""
+    _e5_downloaded.wait(timeout=timeout)
 
 
 def is_available():
@@ -81,22 +94,71 @@ def set_cache_dir(path):
     _CACHE_DIR = (path or '').strip() or None
 
 
+def _retry_snapshot_download(repo_id, cache_dir=None, local_dir=None, tqdm_class=None, progress_dict=None, max_retries=3, label='模型'):
+    """
+    带重试的 snapshot_download，网络中断时自动恢复。
+    huggingface_hub 内置断点续传，重试时从断点继续。
+    """
+    from huggingface_hub import snapshot_download
+    kwargs = {'repo_id': repo_id, 'tqdm_class': tqdm_class}
+    if cache_dir:
+        kwargs['cache_dir'] = cache_dir
+    if local_dir:
+        kwargs['local_dir'] = local_dir
+
+    time_start = time.monotonic()
+    for attempt in range(1, max_retries + 1):
+        try:
+            result = snapshot_download(**kwargs)
+            elapsed = time.monotonic() - time_start
+            print(f'[download] {label}下载完成 ({elapsed:.0f}s)')
+            return result
+        except Exception as e:
+            if attempt < max_retries:
+                wait = 3 * attempt
+                print(f'[download] {label}下载失败 (尝试 {attempt}/{max_retries}): {e}')
+                print(f'[download] {wait}秒后重试...')
+                if progress_dict:
+                    progress_dict.update({
+                        'status': 'retrying',
+                        'message': f'网络中断，{wait}秒后重试 ({attempt}/{max_retries})...',
+                    })
+                time.sleep(wait)
+            else:
+                print(f'[download] {label}下载失败，已达最大重试次数')
+                raise
+
+
 def get_cache_dir():
     """获取当前模型缓存目录配置"""
     return _CACHE_DIR
 
 
-def _model_blobs_dir():
-    """fastembed 下载的模型 blobs 目录（与 _get_model 保持相同的 cache_dir 回退逻辑）"""
-    import huggingface_hub.constants as hf_const
-    root = _CACHE_DIR
-    if not root:
-        from config.config import Config
-        root = Config.AI_MODEL_CACHE_DIR
-    if not root:
-        root = hf_const.HF_HUB_CACHE
+def _clear_e5_cache():
+    """删除 E5 模型所有缓存目录，强制重新下载（含旧 Temp 路径迁移清理）"""
+    import shutil
+    import tempfile
     slug = _MODEL_HF_REPO.replace('/', '--')
-    return os.path.join(root, f'models--{slug}', 'blobs')
+    dirs_to_clear = []
+
+    # 1. 统一模型路径
+    dirs_to_clear.append(os.path.join(_resolve_cache_dir(), f'models--{slug}'))
+    # 2. 旧路径：%TEMP%/fastembed_cache（迁移前残留）
+    dirs_to_clear.append(os.path.join(
+        tempfile.gettempdir(), 'fastembed_cache', f'models--{slug}'))
+    # 3. HuggingFace hub 缓存（fastembed 从这里下载原始权重）
+    from huggingface_hub.constants import HF_HUB_CACHE
+    dirs_to_clear.append(os.path.join(HF_HUB_CACHE, f'models--{slug}'))
+
+    cleared = False
+    for d in dirs_to_clear:
+        if os.path.isdir(d):
+            shutil.rmtree(d, ignore_errors=True)
+            print(f'[embedding] 已清除缓存: {d}')
+            cleared = True
+    if not cleared:
+        print(f'[embedding] 未找到缓存目录，将从头下载')
+    return cleared
 
 
 def _dir_size(path):
@@ -115,34 +177,25 @@ def _dir_size(path):
     return total
 
 
-def _poll_download_progress(stop_event, blobs_dir):
-    """后台线程：轮询缓存目录大小报告下载进度"""
-    global _download_progress
-    total_mb = round(_MODEL_EXPECTED_BYTES / (1024 * 1024), 0)
-    _download_progress['total_mb'] = total_mb
-
+def _poll_e5_download(stop_event, model_root, progress_dict):
+    """后台轮询 E5 模型缓存目录大小，报告下载进度"""
     while not stop_event.is_set():
-        current_bytes = _dir_size(blobs_dir)
+        current_bytes = 0
+        if os.path.isdir(model_root):
+            current_bytes = _dir_size(model_root)
         current_mb = round(current_bytes / (1024 * 1024), 1)
-        pct = min(99, int(current_bytes / _MODEL_EXPECTED_BYTES * 100))
-        _download_progress.update({
-            'status': 'downloading',
-            'percent': pct,
-            'downloaded_mb': current_mb,
-            'total_mb': total_mb,
-            'message': f'{current_mb:.0f} / {total_mb:.0f} MB',
-        })
+        if current_mb > 0:
+            pct = min(99, max(1, int(current_bytes / (2.35 * 1024 * 1024 * 1024) * 100)))
+            # 计算近似速度（每 1.5s 采样）
+            mb_str = f'{current_mb:.0f} MB' if current_mb < 1024 else f'{current_mb / 1024:.2f} GB'
+            progress_dict.update({
+                'status': 'downloading',
+                'percent': pct,
+                'downloaded_mb': current_mb,
+                'total_mb': 2240,
+                'message': f'正在下载文本分析模型 ({mb_str})',
+            })
         time.sleep(1.5)
-
-    current_bytes = _dir_size(blobs_dir)
-    current_mb = round(current_bytes / (1024 * 1024), 1)
-    if current_bytes >= _MODEL_EXPECTED_BYTES * 0.9:
-        _download_progress.update({
-            'status': 'completed',
-            'percent': 100,
-            'downloaded_mb': current_mb,
-            'message': '下载完成',
-        })
 
 
 def _get_model():
@@ -155,10 +208,9 @@ def _get_model():
     if _MODEL is None:
         from fastembed import TextEmbedding
 
-        # fastembed 0.8 改了 pooling 策略，只是一个提示，不影响功能
         warnings.filterwarnings('ignore', message='.*now uses mean pooling.*')
 
-        # 步骤 1：准备环境（初始化进度状态，前端可见）
+        # 步骤 1：准备环境
         _download_progress = {
             'status': 'preparing',
             'percent': 0,
@@ -167,88 +219,191 @@ def _get_model():
             'message': '检测 GPU 环境中...',
         }
 
-        # 步骤 2：自动检测并启用 GPU 加速
+        # 步骤 2：GPU 加速
         providers = _auto_enable_gpu()
 
-        # 缓存目录优先级：set_cache_dir() > Config > 默认（None）
-        cache_dir = _CACHE_DIR
-        if not cache_dir:
-            from config.config import Config
-            cache_dir = Config.AI_MODEL_CACHE_DIR
-        # 防御：确保不是空字符串
-        if cache_dir is not None and (not isinstance(cache_dir, str) or not cache_dir.strip()):
-            cache_dir = None
+        # 缓存目录
+        cache_dir = _CACHE_DIR or _resolve_cache_dir()
 
-        # 步骤 3：启动下载进度轮询（TextEmbedding 构造函数内部下载时追踪）
-        _download_progress = {
-            'status': 'downloading',
-            'percent': 0,
-            'downloaded_mb': 0,
-            'total_mb': 0,
-            'message': '正在下载模型文件...',
-        }
-        blobs_dir = _model_blobs_dir()
-        stop_event = threading.Event()
-        poll_thread = threading.Thread(
-            target=_poll_download_progress,
-            args=(stop_event, blobs_dir),
-            daemon=True
+        # 步骤 3：检测模型是否存在
+        slug = _MODEL_HF_REPO.replace('/', '--')
+        model_root = os.path.join(cache_dir, f'models--{slug}')
+        model_exists = os.path.isdir(model_root) and any(
+            f.endswith('.onnx')
+            for root, _, files in os.walk(model_root)
+            for f in files
         )
-        poll_thread.start()
+
+        _download_progress.update({
+            'status': 'checking',
+            'percent': 0,
+            'message': '正在检查环境，准备下载文本分析模型...',
+        })
+
+        if not model_exists:
+            _download_progress.update({
+                'status': 'preparing',
+                'percent': 1,
+                'message': '模型不存在，准备下载 ~2.2GB...',
+            })
+            print(f'[embedding] 模型未缓存，准备下载到: {model_root}')
+
+            # 预下载：用 snapshot_download(cache_dir=...) 统一写入
+            # TextEmbedding 内部也用相同 cache_dir，二次查询秒返回
+            from huggingface_hub import snapshot_download
+            from tqdm import tqdm as _tqdm_base
+
+            class _E5ProgressTqdm(_tqdm_base):
+                def __init__(self, *args, **kwargs):
+                    super().__init__(*args, **kwargs)
+                    self._last_n = 0
+                    self._last_t = time.monotonic()
+
+                def update(self, n=1):
+                    super().update(n)
+                    if self.total and self.total > 0:
+                        dl = round(self.n / (1024 * 1024), 1)
+                        total = round(self.total / (1024 * 1024), 0)
+                        pct = int(self.n / self.total * 100)
+                        now = time.monotonic()
+                        speed = ''
+                        if now > self._last_t and self.n > self._last_n:
+                            rate = (self.n - self._last_n) / (now - self._last_t)
+                            if rate > 1024 * 1024:
+                                speed = f'  {rate / (1024 * 1024):.1f} MB/s'
+                            elif rate > 1024:
+                                speed = f'  {rate / 1024:.0f} KB/s'
+                        self._last_n = self.n
+                        self._last_t = now
+                        _download_progress.update({
+                            'status': 'downloading',
+                            'percent': pct,
+                            'downloaded_mb': dl,
+                            'total_mb': total,
+                            'message': f'正在下载文本分析模型{speed}',
+                        })
+
+            print(f'[embedding] 开始下载 E5 模型到: {model_root}')
+            try:
+                _retry_snapshot_download(
+                    _MODEL_HF_REPO,
+                    cache_dir=cache_dir,
+                    tqdm_class=_E5ProgressTqdm,
+                    progress_dict=_download_progress,
+                    label='文本分析',
+                )
+            except Exception as pre_e:
+                print(f'[embedding] E5 下载失败: {pre_e}')
+                _download_progress.update({
+                    'status': 'error',
+                    'message': f'下载失败: {str(pre_e)[:100]}',
+                })
+                _MODEL = None
+                _e5_downloaded.set()
+                return None
+        else:
+            print(f'[embedding] 模型已缓存: {model_root}')
+
+        _download_progress.update({
+            'status': 'preparing',
+            'percent': 98,
+            'message': '正在加载文本分析引擎...',
+        })
 
         try:
-            print(f'[embedding] 加载模型 {_MODEL_NAME}（首次运行会自动下载 ~2.2GB）...')
-            if cache_dir:
-                print(f'[embedding] 模型缓存目录: {cache_dir}')
-            print(f'[embedding] 推理后端: {providers[0]}')
+            print(f'[embedding] 加载模型 {_MODEL_NAME}...')
+            if providers:
+                print(f'[embedding] 推理后端: {providers[0]}')
             _MODEL = TextEmbedding(
                 model_name=_MODEL_NAME,
                 cache_dir=cache_dir,
                 providers=providers,
-                lazy_load=True,
+                lazy_load=False,
             )
             _MODEL_PROVIDER = providers
-            # fastembed 0.8+ 去掉了 _model 属性，维度直接从模型注册表获取
             try:
                 _MODEL_DIM = int(_MODEL.embedding_size or 0) or _MODEL_DIM
             except Exception:
                 pass
             print(f'[embedding] 模型加载完成，向量维度: {_MODEL_DIM}')
         except Exception as e:
-            # DML/CUDA 未真正可用时回退到 CPU
-            if providers[0] in ('DmlExecutionProvider', 'CUDAExecutionProvider'):
-                print(f'[embedding] GPU 初始化失败，回退 CPU: {e}')
-                _MODEL = TextEmbedding(
-                    model_name=_MODEL_NAME,
-                    cache_dir=cache_dir,
-                    providers=['CPUExecutionProvider'],
-                    lazy_load=True,
-                )
-                _MODEL_PROVIDER = ['CPUExecutionProvider']
+            err = str(e)
+            if 'onnx_data' in err or 'No such file' in err or 'RUNTIME_EXCEPTION' in err or 'bad allocation' in err:
+                print(f'[embedding] 模型文件损坏或内存不足，清除缓存后重试...')
+                _clear_e5_cache()
                 try:
-                    _MODEL_DIM = int(_MODEL.embedding_size or 0) or _MODEL_DIM
-                except Exception:
-                    pass
-                print(f'[embedding] 模型加载完成 (CPU)，向量维度: {_MODEL_DIM}')
+                    _MODEL = TextEmbedding(
+                        model_name=_MODEL_NAME,
+                        cache_dir=cache_dir,
+                        providers=['CPUExecutionProvider'],  # bad allocation 往往是 GPU 内存不足
+                        lazy_load=False,
+                    )
+                    _MODEL_PROVIDER = ['CPUExecutionProvider']
+                    try:
+                        _MODEL_DIM = int(_MODEL.embedding_size or 0) or _MODEL_DIM
+                    except Exception:
+                        pass
+                    print(f'[embedding] CPU 模型加载成功，向量维度: {_MODEL_DIM}')
+                except Exception as retry_e:
+                    print(f'[embedding] 重新加载也失败: {retry_e}')
+                    _download_progress.update({
+                        'status': 'error',
+                        'message': str(retry_e)[:150],
+                    })
+                    _MODEL = None
+                    _e5_downloaded.set()
+                    return None
             else:
-                stop_event.set()
-                poll_thread.join(timeout=3)
                 _download_progress.update({
                     'status': 'error',
-                    'message': str(e)[:150],
+                    'message': err[:150],
                 })
                 raise
-        finally:
-            stop_event.set()
-            poll_thread.join(timeout=3)
 
         _download_progress.update({
             'status': 'completed',
             'percent': 100,
-            'message': '下载完成',
+            'message': '模型已就绪',
         })
+        _e5_downloaded.set()
 
     return _MODEL
+
+
+def _get_cpu_model():
+    """获取 CPU 专用 embedding 模型（与 GPU 模型并行使用，不冲突）"""
+    global _CPU_MODEL
+    if _CPU_MODEL is None:
+        from fastembed import TextEmbedding
+        warnings.filterwarnings('ignore', message='.*now uses mean pooling.*')
+        print('[embedding] 加载 CPU 专用 E5 模型（与 GPU 并行）...')
+        cache_dir = _CACHE_DIR or _resolve_cache_dir()
+
+        def _try_load():
+            return TextEmbedding(
+                model_name=_MODEL_NAME,
+                cache_dir=cache_dir,
+                providers=['CPUExecutionProvider'],
+                lazy_load=False,  # 立即加载，及早发现文件损坏
+            )
+
+        try:
+            _CPU_MODEL = _try_load()
+        except Exception as e:
+            err = str(e)
+            if 'onnx_data' in err or 'No such file' in err or 'RUNTIME_EXCEPTION' in err or 'bad allocation' in err:
+                print(f'[embedding] CPU 模型加载失败，清除缓存后重试: {e}')
+                _clear_e5_cache()
+                try:
+                    _CPU_MODEL = _try_load()
+                except Exception as retry_e:
+                    print(f'[embedding] CPU 模型重试也失败，将跳过 CPU 并行人: {retry_e}')
+                    _CPU_MODEL = None
+            else:
+                raise
+
+        print('[embedding] CPU E5 模型加载完成')
+    return _CPU_MODEL
 
 
 def _detect_providers():
@@ -489,7 +644,7 @@ def encode_text(text):
     return embeddings[0].astype(np.float32)
 
 
-def encode_songs_batch(songs, batch_size=32, progress_callback=None):
+def encode_songs_batch(songs, batch_size=32, progress_callback=None, use_cpu=False):
     """
     批量生成歌曲的 embedding 向量。
 
@@ -497,12 +652,21 @@ def encode_songs_batch(songs, batch_size=32, progress_callback=None):
         songs: list of dict
         batch_size: 编码批大小
         progress_callback: (current, total) 进度回调
+        use_cpu: 强制使用 CPU 推理（与 GPU 模型并行时使用）
 
     Returns:
         list of numpy arrays
     """
     texts = [build_song_text(s) for s in songs]
-    model = _get_model()
+    if use_cpu:
+        model = _get_cpu_model()
+        if model is None:
+            # CPU 模型加载失败，回退到主模型
+            model = _get_model()
+    else:
+        model = _get_model()
+    if model is None:
+        raise RuntimeError('无法加载 embedding 模型')
 
     all_embeddings = []
     for i in range(0, len(texts), batch_size):
@@ -523,3 +687,401 @@ def embedding_to_blob(embedding):
 def blob_to_embedding(blob):
     """将二进制 BLOB 还原为 numpy embedding 向量"""
     return np.frombuffer(blob, dtype=np.float32)
+
+
+# ==================== 音频 Embedding (MERT-v1-95M) ====================
+#
+# 使用 m-a-p/MERT-v1-95M 模型提取音频特征（768维）。
+# 首次运行自动从 HuggingFace 下载模型 → 导出 ONNX → 缓存。
+# 后续运行直接加载 ONNX，使用现有 GPU 加速（CUDA/DirectML）。
+
+_AUDIO_OK = None           # 音频依赖是否可用
+_AUDIO_MODEL = None         # ONNX Runtime InferenceSession
+_AUDIO_MODEL_DIM = 768
+_AUDIO_MODEL_NAME = 'm-a-p/MERT-v1-95M'
+_AUDIO_SAMPLE_RATE = 24000  # MERT 输入采样率
+_AUDIO_CLIP_SECONDS = 5     # 只取 5 秒（30秒处，更代表歌曲主体）
+_AUDIO_OFFSET_SECONDS = 30  # 从第 30 秒开始取（跳过 intro）
+_AUDIO_ONNX_FILENAME = 'mert-v1-95m-audio.onnx'
+
+
+def is_audio_available():
+    """检查音频 embedding 依赖是否可用（librosa + soundfile + onnxruntime）"""
+    global _AUDIO_OK
+    if _AUDIO_OK is None:
+        try:
+            import onnxruntime  # noqa: F401
+            import librosa      # noqa: F401
+            import soundfile    # noqa: F401
+            _AUDIO_OK = True
+        except ImportError:
+            _AUDIO_OK = False
+    return _AUDIO_OK
+
+
+def get_audio_model_dim():
+    """返回音频 embedding 向量维度"""
+    return _AUDIO_MODEL_DIM
+
+
+def _get_audio_onnx_path():
+    """MERT ONNX 模型路径（统一到 %APPDATA%/melodybox/models/mert/）"""
+    from config.config import Config
+    root = Config.resolve_model_dir()
+    mert_dir = os.path.join(root, 'mert')
+    os.makedirs(mert_dir, exist_ok=True)
+    return os.path.join(mert_dir, 'mert-v1-95m-audio.onnx')
+
+
+def _get_audio_duration(file_path):
+    """获取音频文件时长（秒），优先 soundfile，回退 librosa"""
+    try:
+        import soundfile as sf
+        info = sf.info(file_path)
+        return info.duration
+    except Exception:
+        import librosa
+        return librosa.get_duration(path=file_path)
+
+
+def _load_audio_clip(file_path):
+    """
+    加载音频文件的指定片段，转为 24kHz 单声道 float32。
+    优先从第 30 秒处取 5 秒（代表歌曲主体），不足 35 秒的歌曲回退到开头。
+    返回 numpy array，失败返回 None。
+    """
+    try:
+        import librosa
+        # 先获取音频总时长
+        duration = _get_audio_duration(file_path)
+        # 决定 offset：优先 30 秒处，短歌曲回退到开头
+        if duration >= _AUDIO_OFFSET_SECONDS + _AUDIO_CLIP_SECONDS:
+            offset = _AUDIO_OFFSET_SECONDS
+        else:
+            offset = 0
+
+        waveform, sr = librosa.load(
+            file_path,
+            sr=None,               # 保持原始采样率
+            mono=True,             # 单声道
+            duration=_AUDIO_CLIP_SECONDS,
+            offset=offset,
+            res_type='kaiser_fast'  # 快速重采样（比 kaiser_best 快 2-3 倍）
+        )
+        if sr != _AUDIO_SAMPLE_RATE:
+            waveform = librosa.resample(
+                waveform, orig_sr=sr, target_sr=_AUDIO_SAMPLE_RATE
+            )
+        # 确保足够长度（不足则零填充，过长则截断）
+        target_samples = _AUDIO_SAMPLE_RATE * _AUDIO_CLIP_SECONDS
+        if len(waveform) < target_samples:
+            waveform = np.pad(waveform, (0, target_samples - len(waveform)))
+        else:
+            waveform = waveform[:target_samples]
+        return waveform.astype(np.float32)
+    except Exception as e:
+        print(f'[audio-embedding] 音频加载失败: {file_path} - {e}')
+        return None
+
+
+_pytorch_cache_cleaned = False  # 仅清理一次
+_mert_download_progress = {
+    'status': 'idle',
+    'percent': 0,
+    'downloaded_mb': 0,
+    'total_mb': 370,
+    'message': '',
+}
+_mert_downloaded = threading.Event()  # MERT 下载+导出完成时 set()
+
+
+def is_mert_downloaded():
+    """检查 MERT ONNX 模型是否已就绪（已下载 + 已导出）"""
+    onnx_path = _get_audio_onnx_path()
+    return os.path.isfile(onnx_path)
+
+
+def get_mert_download_progress():
+    """获取 MERT 模型下载进度（供 API 轮询）"""
+    return dict(_mert_download_progress)
+
+
+def wait_for_mert_download(timeout=600):
+    """等待 MERT 下载+导出完成（供 worker 线程调用）"""
+    _mert_downloaded.wait(timeout=timeout)
+
+
+def _cleanup_pytorch_cache():
+    """清理 MERT PyTorch 原始模型缓存和废弃的 fp16 模型（节省 ~478MB）"""
+    global _pytorch_cache_cleaned
+    if _pytorch_cache_cleaned:
+        return
+    _pytorch_cache_cleaned = True
+    try:
+        import shutil
+        from huggingface_hub.constants import HF_HUB_CACHE
+        cache_name = _AUDIO_MODEL_NAME.replace('/', '--')
+        pytorch_cache_dir = os.path.join(HF_HUB_CACHE, f'models--{cache_name}')
+        if os.path.isdir(pytorch_cache_dir):
+            shutil.rmtree(pytorch_cache_dir, ignore_errors=True)
+            print(f'[audio-embedding] 已清理 PyTorch 模型缓存: {pytorch_cache_dir}')
+        # 清理废弃的 fp16 模型文件
+        fp16_path = _get_audio_onnx_path().replace('.onnx', '-fp16.onnx')
+        if os.path.isfile(fp16_path):
+            os.remove(fp16_path)
+            print(f'[audio-embedding] 已清理废弃 fp16 模型: {fp16_path}')
+    except Exception as e:
+        print(f'[audio-embedding] 清理缓存失败（可忽略）: {e}')
+
+
+def _export_mert_to_onnx():
+    """
+    下载 MERT-v1-95M 模型，导出音频编码器为 ONNX 格式。
+    只在首次运行时调用一次，导出后缓存到本地。
+    """
+    global _mert_download_progress
+    try:
+        import torch
+        from transformers import Wav2Vec2Model
+        import onnx  # noqa: F401  torch.onnx.export 需要此模块
+    except ImportError:
+        raise RuntimeError(
+            'ONNX 导出需要 transformers、torch 和 onnx。'
+            '请运行: pip install transformers torch onnx'
+        )
+
+    print(f'[audio-embedding] 首次运行：下载 {_AUDIO_MODEL_NAME} 并导出 ONNX...')
+    print('[audio-embedding] 模型约 370MB，请耐心等待...')
+
+    _mert_download_progress = {
+        'status': 'checking',
+        'percent': 0,
+        'downloaded_mb': 0,
+        'total_mb': 0,
+        'message': '正在检查环境，准备下载音频分析模型...',
+    }
+
+    from tqdm import tqdm as _tqdm_base
+
+    class _MertProgressTqdm(_tqdm_base):
+        """自定义 tqdm 类：把 snapshot_download 的实时进度同步到 _mert_download_progress"""
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._last_n = 0
+            self._last_t = time.monotonic()
+
+        def update(self, n=1):
+            super().update(n)
+            if self.total and self.total > 0:
+                dl = round(self.n / (1024 * 1024), 1)
+                total = round(self.total / (1024 * 1024), 0)
+                pct = int(self.n / self.total * 100)
+                # 计算下载速度
+                now = time.monotonic()
+                speed = ''
+                if now > self._last_t and self.n > self._last_n:
+                    rate = (self.n - self._last_n) / (now - self._last_t)
+                    if rate > 1024 * 1024:
+                        speed = f'  {rate / (1024 * 1024):.1f} MB/s'
+                    elif rate > 1024:
+                        speed = f'  {rate / 1024:.0f} KB/s'
+                self._last_n = self.n
+                self._last_t = now
+                _mert_download_progress.update({
+                    'status': 'downloading',
+                    'percent': pct,
+                    'downloaded_mb': dl,
+                    'total_mb': total,
+                    'message': f'正在下载音频分析模型{speed}',
+                })
+
+    local_dir_snapshot = _retry_snapshot_download(
+        _AUDIO_MODEL_NAME,
+        local_dir=None,
+        tqdm_class=_MertProgressTqdm,
+        progress_dict=_mert_download_progress,
+        label='音频分析',
+    )
+
+    _mert_download_progress.update({
+        'status': 'exporting',
+        'percent': 95,
+        'message': '正在准备音频分析引擎...',
+    })
+    print('[audio-embedding] 下载完成，正在导出 ONNX...')
+
+    # 使用 HF 镜像（app.py 已设置 HF_ENDPOINT）
+    model = Wav2Vec2Model.from_pretrained(local_dir_snapshot)
+    model.eval()
+
+    class MERTAudioWrapper(torch.nn.Module):
+        """包装 MERT，输入原始波形，输出时间池化后的 768 维向量"""
+        def __init__(self, base_model):
+            super().__init__()
+            self.base = base_model
+
+        def forward(self, input_values):
+            # input_values: (batch, samples) float32 @ 24kHz
+            outputs = self.base(input_values, output_hidden_states=False)
+            # last_hidden_state: (batch, time_steps, 768)
+            pooled = outputs.last_hidden_state.mean(dim=1)
+            return pooled
+
+    wrapper = MERTAudioWrapper(model)
+    dummy = torch.randn(1, _AUDIO_SAMPLE_RATE * _AUDIO_CLIP_SECONDS)
+
+    onnx_path = _get_audio_onnx_path()
+    torch.onnx.export(
+        wrapper,
+        (dummy,),
+        onnx_path,
+        input_names=['input_values'],
+        output_names=['audio_embedding'],
+        dynamic_axes={
+            'input_values': {0: 'batch', 1: 'time'},
+            'audio_embedding': {0: 'batch'},
+        },
+        opset_version=14,
+        dynamo=False,  # 使用旧版 ONNX 导出，不需要 onnxscript
+    )
+    print(f'[audio-embedding] ONNX 导出完成: {onnx_path}')
+
+    # 释放 PyTorch 模型内存
+    del model, wrapper
+
+    # 清理 PyTorch 原始模型缓存（ONNX 导出后不再需要，节省 ~378MB）
+    _cleanup_pytorch_cache()
+
+    _mert_download_progress.update({
+        'status': 'completed',
+        'percent': 100,
+        'message': '模型准备就绪',
+    })
+    _mert_downloaded.set()
+
+
+def _get_audio_model():
+    """获取或初始化音频 embedding 模型（ONNX Runtime）"""
+    global _AUDIO_MODEL
+
+    if not is_audio_available():
+        raise RuntimeError(
+            '音频 embedding 依赖未安装。'
+            '请运行: pip install librosa soundfile'
+        )
+
+    if _AUDIO_MODEL is None:
+        onnx_path = _get_audio_onnx_path()
+
+        # 首次使用：导出 ONNX
+        if not os.path.exists(onnx_path):
+            _export_mert_to_onnx()
+        else:
+            # ONNX 已存在，尝试清理残留的 PyTorch 缓存（仅执行一次）
+            _cleanup_pytorch_cache()
+            # 标记 MERT 就绪（无需下载）
+            _mert_download_progress.update({
+                'status': 'completed',
+                'percent': 100,
+                'message': '模型已就绪',
+            })
+            _mert_downloaded.set()
+
+        import onnxruntime as ort
+        providers = _detect_providers()
+
+        sess_options = ort.SessionOptions()
+        sess_options.graph_optimization_level = (
+            ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        )
+        _AUDIO_MODEL = ort.InferenceSession(
+            onnx_path,
+            sess_options=sess_options,
+            providers=providers,
+        )
+
+        print(f'[audio-embedding] 加载 ONNX 模型: {onnx_path}')
+        print(f'[audio-embedding] 推理后端: {providers[0]}')
+    return _AUDIO_MODEL
+
+
+def encode_audio_batch(clips, batch_size=8, progress_callback=None):
+    """
+    批量生成音频 embedding。
+
+    Args:
+        clips: list of (song_id, file_path) tuples
+        batch_size: 每批处理的歌曲数
+        progress_callback: callable(done, total) 进度回调
+
+    Returns:
+        list of (song_id, embedding_numpy_array_or_None)
+    """
+    model = _get_audio_model()
+    if model is None:
+        return [(sid, None) for sid, _ in clips]
+
+    batch_size = max(1, min(batch_size, len(clips)))
+    results = []
+    total = len(clips)
+
+    _audio_gpu_failed = False
+
+    for offset in range(0, total, batch_size):
+        batch = clips[offset:offset + batch_size]
+
+        # 加载音频波形
+        waveforms = []
+        batch_ids = []
+        for song_id, file_path in batch:
+            waveform = _load_audio_clip(file_path)
+            if waveform is not None:
+                waveforms.append(waveform)
+                batch_ids.append(song_id)
+            else:
+                results.append((song_id, None))
+
+        if waveforms:
+            stacked = np.stack(waveforms, axis=0)
+            try:
+                outputs = model.run(None, {'input_values': stacked})
+            except Exception as e:
+                err = str(e)
+                if not _audio_gpu_failed and ('Gelu' in err or 'Dml' in err or 'UnicodeDecodeError' in repr(e) or '0x8007000E' in err):
+                    print(f'[audio-embedding] GPU 推理失败，回退 CPU: {err[:120]}')
+                    _audio_gpu_failed = True
+                    global _AUDIO_MODEL
+                    _AUDIO_MODEL = None
+                    import onnxruntime as ort
+                    sess_options = ort.SessionOptions()
+                    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                    onnx_path = _get_audio_onnx_path()
+                    _AUDIO_MODEL = ort.InferenceSession(
+                        onnx_path, sess_options=sess_options,
+                        providers=['CPUExecutionProvider'],
+                    )
+                    model = _AUDIO_MODEL
+                    print('[audio-embedding] 已切换为 CPU 推理')
+                    outputs = model.run(None, {'input_values': stacked})
+                else:
+                    raise
+
+            embeddings = outputs[0]
+            for i, sid in enumerate(batch_ids):
+                emb = embeddings[i].astype(np.float32)
+                results.append((sid, emb))
+
+        if progress_callback:
+            progress_callback(min(offset + batch_size, total), total)
+
+    return results
+
+
+def encode_single_audio(file_path):
+    """编码单首歌曲的音频，返回 numpy array 或 None"""
+    waveform = _load_audio_clip(file_path)
+    if waveform is None:
+        return None
+    model = _get_audio_model()
+    outputs = model.run(None, {'input_values': waveform[np.newaxis, :]})
+    return outputs[0][0].astype(np.float32)

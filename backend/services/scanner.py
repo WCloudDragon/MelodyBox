@@ -603,6 +603,7 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
                         file_size=?, file_mtime=?,
                         disc_number=?, track_number=?, fingerprint=?, lang=?,
                         embedding = NULL,
+                        audio_embedding = NULL,
                         updated_at=datetime('now','localtime')
                     WHERE file_path=?
                 ''', (

@@ -13,6 +13,8 @@ if exist "..\flask-dist" rmdir /s /q "..\flask-dist"
 echo [2/3] 使用 PyInstaller 打包...
 D:\flask_env\Scripts\pyinstaller.exe --onedir --name melodybox-api ^
   --hidden-import mutagen --hidden-import flask --hidden-import flask_cors ^
+  --hidden-import librosa --hidden-import soundfile --hidden-import audioread ^
+  --hidden-import onnxruntime --hidden-import onnxruntime.transformers ^
   --nowindowed --clean app.py
 
 if errorlevel 1 (

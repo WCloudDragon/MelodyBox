@@ -87,40 +87,36 @@
         </div>
 
         <!-- embedding 未生成提示 -->
-        <div v-if="(aiStore.embeddingStatus.pending > 0 || generatingEmbeddings) && libraryStore.tracks.length > 0" class="embedding-banner">
+        <div v-if="(aiStore.embeddingStatus.pending > 0 || aiStore.embeddingStatus.audio_processing || generatingEmbeddings) && libraryStore.tracks.length > 0" class="embedding-banner">
           <div v-if="aiStore.embeddingStatus.st_available === false" class="embedding-banner__content">
             <span>需要安装 fastembed 以启用 AI 推荐</span>
             <el-button type="primary" size="small" @click="copyInstallCmd">
               复制安装命令
             </el-button>
           </div>
-          <div v-else-if="aiStore.isDownloading || aiStore.downloadProgress.status === 'restarting'" class="embedding-banner__content" style="flex-direction: column; align-items: stretch; gap: 10px;">
-            <template v-if="aiStore.downloadProgress.status === 'restarting'">
-              <span style="font-weight: 600; color: var(--accent-color);">正在重启以启用 GPU 加速...</span>
-              <div class="progress-bar-wrap"><div class="progress-bar progress-bar--indeterminate"></div></div>
-              <span style="font-size: 12px; color: var(--text-secondary);">应用重启后将自动使用 GPU 继续生成向量</span>
-            </template>
-            <template v-else-if="aiStore.downloadProgress.status === 'preparing'">
-              <span style="font-weight: 600;">正在准备环境...</span>
-              <div class="progress-bar-wrap"><div class="progress-bar progress-bar--indeterminate"></div></div>
-              <span style="font-size: 12px; color: var(--text-secondary);">{{ aiStore.downloadProgress.message }}</span>
-            </template>
-            <template v-else>
-              <span style="font-weight: 600;">正在下载 AI 模型...</span>
-              <div class="progress-bar-wrap"><div class="progress-bar" :style="{ width: aiStore.downloadProgress.percent + '%' }"></div></div>
-              <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
-                <span>{{ aiStore.downloadProgress.message }}</span>
-                <span v-if="aiStore.downloadProgress.percent > 0">{{ aiStore.downloadProgress.percent }}%</span>
-              </div>
-            </template>
-            <span v-if="aiStore.downloadProgress.status === 'error'" style="color: #ef4444; font-size: 12px;">下载失败: {{ aiStore.downloadProgress.message }}（请检查网络后重试）</span>
+          <div v-else-if="aiStore.downloadProgress.status === 'restarting'" class="embedding-banner__content" style="flex-direction: column; align-items: stretch; gap: 10px;">
+            <span style="font-weight: 600; color: var(--accent-color);">正在重启以启用 GPU 加速...</span>
+            <div class="progress-bar-wrap"><div class="progress-bar progress-bar--indeterminate"></div></div>
+            <span style="font-size: 12px; color: var(--text-secondary);">应用重启后将自动使用 GPU 继续生成向量</span>
           </div>
-          <div v-else-if="generatingEmbeddings" class="embedding-banner__content" style="flex-direction: column; align-items: stretch; gap: 10px;">
-            <span style="font-weight: 600;">正在生成语义向量...</span>
-            <div class="progress-bar-wrap"><div class="progress-bar progress-bar--active" :style="{ width: aiStore.embeddingStatus.total > 0 ? (aiStore.embeddingStatus.done / aiStore.embeddingStatus.total * 100) + '%' : '0%' }"></div></div>
-            <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary);">
-              <span>{{ aiStore.embeddingStatus.done }} / {{ aiStore.embeddingStatus.total }} 首</span>
-              <span v-if="aiStore.embeddingStatus.total > 0">{{ (aiStore.embeddingStatus.done / aiStore.embeddingStatus.total * 100).toFixed(0) }}%</span>
+          <div v-else-if="generatingEmbeddings" class="embedding-banner__content" style="flex-direction: column; align-items: stretch; gap: 8px;">
+            <!-- 文本分析进度条 -->
+            <div style="display: flex; flex-direction: column; gap: 3px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-weight: 600; min-width: 56px;">文本分析</span>
+                <div class="progress-bar-wrap" style="flex: 1;"><div class="progress-bar progress-bar--active" :style="{ width: e5DisplayPct + '%' }"></div></div>
+                <span style="font-size: 12px; color: var(--text-secondary); min-width: 80px; text-align: right;">{{ e5DisplayCount }}</span>
+              </div>
+              <span style="font-size: 11px; color: var(--text-tertiary); padding-left: 64px;">{{ e5DisplayText }}</span>
+            </div>
+            <!-- 音频分析进度条 -->
+            <div style="display: flex; flex-direction: column; gap: 3px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-weight: 600; min-width: 56px;">音频分析</span>
+                <div class="progress-bar-wrap" style="flex: 1;"><div class="progress-bar progress-bar--active progress-bar--audio" :style="{ width: mertDisplayPct + '%' }"></div></div>
+                <span style="font-size: 12px; color: var(--text-secondary); min-width: 80px; text-align: right;">{{ mertDisplayCount }}</span>
+              </div>
+              <span style="font-size: 11px; color: var(--text-tertiary); padding-left: 64px;">{{ mertDisplayText }}</span>
             </div>
           </div>
           <div v-else class="embedding-banner__content">
@@ -255,6 +251,99 @@ function playTrack(track) {
 
 const generatingEmbeddings = ref(false)
 
+// 进度条百分比
+const textProgressPct = computed(() => {
+  const st = aiStore.embeddingStatus
+  return st.total > 0 ? (st.done / st.total * 100) : 0
+})
+
+const audioProgressPct = computed(() => {
+  const st = aiStore.embeddingStatus
+  return st.audio_total > 0 ? (st.audio_done / st.audio_total * 100) : 0
+})
+
+// 状态文本
+const textStatusText = computed(() => {
+  const st = aiStore.embeddingStatus
+  if (!st.text_processing && st.done === st.total && st.total > 0) return '✅ 已完成'
+  if (st.text_provider === 'CPU') return '正在分析文本语义 (CPU)...'
+  if (st.text_provider === 'GPU') return '⚡ 已切换 GPU 加速分析...'
+  return ''
+})
+
+const audioStatusText = computed(() => {
+  const st = aiStore.embeddingStatus
+  if (!st.audio_processing && st.audio_done === st.audio_total && st.audio_total > 0) return '✅ 已完成'
+  if (st.audio_processing) return `正在分析音频特征 (GPU) — ${st.audio_done}/${st.audio_total}`
+  return ''
+})
+
+// E5 显示状态（下载中 / 编码中 / 已完成）
+const e5DisplayPct = computed(() => {
+  const dl = aiStore.embeddingStatus.e5_download
+  if (dl && dl.status === 'downloading') return dl.percent || 0
+  if (dl && (dl.status === 'checking' || dl.status === 'preparing')) return 1
+  return textProgressPct.value
+})
+const formatDownload = (dlMb, totalMb) => {
+  if (!totalMb || totalMb <= 0) return `${dlMb || 0}/~MB`
+  if (totalMb >= 1000) {
+    return `${(dlMb / 1000).toFixed(2)}/${(totalMb / 1000).toFixed(2)} GB`
+  }
+  return `${Number(dlMb).toFixed(0)}/${Number(totalMb).toFixed(0)} MB`
+}
+
+const e5DisplayCount = computed(() => {
+  const dl = aiStore.embeddingStatus.e5_download
+  if (dl && (dl.status === 'checking' || dl.status === 'preparing')) return '...'
+  if (dl && dl.status === 'downloading') return formatDownload(dl.downloaded_mb || 0, dl.total_mb || 0)
+  return `${aiStore.embeddingStatus.done}/${aiStore.embeddingStatus.total}`
+})
+
+const e5DisplayText = computed(() => {
+  const dl = aiStore.embeddingStatus.e5_download
+  if (dl && (dl.status === 'downloading' || dl.status === 'checking' || dl.status === 'preparing' || dl.status === 'retrying'))
+    return dl.message || ''
+  if (dl && dl.status === 'error') return `下载失败: ${dl.message}`
+  if (dl && dl.status === 'completed' && !aiStore.embeddingStatus.text_processing)
+    return '正在加载文本分析引擎...'
+  return textStatusText.value
+})
+
+// MERT 显示状态（下载中 / 导出中 / 编码中 / 已完成）
+const mertDisplayPct = computed(() => {
+  const dl = aiStore.embeddingStatus.mert_download
+  if (dl && dl.status === 'downloading') return dl.percent || 0
+  if (dl && (dl.status === 'checking' || dl.status === 'preparing')) return 1
+  if (dl && dl.status === 'exporting') return dl.percent || 0
+  return audioProgressPct.value
+})
+const mertDisplayCount = computed(() => {
+  const dl = aiStore.embeddingStatus.mert_download
+  if (dl && (dl.status === 'checking' || dl.status === 'preparing')) return '...'
+  if (dl && dl.status === 'downloading') return formatDownload(dl.downloaded_mb || 0, dl.total_mb || 0)
+  if (dl && dl.status === 'exporting') return '...'
+  const st = aiStore.embeddingStatus
+  if (st.audio_total > 0) return `${st.audio_done}/${st.audio_total}`
+  return '...'
+})
+const mertDisplayText = computed(() => {
+  const dl = aiStore.embeddingStatus.mert_download
+  if (dl && (dl.status === 'downloading' || dl.status === 'checking' || dl.status === 'preparing' || dl.status === 'retrying'))
+    return dl.message || ''
+  if (dl && dl.status === 'exporting') return '正在准备音频分析引擎...'
+  if (dl && dl.status === 'error') return `下载失败: ${dl.message}`
+  // 下载完成但模型还未就绪（wait_for_mert_download 仍在等待 ONNX 导出）
+  if (dl && dl.status === 'completed' && !aiStore.embeddingStatus.audio_processing) {
+    const st = aiStore.embeddingStatus
+    // 如果音频已经全部编码完成（上一轮已生成），直接显示已完成
+    if (st.audio_done === st.audio_total && st.audio_total > 0)
+      return '✅ 已完成'
+    return '正在加载音频分析引擎...'
+  }
+  return audioStatusText.value
+})
+
 // 推荐模式
 const recTabs = [
   { key: 'comprehensive', label: '综合推荐' },
@@ -364,14 +453,11 @@ async function handleGenerateEmbeddings() {
   const stop = aiStore.pollEmbeddingStatus(2000, async () => {
     generatingEmbeddings.value = false
     await aiStore.loadRecommendations()
-  }, () => {
-    // 生成停滞（进程重启等）：恢复按钮状态，用户可重新点击
-    generatingEmbeddings.value = false
   })
-  // 如果 generateEmbeddings 已经完成（pending=0 的情况），即时清理
+  // 如果 generateEmbeddings 已经完成（pending=0 且音频也完成的情况），即时清理
   setTimeout(async () => {
     await aiStore.loadEmbeddingStatus()
-    if (aiStore.embeddingStatus.pending === 0) {
+    if (aiStore.embeddingStatus.pending === 0 && !aiStore.embeddingStatus.audio_processing) {
       stop()
       generatingEmbeddings.value = false
       await aiStore.loadRecommendations()
@@ -517,6 +603,11 @@ watch(() => libraryStore.tracks.length, async (newLen) => {
 }
 .progress-bar--active {
   background: linear-gradient(90deg, var(--accent-color, #6366f1), #818cf8);
+  background-size: 200% 100%;
+  animation: progressShimmer 1.5s ease-in-out infinite;
+}
+.progress-bar--audio {
+  background: linear-gradient(90deg, #10b981, #34d399);
   background-size: 200% 100%;
   animation: progressShimmer 1.5s ease-in-out infinite;
 }

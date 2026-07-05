@@ -14,7 +14,7 @@ export const useAiStore = defineStore('ai', () => {
   const currentSub = ref(null)
 
   // Embedding 状态
-  const embeddingStatus = ref({ total: 0, done: 0, pending: 0, ready: false, st_available: null, mood_scores_ready: false })
+  const embeddingStatus = ref({ total: 0, done: 0, pending: 0, ready: false, st_available: null, mood_scores_ready: false, audio_done: 0, audio_total: 0, audio_available: false, audio_processing: false, text_processing: false, text_provider: 'idle', provider: 'cpu', e5_download: { status: 'idle', percent: 0 }, mert_download: { status: 'idle', percent: 0 } })
   const isGenerating = ref(false)
 
   // 模型下载进度
@@ -121,26 +121,15 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   /** 轮询 embedding 生成进度 */
-  function pollEmbeddingStatus(intervalMs = 2000, onDone, onStall) {
-    let lastDone = -1
-    let stallCount = 0
+  function pollEmbeddingStatus(intervalMs = 2000, onDone) {
     const timer = setInterval(async () => {
       await loadEmbeddingStatus()
-      if (embeddingStatus.value.pending === 0) {
+      const st = embeddingStatus.value
+      // 文本 embedding 和音频 embedding 都完成才算真正结束
+      if (st.pending === 0 && !st.audio_processing) {
         clearInterval(timer)
         if (onDone) onDone()
         return
-      }
-      if (embeddingStatus.value.done === lastDone) {
-        stallCount++
-        if (stallCount >= 30) {
-          clearInterval(timer)
-          if (onStall) onStall()
-          return
-        }
-      } else {
-        lastDone = embeddingStatus.value.done
-        stallCount = 0
       }
     }, intervalMs)
     return () => clearInterval(timer)

@@ -6,14 +6,23 @@ MelodyBox AI 推荐路由
 from flask import Blueprint, request, jsonify, current_app
 import threading
 import time
+import numpy as np
+import sys
 
 ai_bp = Blueprint('ai', __name__, url_prefix='/api/ai')
 
+# embedding 生成状态（模块级标志）
+_generating_text_embeddings = False
+_generating_audio_embeddings = False
+_audio_total = 0
+_audio_done_count = 0
+_text_use_gpu = False  # E5 当前是否在使用 GPU
 
-def _get_fastembed_default_cache_dir():
-    """返回 fastembed 在不设置 cache_dir 时的默认缓存路径"""
-    import tempfile, os
-    return os.path.join(tempfile.gettempdir(), 'fastembed_cache')
+
+def _get_default_model_dir():
+    """返回默认模型缓存目录（%APPDATA%/melodybox/models/）"""
+    from config.config import Config
+    return Config.resolve_model_dir()
 
 
 @ai_bp.before_request
@@ -54,14 +63,40 @@ def embedding_status():
         cursor.execute('SELECT COUNT(*) as cnt FROM song_mood_scores')
         mood_scores_ready = cursor.fetchone()['cnt'] > 0
 
+        # 音频 embedding 统计（处理中用实时计数，完成后用数据库计数）
+        cursor.execute('SELECT COUNT(*) as done FROM songs WHERE audio_embedding IS NOT NULL')
+        audio_done_db = cursor.fetchone()['done']
+        audio_processing = _generating_audio_embeddings
+        text_processing = _generating_text_embeddings
+        # 处理中用实时进度，完成后用数据库实际数量
+        audio_done = _audio_done_count if audio_processing else audio_done_db
+        audio_available = False
+        try:
+            from services.embedding import is_audio_available
+            audio_available = is_audio_available()
+        except Exception:
+            pass
+
+        # 获取模型下载进度
+        e5_download = {'status': 'completed', 'percent': 100}
+        mert_download = {'status': 'completed', 'percent': 100}
+        try:
+            from services.embedding import get_download_progress, get_mert_download_progress
+            e5_download = get_download_progress()
+            mert_download = get_mert_download_progress()
+        except Exception:
+            pass
+
         cursor.close()
         db.close()
 
         # 推理后端信息
         provider = 'cpu'
+        generating = False
         try:
-            from services.embedding import get_active_provider
+            from services.embedding import get_active_provider, is_generation_active
             provider = get_active_provider()
+            generating = is_generation_active()
         except Exception:
             pass
 
@@ -73,7 +108,16 @@ def embedding_status():
             'st_available': is_available(),
             'provider': provider,
             'langs': langs,
-            'mood_scores_ready': mood_scores_ready
+            'mood_scores_ready': mood_scores_ready,
+            'audio_done': audio_done,
+            'audio_total': _audio_total,
+            'audio_available': audio_available,
+            'audio_processing': audio_processing,
+            'text_processing': text_processing,
+            'text_provider': 'GPU' if _text_use_gpu and text_processing else ('CPU' if text_processing else 'idle'),
+            'generating': generating,
+            'e5_download': e5_download,
+            'mert_download': mert_download,
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -111,26 +155,75 @@ def generate_embeddings():
 
         flask_app = current_app._get_current_object()
 
-        def _generate_async():
+        # 标记生成任务开始（整个生成周期有效，不因单个 worker 失败而提前清除）
+        from services.embedding import set_generation_active
+        set_generation_active(True)
+
+        # --- 并行启动两个模型下载（如果尚未就绪） ---
+        def _start_e5_download():
+            """后台触发 E5 模型下载（fastembed 会自动缓存）"""
+            from services.embedding import _get_model
+            try:
+                _get_model()  # 首次调用会触发下载
+            except Exception as e:
+                print(f'[embedding] E5 模型加载失败: {e}')
+
+        def _start_mert_download():
+            """后台触发 MERT 模型下载+ONNX 导出"""
+            from services.embedding import _get_audio_model
+            try:
+                _get_audio_model()  # 首次调用会触发下载+导出
+            except Exception as e:
+                print(f'[audio-embedding] MERT 模型加载失败: {e}')
+
+        # 启动下载线程（如果模型已就绪会立即返回）
+        threading.Thread(target=_start_e5_download, daemon=True).start()
+        threading.Thread(target=_start_mert_download, daemon=True).start()
+
+        def _text_worker():
+            """文本 embedding 线程：等待 E5 下载完成后开始编码"""
+            global _generating_text_embeddings, _text_use_gpu
             from services.embedding import (
                 encode_songs_batch, embedding_to_blob,
-                set_generation_active
+                set_generation_active, wait_for_e5_download
             )
 
-            set_generation_active(True)
+            # 等待 E5 模型就绪
+            print('[embedding] 等待 E5 模型就绪...')
+            wait_for_e5_download(timeout=600)
+            # 检查模型是否真的加载成功
+            from services.embedding import _get_model
+            if _get_model() is None:
+                print('[embedding] E5 模型加载失败，文本分析跳过')
+                _generating_text_embeddings = False
+                return
+            _generating_text_embeddings = True
+            print('[embedding] E5 模型就绪，开始编码')
 
             with flask_app.app_context():
                 db2 = get_db()
                 cursor2 = db2.cursor()
                 batch_size = 5
-
+                use_cpu = True  # 初始 CPU，与 MERT GPU 并行
+                _text_use_gpu = False
+                switched = False
+                was_audio_processing = False  # 追踪音频状态变化（False→True→False = 完成）
                 try:
-                    # 分批生成 + 分批写入，确保前端轮询能实时看到进度
                     total = len(pending_songs)
                     for offset in range(0, total, batch_size):
-                        batch = pending_songs[offset:offset + batch_size]
-                        embeddings = encode_songs_batch(batch, progress_callback=None)
+                        # 检测音频是否刚刚完成（True→False 跳变），完成后切 GPU
+                        audio_just_finished = was_audio_processing and not _generating_audio_embeddings
+                        if use_cpu and audio_just_finished and not switched:
+                            use_cpu = False
+                            switched = True
+                            _text_use_gpu = True
+                            print('[embedding] 音频任务已完成，切换到 GPU 加速...')
+                            from services.embedding import _get_model
+                            _get_model()
+                        was_audio_processing = _generating_audio_embeddings
 
+                        batch = pending_songs[offset:offset + batch_size]
+                        embeddings = encode_songs_batch(batch, progress_callback=None, use_cpu=use_cpu)
                         for song, emb in zip(batch, embeddings):
                             blob = embedding_to_blob(emb)
                             cursor2.execute(
@@ -138,30 +231,109 @@ def generate_embeddings():
                                 (blob, song['id'])
                             )
                         db2.commit()
-
                         current = min(offset + batch_size, total)
-                        print(f'[embedding] 进度: {current}/{total}')
-
+                        provider = 'GPU' if not use_cpu else 'CPU'
+                        print(f'[embedding] 进度: {current}/{total} ({provider})')
                     print(f'[embedding] 完成: {total} 首歌曲的 embedding 已生成')
-
-                    # 顺带计算情绪分数
-                    try:
-                        print('[mood] 开始计算情绪分数...')
-                        from services.recommender import compute_all_mood_scores
-                        mood_db = get_db()
-                        mood_count = compute_all_mood_scores(mood_db)
-                        mood_db.close()
-                        print(f'[mood] 情绪分数计算完成: {mood_count} 条记录')
-                    except Exception as e:
-                        print(f'[mood] 情绪分数计算失败: {e}')
-
                 except Exception as e:
                     print(f'[embedding] 生成失败: {e}')
                     db2.rollback()
                 finally:
                     cursor2.close()
                     db2.close()
-                    set_generation_active(False)
+                    _generating_text_embeddings = False
+                    # 两个 worker 都完成后才清除生成状态
+                    if not _generating_audio_embeddings:
+                        set_generation_active(False)
+
+        def _audio_worker():
+            """音频 embedding 线程：等待 MERT 下载+导出完成后开始编码"""
+            global _generating_audio_embeddings, _audio_total, _audio_done_count
+            with flask_app.app_context():
+                try:
+                    # 等待 MERT 模型就绪
+                    print('[audio-embedding] 等待 MERT 模型就绪...')
+                    from services.embedding import wait_for_mert_download
+                    wait_for_mert_download(timeout=600)
+                    _generating_audio_embeddings = True
+                    print('[audio-embedding] MERT 模型就绪，开始编码')
+                    # 查询所有需要音频 embedding 的歌曲（不依赖文本 embedding 完成）
+                    db3 = get_db()
+                    cursor3 = db3.cursor()
+                    cursor3.execute(
+                        'SELECT id, file_path FROM songs WHERE audio_embedding IS NULL'
+                    )
+                    audio_pending = [(row['id'], row['file_path']) for row in cursor3.fetchall()]
+                    cursor3.close()
+                    db3.close()
+
+                    if not audio_pending:
+                        print('[audio-embedding] 所有歌曲音频 embedding 已生成')
+                        return
+
+                    _audio_total = len(audio_pending)
+                    _audio_done_count = 0
+                    print(f'[audio-embedding] 待处理: {_audio_total} 首')
+
+                    from services.embedding import encode_audio_batch
+                    results = encode_audio_batch(
+                        audio_pending,
+                        batch_size=8,
+                        progress_callback=lambda cur, tot: (
+                            setattr(sys.modules[__name__], '_audio_done_count', cur),
+                            print(f'[audio-embedding] 进度: {cur}/{tot}')
+                        )
+                    )
+                    db4 = get_db()
+                    cursor4 = db4.cursor()
+                    blob_audio_count = 0
+                    for song_id, emb in results:
+                        if emb is not None:
+                            blob = emb.astype(np.float32).tobytes()
+                            cursor4.execute(
+                                'UPDATE songs SET audio_embedding = ? WHERE id = ?',
+                                (blob, song_id)
+                            )
+                            blob_audio_count += 1
+                    db4.commit()
+                    cursor4.close()
+                    db4.close()
+                    _audio_done_count = blob_audio_count
+                    print(f'[audio-embedding] 完成: {blob_audio_count}/{_audio_total} 首')
+                except Exception as e:
+                    print(f'[audio-embedding] 音频 embedding 生成失败: {e}')
+                    import traceback
+                    traceback.print_exc()
+                finally:
+                    _generating_audio_embeddings = False
+                    # 两个 worker 都完成后才清除生成状态
+                    if not _generating_text_embeddings:
+                        from services.embedding import set_generation_active
+                        set_generation_active(False)
+
+        def _generate_async():
+            """并行启动文本（CPU）和音频（GPU）embedding，完成后计算情绪分数"""
+            # 并行启动两个线程
+            t_text = threading.Thread(target=_text_worker, daemon=True)
+            t_audio = threading.Thread(target=_audio_worker, daemon=True)
+            t_text.start()
+            t_audio.start()
+
+            # 等待两者都完成
+            t_text.join()
+            t_audio.join()
+
+            # 顺带计算情绪分数
+            try:
+                print('[mood] 开始计算情绪分数...')
+                with flask_app.app_context():
+                    from services.recommender import compute_all_mood_scores
+                    mood_db = get_db()
+                    mood_count = compute_all_mood_scores(mood_db)
+                    mood_db.close()
+                    print(f'[mood] 情绪分数计算完成: {mood_count} 条记录')
+            except Exception as e:
+                print(f'[mood] 情绪分数计算失败: {e}')
 
         threading.Thread(target=_generate_async, daemon=True).start()
 
@@ -331,7 +503,7 @@ def get_model_dir():
         db.close()
         return jsonify({
             'model_cache_dir': row['model_cache_dir'] if row else '',
-            'default_path': _get_fastembed_default_cache_dir(),
+            'default_path': _get_default_model_dir(),
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -358,7 +530,9 @@ def set_model_dir():
         cursor.close()
         db.close()
 
-        # 同步到内存（模型未加载时立即生效）
+        # 同步到 Config 和 embedding 模块（模型未加载时立即生效）
+        from config.config import Config
+        Config.AI_MODEL_CACHE_DIR = path or None
         from services.embedding import set_cache_dir, is_loaded
         set_cache_dir(path)
 
