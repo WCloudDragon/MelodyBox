@@ -323,6 +323,10 @@ def generate_embeddings():
             t_text.join()
             t_audio.join()
 
+            # 清空 embedding 缓存，确保新生成的 embedding 可见
+            from services.recommender import invalidate_embedding_cache
+            invalidate_embedding_cache()
+
             # 顺带计算情绪分数
             try:
                 print('[mood] 开始计算情绪分数...')

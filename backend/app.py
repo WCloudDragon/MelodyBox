@@ -340,10 +340,16 @@ def init_db(app):
             song_id INTEGER NOT NULL,
             mood TEXT NOT NULL,
             score REAL NOT NULL,
+            audio_score REAL DEFAULT NULL,
             PRIMARY KEY (song_id, mood),
             FOREIGN KEY (song_id) REFERENCES songs(id) ON DELETE CASCADE
         )
     ''')
+    # 兼容旧表：添加 audio_score 列
+    try:
+        cursor.execute('ALTER TABLE song_mood_scores ADD COLUMN audio_score REAL DEFAULT NULL')
+    except Exception:
+        pass  # 列已存在
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mood_scores ON song_mood_scores(mood, score DESC)')
 
     conn.commit()

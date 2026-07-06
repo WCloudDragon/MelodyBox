@@ -103,7 +103,7 @@
             <!-- 文本分析进度条 -->
             <div style="display: flex; flex-direction: column; gap: 3px;">
               <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-weight: 600; min-width: 56px;">文本分析</span>
+                <span style="font-weight: 600; min-width: 56px;">文本语义</span>
                 <div class="progress-bar-wrap" style="flex: 1;"><div class="progress-bar progress-bar--active" :style="{ width: e5DisplayPct + '%' }"></div></div>
                 <span style="font-size: 12px; color: var(--text-secondary); min-width: 80px; text-align: right;">{{ e5DisplayCount }}</span>
               </div>
@@ -112,7 +112,7 @@
             <!-- 音频分析进度条 -->
             <div style="display: flex; flex-direction: column; gap: 3px;">
               <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-weight: 600; min-width: 56px;">音频分析</span>
+                <span style="font-weight: 600; min-width: 56px;">音频特征</span>
                 <div class="progress-bar-wrap" style="flex: 1;"><div class="progress-bar progress-bar--active progress-bar--audio" :style="{ width: mertDisplayPct + '%' }"></div></div>
                 <span style="font-size: 12px; color: var(--text-secondary); min-width: 80px; text-align: right;">{{ mertDisplayCount }}</span>
               </div>
@@ -120,7 +120,7 @@
             </div>
           </div>
           <div v-else class="embedding-banner__content">
-            <span>AI 推荐需要先生成歌曲语义向量（每首约4KB）</span>
+            <span>AI 推荐需要先生成歌曲文本语义与音频特征向量（每首约4KB）</span>
             <el-button type="primary" size="small" @click="handleGenerateEmbeddings" :loading="false">一键生成向量</el-button>
           </div>
         </div>
@@ -148,7 +148,7 @@
         <!-- 加载中 -->
         <div v-if="aiStore.isLoading && aiStore.embeddingStatus.pending === 0" class="loading-hint">
           <el-icon class="is-loading"><Loading /></el-icon>
-          <span>正在分析你的音乐偏好...</span>
+          <span>正在生成推荐...</span>
         </div>
       </section>
 
@@ -266,7 +266,7 @@ const audioProgressPct = computed(() => {
 const textStatusText = computed(() => {
   const st = aiStore.embeddingStatus
   if (!st.text_processing && st.done === st.total && st.total > 0) return '✅ 已完成'
-  if (st.text_provider === 'CPU') return '正在分析文本语义 (CPU)...'
+  if (st.text_provider === 'CPU') return '正在分析文本语义 (CPU) ...'
   if (st.text_provider === 'GPU') return '⚡ 已切换 GPU 加速分析...'
   return ''
 })
@@ -274,7 +274,7 @@ const textStatusText = computed(() => {
 const audioStatusText = computed(() => {
   const st = aiStore.embeddingStatus
   if (!st.audio_processing && st.audio_done === st.audio_total && st.audio_total > 0) return '✅ 已完成'
-  if (st.audio_processing) return `正在分析音频特征 (GPU) — ${st.audio_done}/${st.audio_total}`
+  if (st.audio_processing) return '正在分析音频特征 (GPU)...'
   return ''
 })
 
@@ -339,7 +339,7 @@ const mertDisplayText = computed(() => {
     // 如果音频已经全部编码完成（上一轮已生成），直接显示已完成
     if (st.audio_done === st.audio_total && st.audio_total > 0)
       return '✅ 已完成'
-    return '正在加载音频分析引擎...'
+    return '正在准备音频分析引擎...'
   }
   return audioStatusText.value
 })
@@ -438,7 +438,7 @@ async function handleGenerateEmbeddings() {
   try {
     await modal.confirm({
       title: '确认生成 AI 向量',
-      message: `即将生成所有歌曲的语义向量（每首约4KB），首次运行需下载 multilingual-e5-large 模型（约 2.2GB）。\n\n模型存放路径: ${modelPath}\n\n当前曲库共 ${libraryStore.tracks.length} 首歌曲，生成后可启用AI智能推荐。`,
+      message: `即将为所有歌曲生成文本语义与音频特征向量，首次运行需下载两个 AI 模型（共约 2.3GB）。\n\n模型存放路径: ${modelPath}\n\n当前曲库共 ${libraryStore.tracks.length} 首歌曲，生成后可启用AI智能推荐。`,
       confirmText: '开始生成',
     })
   } catch {
