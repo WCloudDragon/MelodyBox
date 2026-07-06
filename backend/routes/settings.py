@@ -33,6 +33,10 @@ SNAKE_TO_CAMEL = {
     'desktop_lyrics_view_lines': 'desktopLyricsViewLines',
     'enable_dynamic_bg': 'enableDynamicBg',
     'enable_audio_rhythm': 'enableAudioRhythm',
+    'weather_private_key': 'weatherPrivateKey',
+    'weather_credential_id': 'weatherCredentialId',
+    'weather_project_id': 'weatherProjectId',
+    'weather_api_host': 'weatherApiHost',
 }
 
 CAMEL_TO_SNAKE = {v: k for k, v in SNAKE_TO_CAMEL.items()}
@@ -61,6 +65,10 @@ DEFAULT_SETTINGS = {
     'desktop_lyrics_view_lines': 2,
     'enable_dynamic_bg': True,
     'enable_audio_rhythm': True,
+    'weather_private_key': '',
+    'weather_credential_id': '',
+    'weather_project_id': '',
+    'weather_api_host': 'api.qweather.com',
 }
 
 # SQLite 中所有 settings 列（不含 id）

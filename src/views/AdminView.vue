@@ -212,6 +212,46 @@
           </div>
         </div>
       </section>
+
+      <!-- 天气 API 配置 -->
+      <section class="admin-card">
+        <div class="admin-card__header">
+          <div class="admin-card__title">
+            <span style="font-size: 18px;">🌤️</span>
+            <span>天气推荐配置</span>
+          </div>
+        </div>
+        <div class="admin-card__body">
+          <p class="hint">和风天气 Ed25519 JWT 认证配置（免费申请：<a href="https://dev.qweather.com" target="_blank" style="color: var(--accent-color);">dev.qweather.com</a>）</p>
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px;">
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span style="font-size: 12px; color: var(--text-tertiary); min-width: 50px;">私钥</span>
+              <el-input v-model="weatherPrivateKey" placeholder="Ed25519 私钥 PEM（-----BEGIN PRIVATE KEY-----...）" type="textarea" :rows="3" style="flex: 1;" />
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span style="font-size: 12px; color: var(--text-tertiary); min-width: 50px;">凭据ID</span>
+              <el-input v-model="weatherCredentialId" placeholder="Credential ID（kid）" style="flex: 1;" />
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span style="font-size: 12px; color: var(--text-tertiary); min-width: 50px;">项目ID</span>
+              <el-input v-model="weatherProjectId" placeholder="Project ID（sub）" style="flex: 1;" />
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span style="font-size: 12px; color: var(--text-tertiary); min-width: 50px;">Host</span>
+              <el-input v-model="weatherApiHost" placeholder="xxxxx.qweatherapi.com" style="flex: 1;" />
+              <el-button type="primary" :loading="weatherSaving" @click="saveWeatherApiKey" style="flex-shrink: 0;">
+                保存
+              </el-button>
+            </div>
+          </div>
+          <div v-if="weatherSaved" style="margin-top: 8px; font-size: 12px; color: var(--color-success, #22c55e);">
+            已保存，首页将显示天气推荐卡片
+          </div>
+          <div v-else-if="!weatherPrivateKey" style="margin-top: 8px; font-size: 12px; color: var(--text-tertiary);">
+            填写后首页将根据当前天气和位置推荐合适的音乐
+          </div>
+        </div>
+      </section>
     </div>
 
     <!-- 元数据编辑弹窗 -->
@@ -281,6 +321,14 @@ import { ElMessage } from 'element-plus'
 
 const libraryStore = useLibraryStore()
 const playlistStore = usePlaylistStore()
+
+// 天气 API 配置（Ed25519 JWT）
+const weatherPrivateKey = ref('')
+const weatherCredentialId = ref('')
+const weatherProjectId = ref('')
+const weatherApiHost = ref('api.qweather.com')
+const weatherSaving = ref(false)
+const weatherSaved = ref(false)
 
 const cloudSongs = ref([])
 const cloudLoading = ref(false)
@@ -628,9 +676,54 @@ async function loadStats() {
   } catch {}
 }
 
+// 天气 API Key 管理
+async function loadWeatherApiKey() {
+  try {
+    const res = await fetch('http://127.0.0.1:5000/api/settings')
+    if (res.ok) {
+      const data = await res.json()
+      weatherPrivateKey.value = data.weatherPrivateKey || ''
+      weatherCredentialId.value = data.weatherCredentialId || ''
+      weatherProjectId.value = data.weatherProjectId || ''
+      weatherApiHost.value = data.weatherApiHost || 'api.qweather.com'
+    }
+  } catch {}
+}
+
+async function saveWeatherApiKey() {
+  weatherSaving.value = true
+  weatherSaved.value = false
+  try {
+    const res = await fetch('http://127.0.0.1:5000/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ weatherPrivateKey: weatherPrivateKey.value || '', weatherCredentialId: weatherCredentialId.value || '', weatherProjectId: weatherProjectId.value || '', weatherApiHost: weatherApiHost.value || 'api.qweather.com' })
+    })
+    if (res.ok) {
+      weatherSaved.value = true
+      ElMessage.success('天气 API Key 已保存')
+      // 同步到本地 store 并重新加载天气
+      const { useSettingsStore } = await import('@/stores/settings')
+      const settingsStore = useSettingsStore()
+      settingsStore.weatherPrivateKey = weatherPrivateKey.value
+      settingsStore.weatherCredentialId = weatherCredentialId.value
+      settingsStore.weatherProjectId = weatherProjectId.value
+      settingsStore.weatherApiHost = weatherApiHost.value
+      const { useWeatherStore } = await import('@/stores/weather')
+      useWeatherStore().refreshWeather()
+      setTimeout(() => { weatherSaved.value = false }, 3000)
+    }
+  } catch {
+    ElMessage.error('保存失败')
+  } finally {
+    weatherSaving.value = false
+  }
+}
+
 onMounted(() => {
   loadCloudData()
   loadStats()
+  loadWeatherApiKey()
 })
 
 watch(() => playlistStore.playlists, () => {

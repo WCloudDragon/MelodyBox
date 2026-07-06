@@ -50,40 +50,6 @@
           <h3>
             <span class="section__icon">✨</span> AI 智能推荐
           </h3>
-          <el-button text type="primary" size="small" @click="refreshRecommendations" :loading="aiStore.isLoading">
-            刷新
-          </el-button>
-        </div>
-
-        <!-- 推荐模式选择 -->
-        <div v-if="aiStore.embeddingStatus.pending === 0" class="rec-tabs">
-          <button
-            v-for="tab in recTabs"
-            :key="tab.key"
-            class="rec-tab"
-            :class="{ 'rec-tab--active': activeRecTab === tab.key }"
-            @click="switchRecMode(tab.key)"
-          >{{ tab.label }}</button>
-        </div>
-
-        <!-- 模式子选项 -->
-        <div v-if="activeRecTab === 'language' && aiStore.embeddingStatus.pending === 0" class="rec-sub-row">
-          <button
-            v-for="l in availableLangs"
-            :key="l.code"
-            class="rec-chip"
-            :class="{ 'rec-chip--active': langFilter === l.code }"
-            @click="selectLang(l.code)"
-          >{{ l.label }}</button>
-        </div>
-        <div v-if="activeRecTab === 'mood' && aiStore.embeddingStatus.pending === 0" class="rec-sub-row">
-          <button
-            v-for="m in moods"
-            :key="m.key"
-            class="rec-chip"
-            :class="{ 'rec-chip--active': moodFilter === m.key }"
-            @click="selectMood(m.key)"
-          >{{ m.label }}</button>
         </div>
 
         <!-- embedding 未生成提示 -->
@@ -125,8 +91,95 @@
           </div>
         </div>
 
-        <!-- AI 推荐列表 -->
-        <div v-if="aiStore.embeddingStatus.pending === 0 && aiRecommendations.length > 0" class="tracks-grid">
+        <!-- 推荐入口卡片网格 -->
+        <div v-if="aiStore.embeddingStatus.pending === 0" class="rec-entries">
+          <!-- DEBUG: 天气状态 -->
+          <div v-if="true" style="grid-column: 1/-1; padding: 8px 12px; background: #1a1a2e; border-radius: 8px; font-size: 11px; font-family: monospace; color: #888; margin-bottom: 4px; display: flex; align-items: center; gap: 12px;">
+            <span>[DEBUG] isConfigured={{ weatherStore.isConfigured }} | error={{ weatherStore.error }} |
+            isLoading={{ weatherStore.isLoading }} | hasData={{ !!weatherStore.weatherData }} |
+            pending={{ aiStore.embeddingStatus.pending }}</span>
+            <el-button size="small" @click="weatherStore.refreshWeather()" :loading="weatherStore.isLoading" style="flex-shrink: 0;">🔄 刷新天气</el-button>
+          </div>
+          <!-- 天气推荐卡片（仅在天气可用时显示） -->
+          <div
+            v-if="weatherStore.isConfigured && !weatherStore.error"
+            class="rec-entry rec-entry--weather"
+            v-ripple
+            @click="$router.push(`/recommend?mode=weather&mood=${weatherStore.mood}`)"
+          >
+            <div class="rec-entry__bg" :style="weatherGradient">
+              <span class="rec-entry__weather-icon">{{ weatherStore.weatherIcon }}</span>
+            </div>
+            <div class="rec-entry__info">
+              <div class="rec-entry__title">{{ weatherStore.weatherText }} {{ weatherStore.temp }}°</div>
+              <div class="rec-entry__subtitle">{{ weatherStore.suggestion }}</div>
+            </div>
+            <div class="rec-entry__city">{{ weatherStore.city }}</div>
+          </div>
+
+          <!-- 每日推荐卡片 -->
+          <div
+            class="rec-entry rec-entry--daily"
+            v-ripple
+            @click="$router.push('/recommend?mode=comprehensive')"
+          >
+            <div class="rec-entry__icon-bg rec-entry__icon-bg--daily">
+              <span class="rec-entry__icon">✨</span>
+            </div>
+            <div class="rec-entry__info">
+              <div class="rec-entry__title">每日推荐</div>
+              <div class="rec-entry__subtitle">根据你的听歌偏好</div>
+            </div>
+          </div>
+
+          <!-- 冷门宝藏卡片 -->
+          <div
+            class="rec-entry rec-entry--gem"
+            v-ripple
+            @click="$router.push('/recommend?mode=hidden_gem')"
+          >
+            <div class="rec-entry__icon-bg rec-entry__icon-bg--gem">
+              <span class="rec-entry__icon">💎</span>
+            </div>
+            <div class="rec-entry__info">
+              <div class="rec-entry__title">冷门宝藏</div>
+              <div class="rec-entry__subtitle">被忽视的好歌</div>
+            </div>
+          </div>
+
+          <!-- 按情绪推荐卡片（前3种） -->
+          <div
+            v-for="m in moods.slice(0, 3)"
+            :key="m.key"
+            class="rec-entry rec-entry--mood"
+            v-ripple
+            @click="$router.push(`/recommend?mode=mood&mood=${m.key}`)"
+          >
+            <div class="rec-entry__icon-bg rec-entry__icon-bg--mood" :style="{ background: m.gradient }">
+              <span class="rec-entry__icon">{{ m.icon }}</span>
+            </div>
+            <div class="rec-entry__info">
+              <div class="rec-entry__title">{{ m.label }}</div>
+              <div class="rec-entry__subtitle">{{ m.sub }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 语言推荐入口（横排） -->
+        <div v-if="aiStore.embeddingStatus.pending === 0 && topLangs.length > 0" class="rec-lang-row">
+          <div
+            v-for="l in topLangs"
+            :key="l.code"
+            class="rec-lang-chip"
+            v-ripple
+            @click="$router.push(`/recommend?mode=language&lang=${l.code}`)"
+          >
+            <span class="rec-lang-chip__label">{{ l.label }}推荐</span>
+          </div>
+        </div>
+
+        <!-- AI 推荐（直接展示，兼容旧模式） -->
+        <div v-if="aiStore.embeddingStatus.pending === 0 && aiRecommendations.length > 0" class="tracks-grid" style="margin-top: 12px;">
           <div
             v-for="track in aiRecommendations"
             :key="track.song_id"
@@ -138,11 +191,6 @@
               {{ track.reason }}
             </div>
           </div>
-        </div>
-
-        <!-- 空状态 -->
-        <div v-if="aiStore.embeddingStatus.pending === 0 && aiRecommendations.length === 0 && !aiStore.isLoading" class="loading-hint">
-          <span>该分类暂无推荐结果</span>
         </div>
 
         <!-- 加载中 -->
@@ -369,25 +417,14 @@ const mertDisplayText = computed(() => {
 })
 
 // 推荐模式
-const recTabs = [
-  { key: 'comprehensive', label: '综合推荐' },
-  { key: 'language',      label: '按语言' },
-  { key: 'mood',          label: '按情绪' },
-  { key: 'hidden_gem',    label: '冷门宝藏' },
-]
-const activeRecTab = ref('comprehensive')
-const langFilter = ref(null)
-const moodFilter = ref(null)
-
-// 情绪选项
 const moods = [
-  { key: 'sad',       label: '😢 伤感' },
-  { key: 'energetic', label: '🔥 激昂' },
-  { key: 'calm',      label: '🌙 舒缓' },
-  { key: 'upbeat',    label: '💃 动感' },
-  { key: 'fresh',     label: '🍃 清新' },
-  { key: 'romantic',  label: '💕 浪漫' },
-  { key: 'inspire',   label: '🌟 励志' },
+  { key: 'sad',       label: '伤感', icon: '😢', sub: '雨天的陪伴', gradient: 'linear-gradient(135deg, #2c3e50, #4a6741)' },
+  { key: 'energetic', label: '激昂', icon: '🔥', sub: '点燃热情', gradient: 'linear-gradient(135deg, #e74c3c, #e67e22)' },
+  { key: 'calm',      label: '舒缓', icon: '🌙', sub: '安静的时光', gradient: 'linear-gradient(135deg, #2c3e50, #3498db)' },
+  { key: 'upbeat',    label: '动感', icon: '💃', sub: '跟着节奏摇摆', gradient: 'linear-gradient(135deg, #e91e63, #9c27b0)' },
+  { key: 'fresh',     label: '清新', icon: '🍃', sub: '自然的气息', gradient: 'linear-gradient(135deg, #27ae60, #2ecc71)' },
+  { key: 'romantic',  label: '浪漫', icon: '💕', sub: '甜蜜的旋律', gradient: 'linear-gradient(135deg, #e91e63, #f06292)' },
+  { key: 'inspire',   label: '励志', icon: '🌟', sub: '给你力量', gradient: 'linear-gradient(135deg, #ff9800, #ffc107)' },
 ]
 
 // 完整语言名称映射
@@ -448,6 +485,32 @@ const aiRecommendations = computed(() => {
   return aiStore.recommendations.slice(0, 12)
 })
 
+// 天气卡片渐变背景
+const weatherGradient = computed(() => {
+  const mood = weatherStore.mood
+  const gradients = {
+    sad: 'linear-gradient(135deg, #2c3e50, #4a6741)',
+    energetic: 'linear-gradient(135deg, #e74c3c, #e67e22)',
+    calm: 'linear-gradient(135deg, #2c3e50, #3498db)',
+    upbeat: 'linear-gradient(135deg, #e91e63, #9c27b0)',
+    fresh: 'linear-gradient(135deg, #27ae60, #2ecc71)',
+    romantic: 'linear-gradient(135deg, #e91e63, #f06292)',
+    inspire: 'linear-gradient(135deg, #ff9800, #ffc107)',
+  }
+  return gradients[mood] || 'linear-gradient(135deg, #6366f1, #818cf8)'
+})
+
+// 顶部语言推荐（取播放量最高的 3 种语言）
+const topLangs = computed(() => {
+  const langs = aiStore.embeddingStatus.langs || []
+  if (langs.length === 0) return []
+  const top = langs.slice(0, 3)
+  return top.map(code => ({
+    code,
+    label: LANG_NAME_MAP[code] || code,
+  }))
+})
+
 async function handleGenerateEmbeddings() {
   // 先获取当前模型路径配置
   let modelPath = '默认路径'
@@ -487,34 +550,6 @@ async function handleGenerateEmbeddings() {
       await aiStore.loadRecommendations()
     }
   }, 500)
-}
-
-async function switchRecMode(key) {
-  if (key === activeRecTab.value) return
-  activeRecTab.value = key
-  langFilter.value = null
-  moodFilter.value = null
-
-  if (key === 'comprehensive') {
-    await aiStore.setMode('comprehensive')
-  } else if (key === 'hidden_gem') {
-    await aiStore.setMode('hidden_gem')
-  }
-  // language / mood 等子选项选择后再触发请求
-}
-
-async function selectLang(code) {
-  langFilter.value = code
-  await aiStore.setMode('language', `lang=${code}`)
-}
-
-async function selectMood(key) {
-  moodFilter.value = key
-  await aiStore.setMode('mood', `mood=${key}`)
-}
-
-async function refreshRecommendations() {
-  await aiStore.loadRecommendations()
 }
 
 async function copyInstallCmd() {
@@ -677,35 +712,151 @@ watch(() => libraryStore.tracks.length, async (newLen) => {
   padding: 24px; color: var(--text-tertiary); font-size: 13px;
 }
 
-/* ---- 推荐模式 Tab ---- */
-.rec-tabs {
-  display: flex; gap: 4px; margin-bottom: 12px;
-  background: var(--bg-elevated); border-radius: 10px; padding: 4px;
+/* ---- 推荐入口卡片 ---- */
+.rec-entries {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
 }
-.rec-tab {
-  flex: 1; border: none; background: transparent; color: var(--text-secondary);
-  font-size: 13px; padding: 6px 12px; border-radius: 8px; cursor: pointer;
-  transition: all 0.2s; white-space: nowrap;
+.rec-entry {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  overflow: hidden;
+  min-height: 80px;
 }
-.rec-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
-.rec-tab--active {
-  color: #fff; background: var(--accent-color); font-weight: 600;
+.rec-entry:hover {
+  border-color: var(--border-color);
+  background: var(--bg-tertiary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
 }
-.rec-tab--active:hover { background: var(--accent-color); color: #fff; }
 
-/* ---- 模式子选项 Row ---- */
-.rec-sub-row {
-  display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px;
+/* 天气卡片特殊样式 */
+.rec-entry--weather {
+  grid-column: span 2;
+  background: none;
+  border: none;
+  padding: 0;
+  overflow: hidden;
 }
-.rec-chip {
-  border: 1px solid var(--border-color); background: var(--bg-elevated);
-  color: var(--text-secondary); font-size: 12px; padding: 5px 14px;
-  border-radius: 20px; cursor: pointer; transition: all 0.2s;
+.rec-entry--weather .rec-entry__bg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
 }
-.rec-chip:hover { border-color: var(--accent-color); color: var(--accent-color); }
-.rec-chip--active {
-  background: var(--accent-color); border-color: var(--accent-color);
-  color: #fff; font-weight: 600;
+.rec-entry--weather .rec-entry__weather-icon {
+  font-size: 48px;
+  opacity: 0.3;
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.rec-entry--weather .rec-entry__info {
+  position: relative;
+  z-index: 1;
+  color: #fff;
+}
+.rec-entry--weather .rec-entry__title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.rec-entry--weather .rec-entry__subtitle {
+  font-size: 13px;
+  opacity: 0.9;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.rec-entry--weather .rec-entry__city {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.7);
+  z-index: 1;
+}
+
+.rec-entry__icon-bg {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.rec-entry__icon-bg--daily {
+  background: linear-gradient(135deg, var(--accent-color), #818cf8);
+}
+.rec-entry__icon-bg--gem {
+  background: linear-gradient(135deg, #7c3aed, #a78bfa);
+}
+.rec-entry__icon-bg--mood {
+  /* background set via inline style */
+}
+.rec-entry__icon {
+  font-size: 24px;
+}
+.rec-entry__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.rec-entry__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rec-entry__subtitle {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- 语言推荐横排 ---- */
+.rec-lang-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.rec-lang-chip {
+  padding: 6px 16px;
+  border-radius: 20px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.rec-lang-chip:hover {
+  border-color: var(--accent-color);
+  background: var(--accent-bg);
+}
+.rec-lang-chip__label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.rec-lang-chip:hover .rec-lang-chip__label {
+  color: var(--accent-color);
 }
 
 /* 资源筛选（全部/本地/云端） */

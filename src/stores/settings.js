@@ -18,6 +18,10 @@ const SNAKE_TO_CAMEL = {
   desktop_lyrics_view_lines: 'desktopLyricsViewLines',
   enable_dynamic_bg: 'enableDynamicBg',
   enable_audio_rhythm: 'enableAudioRhythm',
+  weather_private_key: 'weatherPrivateKey',
+  weather_credential_id: 'weatherCredentialId',
+  weather_project_id: 'weatherProjectId',
+  weather_api_host: 'weatherApiHost',
 }
 const CAMEL_TO_SNAKE = Object.fromEntries(
   Object.entries(SNAKE_TO_CAMEL).map(([k, v]) => [v, k])
@@ -56,6 +60,12 @@ export const useSettingsStore = defineStore('settings', () => {
   const enableDynamicBg = ref(true)
   const enableAudioRhythm = ref(true)
 
+  // 天气 API 配置（Ed25519 JWT）
+  const weatherPrivateKey = ref('')
+  const weatherCredentialId = ref('')
+  const weatherProjectId = ref('')
+  const weatherApiHost = ref('api.qweather.com')
+
   // 调试模式（前端 only，不持久化到后端）
   const debugMode = ref(false)
 
@@ -87,6 +97,10 @@ export const useSettingsStore = defineStore('settings', () => {
       desktopLyricsViewLines.value = data.desktopLyricsViewLines ?? 2
       enableDynamicBg.value = data.enableDynamicBg ?? true
       enableAudioRhythm.value = data.enableAudioRhythm ?? true
+      weatherPrivateKey.value = data.weatherPrivateKey ?? ''
+      weatherCredentialId.value = data.weatherCredentialId ?? ''
+      weatherProjectId.value = data.weatherProjectId ?? ''
+      weatherApiHost.value = data.weatherApiHost ?? 'api.qweather.com'
       _loaded = true
     } catch {}
   }
@@ -118,6 +132,10 @@ export const useSettingsStore = defineStore('settings', () => {
         body.desktopLyricsViewLines = desktopLyricsViewLines.value
         body.enableDynamicBg = enableDynamicBg.value ? 1 : 0
         body.enableAudioRhythm = enableAudioRhythm.value ? 1 : 0
+        body.weatherPrivateKey = weatherPrivateKey.value || ''
+        body.weatherCredentialId = weatherCredentialId.value || ''
+        body.weatherProjectId = weatherProjectId.value || ''
+        body.weatherApiHost = weatherApiHost.value || 'api.qweather.com'
         await fetch(API_BASE, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -153,6 +171,10 @@ export const useSettingsStore = defineStore('settings', () => {
     desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale, desktopLyricsViewLines,
     enableDynamicBg,
     enableAudioRhythm,
+    weatherPrivateKey,
+    weatherCredentialId,
+    weatherProjectId,
+    weatherApiHost,
     debugMode,
     loadSettings, saveSettings, saveSettingsImmediate, resetLyricsDefaults
   }
