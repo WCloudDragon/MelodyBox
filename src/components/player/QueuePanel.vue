@@ -37,7 +37,12 @@
                     <el-icon size="16"><Headset /></el-icon>
                   </div>
                   <div class="queue-item__info">
-                    <div class="queue-item__title">{{ track.title }}</div>
+                    <div class="queue-item__title">
+                      <span v-if="track.source === 'cloud'" class="queue-item__src-tag" title="云端歌曲">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>
+                      </span>
+                      {{ track.title }}
+                    </div>
                     <div class="queue-item__artist">{{ track.artist.split('/').map(s => s.trim()).join(' / ') }}</div>
                   </div>
                   <span class="queue-item__time">{{ formatDuration(track.duration) }}</span>
@@ -190,6 +195,10 @@ function onPanelEnter() {
 .queue-item__info { flex: 1; min-width: 0; }
 .queue-item__title {
   font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: flex; align-items: center; gap: 4px;
+}
+.queue-item__src-tag {
+  color: var(--text-tertiary); flex-shrink: 0; display: flex;
 }
 .queue-item__artist {
   font-size: 11px; color: var(--text-tertiary);

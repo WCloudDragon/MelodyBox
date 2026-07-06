@@ -80,8 +80,11 @@ function stopFlask() {
   }
 }
 
+// 本地数据目录：%LOCALAPPDATA%/melodybox/（封面、缩略图等不会被系统清理）
+const DATA_DIR = path.join(process.env.LOCALAPPDATA, 'melodybox')
+
 // 封面缓存目录
-const coverDir = path.join(os.tmpdir(), 'melodybox-covers')
+const coverDir = path.join(DATA_DIR, 'covers')
 if (!fs.existsSync(coverDir)) fs.mkdirSync(coverDir, { recursive: true })
 
 // ==================== 本地 HTTP 音频服务器 ====================
@@ -533,6 +536,29 @@ ipcMain.handle('dialog:selectSingleFolder', async () => {
   return result.filePaths[0]
 })
 
+// 选择音频文件（多选，用于云端曲库管理）
+ipcMain.handle('dialog:selectAudioFiles', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '选择音频文件',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: '音频文件', extensions: ['mp3', 'flac', 'wav', 'ogg', 'aac', 'm4a', 'wma', 'opus'] },
+      { name: '所有文件', extensions: ['*'] }
+    ]
+  })
+  return result.canceled ? [] : result.filePaths
+})
+
+// 选择文件夹（用于云端曲库管理，复用已有 selectFolder，这里加一个语义化别名）
+ipcMain.handle('dialog:selectFolderForCloud', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '选择音乐文件夹',
+    properties: ['openDirectory']
+  })
+  if (result.canceled || result.filePaths.length === 0) return null
+  return result.filePaths[0]
+})
+
 // ==================== 文件路径转音频 URL ====================
 
 // 将本地文件路径转换为 HTTP 音频流 URL
@@ -692,7 +718,7 @@ systemPreferences.on('accent-color-changed', async (_event, _newColor) => {
 
 app.whenReady().then(async () => {
   // 注册 thumb:// 协议 — 绕过 Flask，Chromium 直接读本地缩略图
-  const THUMBS_BASE = path.join(os.tmpdir(), 'melodybox-thumbs')
+  const THUMBS_BASE = path.join(DATA_DIR, 'thumbs')
   protocol.handle('thumb', (request) => {
     try {
       const u = new URL(request.url)

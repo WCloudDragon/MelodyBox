@@ -24,7 +24,7 @@
       <div class="stats-row">
         <div class="stat-card" v-ripple @click="$router.push('/library')">
           <el-icon size="22"><Headset /></el-icon>
-          <div class="stat-card__value">{{ libraryStore.tracks.length }}</div>
+          <div class="stat-card__value">{{ libraryStore.allTracks.length }}</div>
           <div class="stat-card__label">首歌曲</div>
         </div>
         <div class="stat-card" v-ripple @click="$router.push('/library')">
@@ -156,12 +156,24 @@
       <section class="section">
         <div class="section__header">
           <h3>音乐库</h3>
-          <el-button text type="primary" @click="$router.push('/library')">查看全部</el-button>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <!-- 筛选：全部 / 本地 / 云端 -->
+            <div class="src-filter">
+              <button
+                v-for="s in sourceFilters"
+                :key="s.key"
+                class="src-chip"
+                :class="{ 'src-chip--active': libraryStore.sourceFilter === s.key }"
+                @click="libraryStore.setSourceFilter(s.key)"
+              >{{ s.label }}</button>
+            </div>
+            <el-button text type="primary" @click="$router.push('/library')">查看全部</el-button>
+          </div>
         </div>
         <div class="tracks-grid">
           <MusicCard
             v-for="track in recentTracks"
-            :key="track.path"
+            :key="track.source + ':' + track.path"
             :track="track"
             @play="playTrack(track)"
             @click="playTrack(track)"
@@ -202,6 +214,7 @@ import { computed, watch, onBeforeUnmount, ref } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
 import { useAiStore } from '@/stores/ai'
+import { useWeatherStore } from '@/stores/weather'
 import { formatTotalDuration } from '@/utils/format'
 import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } from '@/utils/scanNotify'
 import MusicCard from '@/components/music/MusicCard.vue'
@@ -211,7 +224,15 @@ import { useModal } from '@/composables/useModal'
 const libraryStore = useLibraryStore()
 const playerStore = usePlayerStore()
 const aiStore = useAiStore()
+const weatherStore = useWeatherStore()
 const modal = useModal()
+
+// 资源筛选
+const sourceFilters = [
+  { key: 'all', label: '全部' },
+  { key: 'local', label: '本地' },
+  { key: 'cloud', label: '云端' },
+]
 
 // 扫描进度通知
 watch(() => libraryStore.isScanning, (scanning) => {
@@ -220,15 +241,18 @@ watch(() => libraryStore.isScanning, (scanning) => {
 watch(() => libraryStore.scanProgress, (p) => {
   if (p.total > 0) updateScanNotify(p.current, p.total, p.path)
   if (!p.scanning) {
-    closeScanNotify(p, () => libraryStore.loadFromApi())
+    closeScanNotify(p, async () => {
+      await libraryStore.loadFromApi()
+      libraryStore.loadCloudSongs()
+    })
   }
 })
 onBeforeUnmount(clearScanNotify)
 
 useScrollMemory('home', () => document.querySelector('.main-content'))
 
-const hasMusic = computed(() => libraryStore.tracks.length > 0)
-const recentTracks = computed(() => libraryStore.tracks.slice(0, 12))
+const hasMusic = computed(() => libraryStore.tracks.length > 0 || libraryStore.cloudTracks.length > 0)
+const recentTracks = computed(() => libraryStore.allTracks.slice(0, 12))
 const recentAlbums = computed(() => libraryStore.albums.slice(0, 8))
 
 async function handleImport() {
@@ -241,9 +265,9 @@ async function handleImport() {
 }
 
 function playTrack(track) {
-  const idx = libraryStore.tracks.findIndex(t => t.path === track.path)
+  const idx = libraryStore.allTracks.findIndex(t => t.path === track.path)
   if (idx !== -1) {
-    playerStore.playAll(libraryStore.tracks, idx)
+    playerStore.playAll(libraryStore.allTracks, idx)
   }
 }
 
@@ -504,10 +528,15 @@ async function copyInstallCmd() {
 }
 
 function playAiTrack(track) {
-  const allTracks = libraryStore.tracks
+  // 优先在本地曲库查找（指纹去重后本地优先）
+  const allTracks = libraryStore.allTracks
   if (allTracks.length === 0) return
-  // 在曲库中查找对应的歌曲
-  const idx = allTracks.findIndex(t => t.path === track.file_path)
+  // 先用 file_path 精确匹配
+  let idx = allTracks.findIndex(t => t.path === track.file_path)
+  // 回退：用 song_id 匹配
+  if (idx === -1) {
+    idx = allTracks.findIndex(t => t.id === track.song_id)
+  }
   if (idx !== -1) {
     playerStore.playAll(allTracks, idx)
   }
@@ -677,5 +706,29 @@ watch(() => libraryStore.tracks.length, async (newLen) => {
 .rec-chip--active {
   background: var(--accent-color); border-color: var(--accent-color);
   color: #fff; font-weight: 600;
+}
+
+/* 资源筛选（全部/本地/云端） */
+.src-filter {
+  display: flex; gap: 4px;
+}
+.src-chip {
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.src-chip:hover {
+  background: var(--hover-bg);
+}
+.src-chip--active {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: #fff;
 }
 </style>

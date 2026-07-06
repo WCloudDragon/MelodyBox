@@ -190,6 +190,20 @@ def profile():
     return jsonify(_user_to_dict(user))
 
 
+@auth_bp.route('/users', methods=['GET'])
+@token_required
+def list_users():
+    """管理员获取所有用户列表（用于管理后台统计）"""
+    if request.user_role != 'admin':
+        return jsonify({'error': '仅管理员可查看'}), 403
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('SELECT id, username, email, role, membership_type, created_at FROM users ORDER BY id')
+    users = [dict(row) for row in cursor.fetchall()]
+    cursor.close(); db.close()
+    return jsonify({'users': users, 'total': len(users)})
+
+
 @auth_bp.route('/password', methods=['PUT'])
 @cross_origin()
 @token_required

@@ -89,6 +89,7 @@
   --text-secondary: #c0c0c0;
   --text-tertiary: #777;
   --accent-color: #6366f1;
+  --accent-color-rgb: 99, 102, 241;
   --accent-bg: rgba(99, 102, 241, 0.12);
   --hover-bg: rgba(255, 255, 255, 0.05);
   --hover-bg-strong: rgba(255, 255, 255, 0.1);

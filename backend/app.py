@@ -262,6 +262,7 @@ def init_db(app):
         'ALTER TABLE settings ADD COLUMN desktop_lyrics_view_lines INTEGER DEFAULT 2',
         'ALTER TABLE settings ADD COLUMN enable_dynamic_bg INTEGER DEFAULT 1',
         'ALTER TABLE settings ADD COLUMN enable_audio_rhythm INTEGER DEFAULT 1',
+        "ALTER TABLE settings ADD COLUMN weather_api_key TEXT DEFAULT ''",
     ]:
         try: conn.executescript(mig)
         except sqlite3.OperationalError: pass
@@ -352,6 +353,102 @@ def init_db(app):
         pass  # 列已存在
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mood_scores ON song_mood_scores(mood, score DESC)')
 
+    # ========== 18. cloud_songs（管理员云端曲库）==========
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS cloud_songs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            artist TEXT DEFAULT '',
+            album TEXT DEFAULT '',
+            file_path TEXT NOT NULL UNIQUE,
+            cover_url TEXT DEFAULT '',
+            lyrics TEXT DEFAULT '',
+            year INTEGER DEFAULT 0,
+            genre TEXT DEFAULT '',
+            duration REAL DEFAULT 0,
+            bitrate INTEGER DEFAULT 0,
+            sample_rate INTEGER DEFAULT 0,
+            bit_depth INTEGER DEFAULT 0,
+            quality TEXT DEFAULT '',
+            file_size INTEGER DEFAULT 0,
+            file_mtime REAL DEFAULT 0,
+            fingerprint TEXT DEFAULT '',
+            lang TEXT DEFAULT '',
+            embedding BLOB DEFAULT NULL,
+            audio_embedding BLOB DEFAULT NULL,
+            created_at TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_cloud_fingerprint ON cloud_songs(fingerprint)')
+
+    # cloud_songs 状态列（online / offline）
+    try:
+        cursor.execute("ALTER TABLE cloud_songs ADD COLUMN status TEXT DEFAULT 'online' CHECK(status IN ('online','offline'))")
+    except Exception:
+        pass  # 列已存在
+
+    # 兼容旧表（早期版本可能缺少这些列）
+    for col_def in [
+        "cover_url TEXT DEFAULT ''",
+        "lyrics TEXT DEFAULT ''",
+        "bit_depth INTEGER DEFAULT 0",
+        "quality TEXT DEFAULT ''",
+        "file_mtime REAL DEFAULT 0",
+    ]:
+        try:
+            col_name = col_def.split()[0]
+            cursor.execute(f'ALTER TABLE cloud_songs ADD COLUMN {col_def}')
+            print(f'[db] cloud_songs 新增列: {col_name}')
+        except Exception:
+            pass  # 列已存在
+    # 修复已有行的 NULL 状态
+    cursor.execute("UPDATE cloud_songs SET status = 'online' WHERE status IS NULL")
+
+    # ========== cloud_metadata ==========
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS cloud_metadata (
+            cloud_song_id INTEGER PRIMARY KEY REFERENCES cloud_songs(id) ON DELETE CASCADE,
+            title TEXT DEFAULT NULL,
+            artist TEXT DEFAULT NULL,
+            album TEXT DEFAULT NULL,
+            genre TEXT DEFAULT NULL,
+            cover_url TEXT DEFAULT NULL,
+            lyrics TEXT DEFAULT NULL,
+            updated_at TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+    # 兼容旧表：确保列存在
+    for col in ['title', 'artist', 'album', 'genre', 'cover_url', 'lyrics']:
+        try:
+            cursor.execute(f'ALTER TABLE cloud_metadata ADD COLUMN {col} TEXT DEFAULT NULL')
+        except Exception:
+            pass
+
+    # all_songs VIEW：统一本地 + 云端歌曲（仅上架 + COALESCE 覆盖元数据）
+    cursor.execute('DROP VIEW IF EXISTS all_songs')
+    cursor.execute('''
+        CREATE VIEW all_songs AS
+        SELECT id, title, artist, album, file_path, cover_url, lyrics,
+               genre, year, duration, lang, fingerprint, embedding, audio_embedding,
+               'local' AS source
+        FROM songs
+        UNION ALL
+        SELECT cs.id,
+               COALESCE(cm.title, cs.title) AS title,
+               COALESCE(cm.artist, cs.artist) AS artist,
+               COALESCE(cm.album, cs.album) AS album,
+               cs.file_path,
+               COALESCE(cm.cover_url, cs.cover_url) AS cover_url,
+               COALESCE(cm.lyrics, cs.lyrics) AS lyrics,
+               COALESCE(cm.genre, cs.genre) AS genre,
+               cs.year, cs.duration, cs.lang, cs.fingerprint,
+               cs.embedding, cs.audio_embedding,
+               'cloud' AS source
+        FROM cloud_songs cs
+        LEFT JOIN cloud_metadata cm ON cm.cloud_song_id = cs.id
+        WHERE cs.status = 'online'
+    ''')
+
     conn.commit()
     cursor.close()
     conn.close()
@@ -372,7 +469,7 @@ def init_db(app):
     cur2.close()
     conn2.close()
 
-    print(f'[db] SQLite 初始化完成 (15 张表): {db_path}')
+    print(f'[db] SQLite 初始化完成 (18 张表 + all_songs VIEW): {db_path}')
 
 
 def get_db(app):
@@ -421,6 +518,8 @@ def create_app():
     from routes.settings import settings_bp
     from routes.folders import folders_bp
     from routes.ai import ai_bp
+    from routes.cloud import cloud_bp
+    from routes.weather import weather_bp
 
     app.register_blueprint(music_bp)
     app.register_blueprint(auth_bp)
@@ -429,6 +528,8 @@ def create_app():
     app.register_blueprint(settings_bp)
     app.register_blueprint(folders_bp)
     app.register_blueprint(ai_bp)
+    app.register_blueprint(cloud_bp)
+    app.register_blueprint(weather_bp)
 
     @app.route('/api/health')
     def health():

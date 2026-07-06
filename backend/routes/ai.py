@@ -46,9 +46,16 @@ def embedding_status():
         db = get_db()
         cursor = db.cursor()
         cursor.execute('SELECT COUNT(*) as total FROM songs')
-        total = cursor.fetchone()['total']
+        local_total = cursor.fetchone()['total']
+        cursor.execute('SELECT COUNT(*) as total FROM cloud_songs')
+        cloud_total = cursor.fetchone()['total']
+        total = local_total + cloud_total
+
         cursor.execute('SELECT COUNT(*) as done FROM songs WHERE embedding IS NOT NULL')
-        done = cursor.fetchone()['done']
+        local_done = cursor.fetchone()['done']
+        cursor.execute('SELECT COUNT(*) as done FROM cloud_songs WHERE embedding IS NOT NULL')
+        cloud_done = cursor.fetchone()['done']
+        done = local_done + cloud_done
 
         # 可用的语言列表（在 close 前查询）
         cursor.execute('''
@@ -65,7 +72,10 @@ def embedding_status():
 
         # 音频 embedding 统计（处理中用实时计数，完成后用数据库计数）
         cursor.execute('SELECT COUNT(*) as done FROM songs WHERE audio_embedding IS NOT NULL')
-        audio_done_db = cursor.fetchone()['done']
+        local_audio_done = cursor.fetchone()['done']
+        cursor.execute('SELECT COUNT(*) as done FROM cloud_songs WHERE audio_embedding IS NOT NULL')
+        cloud_audio_done = cursor.fetchone()['done']
+        audio_done_db = local_audio_done + cloud_audio_done
         audio_processing = _generating_audio_embeddings
         text_processing = _generating_text_embeddings
         # 处理中用实时进度，完成后用数据库实际数量
@@ -141,12 +151,17 @@ def generate_embeddings():
         db = get_db()
         cursor = db.cursor()
 
-        # 查询尚未生成 embedding 的歌曲
+        # 查询尚未生成 embedding 的歌曲（本地 + 云端）
         cursor.execute(
-            'SELECT id, title, artist, genre, year, lyrics, lang '
+            'SELECT id, title, artist, genre, year, lyrics, lang, "local" AS source '
             'FROM songs WHERE embedding IS NULL'
         )
         pending_songs = [dict(row) for row in cursor.fetchall()]
+        cursor.execute(
+            'SELECT id, title, artist, genre, year, lyrics, lang, "cloud" AS source '
+            'FROM cloud_songs WHERE embedding IS NULL'
+        )
+        pending_songs.extend([dict(row) for row in cursor.fetchall()])
         cursor.close()
         db.close()
 
@@ -226,8 +241,9 @@ def generate_embeddings():
                         embeddings = encode_songs_batch(batch, progress_callback=None, use_cpu=use_cpu)
                         for song, emb in zip(batch, embeddings):
                             blob = embedding_to_blob(emb)
+                            table = 'cloud_songs' if song.get('source') == 'cloud' else 'songs'
                             cursor2.execute(
-                                'UPDATE songs SET embedding = ? WHERE id = ?',
+                                f'UPDATE {table} SET embedding = ? WHERE id = ?',
                                 (blob, song['id'])
                             )
                         db2.commit()
@@ -261,9 +277,13 @@ def generate_embeddings():
                     db3 = get_db()
                     cursor3 = db3.cursor()
                     cursor3.execute(
-                        'SELECT id, file_path FROM songs WHERE audio_embedding IS NULL'
+                        'SELECT id, file_path, "local" AS source FROM songs WHERE audio_embedding IS NULL'
                     )
-                    audio_pending = [(row['id'], row['file_path']) for row in cursor3.fetchall()]
+                    audio_pending = [(row['id'], row['file_path'], row['source']) for row in cursor3.fetchall()]
+                    cursor3.execute(
+                        'SELECT id, file_path, "cloud" AS source FROM cloud_songs WHERE audio_embedding IS NULL'
+                    )
+                    audio_pending.extend([(row['id'], row['file_path'], row['source']) for row in cursor3.fetchall()])
                     cursor3.close()
                     db3.close()
 
@@ -276,8 +296,11 @@ def generate_embeddings():
                     print(f'[audio-embedding] 待处理: {_audio_total} 首')
 
                     from services.embedding import encode_audio_batch
+                    # 构建 (song_id, source) 映射，传递给 encode 函数时只传 (song_id, file_path)
+                    audio_source_map = {sid: src for sid, _, src in audio_pending}
+                    audio_pairs = [(sid, fp) for sid, fp, _ in audio_pending]
                     results = encode_audio_batch(
-                        audio_pending,
+                        audio_pairs,
                         batch_size=8,
                         progress_callback=lambda cur, tot: (
                             setattr(sys.modules[__name__], '_audio_done_count', cur),
@@ -290,8 +313,9 @@ def generate_embeddings():
                     for song_id, emb in results:
                         if emb is not None:
                             blob = emb.astype(np.float32).tobytes()
+                            table = 'cloud_songs' if audio_source_map.get(song_id) == 'cloud' else 'songs'
                             cursor4.execute(
-                                'UPDATE songs SET audio_embedding = ? WHERE id = ?',
+                                f'UPDATE {table} SET audio_embedding = ? WHERE id = ?',
                                 (blob, song_id)
                             )
                             blob_audio_count += 1

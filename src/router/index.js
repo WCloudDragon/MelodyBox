@@ -50,6 +50,12 @@ const routes = [
     meta: { title: '设置' }
   },
   {
+    path: '/admin',
+    name: 'admin',
+    component: () => import('@/views/AdminView.vue'),
+    meta: { title: '管理后台' }
+  },
+  {
     path: '/login',
     name: 'login',
     component: () => import('@/views/LoginView.vue'),
@@ -84,6 +90,12 @@ const routes = [
     name: 'trackInfo',
     component: () => import('@/views/TrackInfoView.vue'),
     meta: { title: '音轨信息' }
+  },
+  {
+    path: '/recommend',
+    name: 'recommend',
+    component: () => import('@/views/RecommendPlaylistView.vue'),
+    meta: { title: '推荐' }
   },
   {
     path: '/desktop-lyrics',

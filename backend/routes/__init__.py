@@ -20,6 +20,7 @@ def get_db():
 
 def row_to_song(row):
     """将 sqlite3.Row 转换为前端期望的格式"""
+    keys = row.keys()
     return {
         'path': row['file_path'],
         'name': os.path.basename(row['file_path']),
@@ -35,12 +36,13 @@ def row_to_song(row):
         'quality': row['quality'] or '',
         'cover': row['cover_url'] or None,
         'lyrics': row['lyrics'] or '',
-        'url': None,  # 由前端协议层填充
+        'url': None,
         'file_size': row['file_size'],
         'file_mtime': row['file_mtime'],
-        'disc_number': row['disc_number'],
-        'track_number': row['track_number'],
+        'disc_number': row['disc_number'] if 'disc_number' in keys else 0,
+        'track_number': row['track_number'] if 'track_number' in keys else 0,
         'lang': row['lang'] or '',
+        'fingerprint': row['fingerprint'] if 'fingerprint' in keys else '',
     }
 
 
@@ -48,7 +50,7 @@ def row_to_song(row):
 
 @music_bp.route('/songs')
 def get_songs():
-    """分页获取歌曲列表，支持搜索、排序、筛选"""
+    """分页获取歌曲列表，支持搜索、排序、筛选（含云端歌曲）"""
     page = request.args.get('page', 1, type=int)
     page_size = request.args.get('page_size', 50, type=int)
     search = request.args.get('search', '').strip()
@@ -56,6 +58,7 @@ def get_songs():
     sort_order = request.args.get('sort_order', 'asc')
     genre = request.args.get('genre', '').strip()
     artist = request.args.get('artist', '').strip()
+    source = request.args.get('source', 'all').strip()  # all / local / cloud
 
     if page_size > current_app.config['MAX_PAGE_SIZE']:
         page_size = current_app.config['MAX_PAGE_SIZE']
@@ -91,24 +94,73 @@ def get_songs():
 
     where_sql = ' AND '.join(where_clauses) if where_clauses else '1=1'
 
+    # 选择数据源
+    source_map = {
+        'all': 'all_songs',
+        'local': 'songs',
+        'cloud': 'cloud_songs',
+    }
+    table = source_map.get(source, 'all_songs')
+
     try:
         db = get_db()
         cursor = db.cursor()
 
         # 总数
-        cursor.execute(f'SELECT COUNT(*) as total FROM songs WHERE {where_sql}', params)
+        cursor.execute(f'SELECT COUNT(*) as total FROM {table} WHERE {where_sql}', params)
         total = cursor.fetchone()['total']
 
         # 分页数据
         cursor.execute(
-            f'SELECT * FROM songs WHERE {where_sql} ORDER BY {sort_col} {sort_dir} LIMIT ? OFFSET ?',
+            f'SELECT * FROM {table} WHERE {where_sql} ORDER BY {sort_col} {sort_dir} LIMIT ? OFFSET ?',
             params + [page_size, offset]
         )
         rows = cursor.fetchall()
-        cursor.close()
-        db.close()
 
         songs = [row_to_song(r) for r in rows]
+
+        # 为本地歌曲标注 source 和云端副本信息（在关闭 db 之前查询）
+        if source in ('all', 'local'):
+            local_fps = [r['fingerprint'] for r in rows if r['fingerprint'] and r['fingerprint'].strip()]
+            cloud_meta_map = {}
+            if local_fps:
+                placeholders = ','.join(['?' for _ in local_fps])
+                cursor.execute(f'''
+                    SELECT cs.fingerprint,
+                           COALESCE(cm.title, cs.title) AS cloud_title,
+                           COALESCE(cm.artist, cs.artist) AS cloud_artist,
+                           COALESCE(cm.album, cs.album) AS cloud_album,
+                           COALESCE(cm.genre, cs.genre) AS cloud_genre,
+                           COALESCE(cm.cover_url, cs.cover_url) AS cloud_cover_url,
+                           COALESCE(cm.lyrics, cs.lyrics) AS cloud_lyrics
+                    FROM cloud_songs cs
+                    LEFT JOIN cloud_metadata cm ON cm.cloud_song_id = cs.id
+                    WHERE cs.fingerprint IN ({placeholders}) AND cs.status = 'online'
+                ''', local_fps)
+                for cr in cursor.fetchall():
+                    cloud_meta_map[cr['fingerprint']] = {
+                        'title': cr['cloud_title'],
+                        'artist': cr['cloud_artist'],
+                        'album': cr['cloud_album'],
+                        'genre': cr['cloud_genre'],
+                        'cover_url': cr['cloud_cover_url'],
+                        'lyrics': cr['cloud_lyrics'],
+                    }
+
+            for i, song in enumerate(songs):
+                song['source'] = 'local'
+                fp = rows[i]['fingerprint']
+                if fp and fp.strip() in cloud_meta_map:
+                    song['cloud_meta'] = cloud_meta_map[fp.strip()]
+
+        # 为云端歌曲标注 source
+        if source in ('all', 'cloud'):
+            for i, r in enumerate(rows):
+                src = getattr(r, 'source', 'local') if hasattr(r, 'source') else 'local'
+                songs[i]['source'] = src
+
+        cursor.close()
+        db.close()
 
         return jsonify({
             'songs': songs,
@@ -340,8 +392,8 @@ def serve_cover():
         resp.cache_control.public = True
         return resp
 
-    # 缩略图缓存目录：%TEMP%/melodybox-thumbs/{N}/
-    thumb_dir = os.path.join(os.path.dirname(cover_dir), 'melodybox-thumbs', str(thumb))
+    # 缩略图缓存目录：%LOCALAPPDATA%/melodybox/thumbs/{N}/
+    thumb_dir = os.path.join(os.path.dirname(cover_dir), 'thumbs', str(thumb))
     os.makedirs(thumb_dir, exist_ok=True)
     thumb_path = os.path.join(thumb_dir, os.path.basename(path))
 

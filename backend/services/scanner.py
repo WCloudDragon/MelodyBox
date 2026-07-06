@@ -2,6 +2,22 @@ import os
 import hashlib
 import re
 from concurrent.futures import ThreadPoolExecutor
+
+
+def _get_cover_dir():
+    """封面缓存目录：%LOCALAPPDATA%/melodybox/covers/"""
+    base = os.environ.get('LOCALAPPDATA',
+                          os.path.join(os.path.expanduser('~'), 'AppData', 'Local'))
+    return os.path.join(base, 'melodybox', 'covers')
+
+
+def _get_thumbs_dir():
+    """缩略图缓存目录：%LOCALAPPDATA%/melodybox/thumbs/"""
+    base = os.environ.get('LOCALAPPDATA',
+                          os.path.join(os.path.expanduser('~'), 'AppData', 'Local'))
+    return os.path.join(base, 'melodybox', 'thumbs')
+
+
 from mutagen import File as MutagenFile
 from mutagen.mp3 import MP3
 from mutagen.flac import FLAC
@@ -107,7 +123,7 @@ def scan_directory(dir_path):
 
 def extract_cover(mutagen_file, file_path):
     """提取封面图片保存到临时目录，返回路径"""
-    cover_dir = os.path.join(os.environ.get('TEMP', '/tmp'), 'melodybox-covers')
+    cover_dir = _get_cover_dir()
     os.makedirs(cover_dir, exist_ok=True)
     picture_data = None
     ext = '.jpg'
@@ -160,7 +176,7 @@ def pre_generate_thumbs_batch(cover_paths, max_workers=4):
         return
 
     from threading import Lock
-    cover_dir = os.environ.get('TEMP', '/tmp')
+    thumbs_base = _get_thumbs_dir()
     sizes = [72, 80, 200, 280, 292, 332]
     total = len(cover_paths)
     done = [0]
@@ -175,7 +191,7 @@ def pre_generate_thumbs_batch(cover_paths, max_workers=4):
             from PIL import Image
             img = Image.open(cover_path)
             for size in sizes:
-                thumb_dir = os.path.join(cover_dir, 'melodybox-thumbs', str(size))
+                thumb_dir = os.path.join(thumbs_base, str(size))
                 os.makedirs(thumb_dir, exist_ok=True)
                 thumb_path = os.path.join(thumb_dir, basename)
                 if os.path.exists(thumb_path):

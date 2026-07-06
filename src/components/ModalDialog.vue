@@ -26,7 +26,8 @@
         </template>
 
         <template v-else>
-          <p class="modal-message">{{ message }}</p>
+          <p class="modal-message" v-if="message">{{ message }}</p>
+          <slot />
         </template>
 
         <div class="modal-footer">

@@ -16,6 +16,7 @@ from services.embedding import blob_to_embedding, get_model_dim, get_audio_model
 # 避免每次推荐请求都全量反序列化 BLOB（1000 首歌 = 4MB numpy 转换）
 _embedding_cache = {}          # {song_id: numpy_array}
 _audio_embedding_cache = {}    # {song_id: numpy_array}
+_fingerprint_to_local_id = {}
 
 
 def invalidate_embedding_cache():
@@ -153,18 +154,43 @@ def _load_all_songs(db):
     cursor = db.cursor()
     cursor.execute(
         'SELECT id, title, artist, album, cover_url, file_path, '
-        'genre, year, duration, lang, embedding, audio_embedding, lyrics '
-        'FROM songs WHERE embedding IS NOT NULL'
+        'genre, year, duration, lang, embedding, audio_embedding, lyrics, source, fingerprint '
+        'FROM all_songs WHERE embedding IS NOT NULL'
     )
     rows = cursor.fetchall()
     cursor.close()
+
+    # 指纹去重：同一指纹优先保留本地版本（云端歌曲在推荐中不重复出现）
+    # 同时建立 fingerprint → local_id 映射，供推荐结果引导前端播放本地文件
+    fingerprint_to_local = {}
+    seen_fingerprints = set()
+    deduped_rows = []
+
+    for row in rows:
+        fp = (row['fingerprint'] or '').strip()
+        src = row['source'] or 'local'
+
+        # 记录指纹→本地ID映射
+        if fp and src == 'local':
+            fingerprint_to_local[fp] = row['id']
+
+        # 去重：本地优先
+        if fp:
+            if fp in seen_fingerprints:
+                continue
+            seen_fingerprints.add(fp)
+        deduped_rows.append(row)
+
+    # 存储指纹映射到全局，供 _song_to_result 使用
+    global _fingerprint_to_local_id
+    _fingerprint_to_local_id = fingerprint_to_local
 
     all_songs = []
     id_to_embedding = {}
     id_to_audio_embedding = {}
     id_to_info = {}
 
-    for row in rows:
+    for row in deduped_rows:
         sid = row['id']
         song_dict = dict(row)
         all_songs.append(song_dict)
@@ -198,7 +224,9 @@ def _song_to_result(s, score, reason):
         'duration': s['duration'] or 0,
         'lang': s['lang'] or '',
         'reason': reason,
-        'score': round(score, 4)
+        'score': round(score, 4),
+        'source': s.get('source', 'local'),
+        'local_id': _fingerprint_to_local_id.get((s.get('fingerprint') or '').strip(), None),
     }
 
 

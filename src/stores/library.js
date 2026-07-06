@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
 const API_BASE = 'http://127.0.0.1:5000/api/music'
+const CLOUD_API = 'http://127.0.0.1:5000/api/cloud'
 
 // 音频服务器端口（通过 IPC 从主进程获取）
 let audioPort = 51234
@@ -23,6 +24,11 @@ function pathToUrlSync(filePath) {
   return `http://127.0.0.1:${audioPort}/audio?path=${encodeURIComponent(filePath)}`
 }
 
+// 云端歌曲 → Flask 延迟模拟音频流
+function cloudUrlSync(filePath) {
+  return `http://127.0.0.1:5000/api/cloud/stream?path=${encodeURIComponent(filePath)}`
+}
+
 function coverUrl(coverPath) {
   if (!coverPath) return null
   // 如果已经是 HTTP URL 则直接返回
@@ -33,6 +39,7 @@ function coverUrl(coverPath) {
 
 export const useLibraryStore = defineStore('library', () => {
   const tracks = ref([])
+  const cloudTracks = ref([])
   const scanDirs = ref([])
   const isLoading = ref(false)
   const searchQuery = ref('')
@@ -41,6 +48,22 @@ export const useLibraryStore = defineStore('library', () => {
   const viewMode = ref('list')
   const filterGenre = ref('')
   const filterArtist = ref('')
+  const sourceFilter = ref('all')   // 'all' | 'local' | 'cloud'
+
+  const allTracks = computed(() => {
+    if (sourceFilter.value === 'local') return tracks.value
+    if (sourceFilter.value === 'cloud') return cloudTracks.value
+    // 混合模式：指纹去重，同指纹优先保留本地副本
+    const seen = new Set()
+    const result = []
+    for (const t of [...tracks.value, ...cloudTracks.value]) {
+      const fp = t.fingerprint || `path:${t.path}`
+      if (seen.has(fp)) continue
+      seen.add(fp)
+      result.push(t)
+    }
+    return result
+  })
 
   // 从后端加载扫描目录列表
   async function loadScanDirs() {
@@ -63,28 +86,80 @@ export const useLibraryStore = defineStore('library', () => {
     localStorage.setItem('scan-dirs', JSON.stringify(scanDirs.value))
   }
 
+  // 指纹映射：同一歌曲本地优先（云端指纹→本地路径）
+  const fingerprintToLocal = {}
+
   // 修复封面 URL 和播放 URL
   function fixSongUrl(song) {
     if (song.cover) song.cover = coverUrl(song.cover)
-    if (!song.url && song.path) song.url = pathToUrlSync(song.path)
+    if (!song.url && song.path) {
+      // 云端歌曲：优先解析到本地等价副本（同一指纹）
+      const fp = song.fingerprint
+      if (song.source === 'cloud' && fp !== undefined && fingerprintToLocal[fp]) {
+        const local = fingerprintToLocal[fp]
+        song.url = pathToUrlSync(local.path)
+        if (!song.cover && local.cover) song.cover = coverUrl(local.cover)
+        return
+      }
+      song.url = song.source === 'cloud'
+        ? cloudUrlSync(song.path)
+        : pathToUrlSync(song.path)
+    }
   }
 
   // 从 Flask API 加载全部歌曲（一次性加载列表，后续前端过滤）
   async function loadFromApi() {
     try {
-      // 确保音频服务器端口已获取
       await initAudioPort()
-      const res = await fetch(`${API_BASE}/songs?page=1&page_size=100000`)
+      const res = await fetch(`${API_BASE}/songs?page=1&page_size=100000&source=local`)
       if (!res.ok) return false
       const data = await res.json()
       if (data.songs) {
-        data.songs.forEach(fixSongUrl)
+        data.songs.forEach(s => {
+          s.source = 'local'
+          // 从API响应保留 cloud_meta 字段（用于MusicCard差异提示）
+          if (!s.cloud_meta) s.cloud_meta = null
+          fixSongUrl(s)
+          // 建立指纹→本地映射
+          if (s.fingerprint) {
+            fingerprintToLocal[s.fingerprint] = { path: s.path, cover: s.cover }
+          }
+        })
         tracks.value = data.songs
       }
       return true
     } catch {
       return false
     }
+  }
+
+  // 加载云端歌曲
+  async function loadCloudSongs() {
+    try {
+      const token = localStorage.getItem('auth-token')
+      if (!token) { console.log('[cloud:load] 未登录，跳过'); return false }
+      const res = await fetch(`${API_BASE}/songs?page=1&page_size=100000&source=cloud`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      })
+      if (!res.ok) { console.log('[cloud:load] API 错误:', res.status); return false }
+      const data = await res.json()
+      console.log('[cloud:load] 收到', data.total, '首云端歌曲')
+      if (data.songs) {
+        data.songs.forEach(s => {
+          s.source = 'cloud'
+          console.log('[cloud:load] 歌曲:', s.title, '| cover:', s.cover, '| path:', s.path)
+          fixSongUrl(s)
+        })
+        cloudTracks.value = data.songs
+      }
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  function setSourceFilter(filter) {
+    sourceFilter.value = filter
   }
 
   // ==================== 扫描流程 ====================
@@ -234,7 +309,7 @@ export const useLibraryStore = defineStore('library', () => {
   })
 
   const filteredTracks = computed(() => {
-    let result = [...tracks.value]
+    let result = [...allTracks.value]
 
     if (searchQuery.value) {
       const q = searchQuery.value.toLowerCase()
@@ -266,11 +341,11 @@ export const useLibraryStore = defineStore('library', () => {
   })
 
   const totalDuration = computed(() => {
-    return tracks.value.reduce((sum, t) => sum + (t.duration || 0), 0)
+    return allTracks.value.reduce((sum, t) => sum + (t.duration || 0), 0)
   })
 
   function getTrackByPath(path) {
-    return tracks.value.find(t => t.path === path)
+    return allTracks.value.find(t => t.path === path)
   }
 
   function getAlbum(name) {
@@ -286,14 +361,17 @@ export const useLibraryStore = defineStore('library', () => {
 
   // 启动时从 API 加载已入库的歌曲（静默失败，允许无后端运行）
   loadFromApi()
+  // 非阻塞加载云端歌曲
+  loadCloudSongs()
 
   return {
-    tracks, scanDirs, isLoading, searchQuery, sortKey, sortOrder,
-    viewMode, filterGenre, filterArtist,
+    tracks, cloudTracks, allTracks, scanDirs, isLoading,
+    searchQuery, sortKey, sortOrder,
+    viewMode, filterGenre, filterArtist, sourceFilter,
     albums, artists, genres, filteredTracks, totalDuration,
     isScanning, scanProgress,
     scanMusic, selectAndScan, refreshLibrary,
     getTrackByPath, getAlbum, getArtist,
-    loadFromApi
+    loadFromApi, loadCloudSongs, setSourceFilter
   }
 })

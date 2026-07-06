@@ -4,7 +4,8 @@
     <div class="progress-top" ref="progressRef"
          @mousedown="onProgressMouseDown"
          @mouseenter="progressHovered = true" @mouseleave="progressHovered = false">
-      <div class="progress-top__bg" :style="{ transform: 'scaleX(' + (displayProgress / 100) + ')' }"></div>
+      <div class="progress-top__buffer" v-show="currentTrack?.source === 'cloud'" :style="{ width: bufferedPercent + '%' }"></div>
+      <div class="progress-top__bg" :style="{ width: displayProgress + '%' }"></div>
       <div class="progress-top__time progress-top__time--current" v-show="progressHovered">
         {{ formatDuration(displayCurrentTime) }}
       </div>
@@ -142,7 +143,7 @@ const props = defineProps({
 const toggleNowPlaying = inject('toggleNowPlaying')
 const player = usePlayerStore()
 const { currentTrack, isPlaying, currentTime, duration, volume, isMuted,
-        playMode, progress, queue, hasNext, hasPrev, showDesktopLyrics, songChangeDirection } = storeToRefs(player)
+        playMode, progress, bufferedPercent, queue, hasNext, hasPrev, showDesktopLyrics, songChangeDirection } = storeToRefs(player)
 
 const hovered = ref(false)
 const progressHovered = ref(false)
@@ -296,12 +297,26 @@ function onVolumeMouseUp() {
   transform: scaleY(0.5);
 }
 .progress-top__bg {
-  width: 100%;
   height: 100%;
   background: var(--accent-color);
   border-radius: 0 2px 2px 0;
-  transform-origin: left;
   transition: background 0.4s;
+  position: absolute;
+  left: 0; top: 0;
+}
+/* 缓冲条：半透明主题色 + 前沿微光 */
+.progress-top__buffer {
+  position: absolute;
+  left: 0; top: 0;
+  height: 100%;
+  background: var(--accent-color);
+  opacity: 0.25;
+  border-radius: 0 2px 2px 0;
+  transition: width 0.3s ease-out, opacity 0.4s;
+  z-index: 0;
+}
+.progress-top:hover .progress-top__buffer {
+  opacity: 0.35;
 }
 .progress-top__time {
   position: absolute;
@@ -536,6 +551,7 @@ function onVolumeMouseUp() {
 .player-bar.panel-active .queue-count { background: #fff; color: var(--bg-primary); }
 .player-bar.panel-active .progress-top { background: rgba(255, 255, 255, 0.15); }
 .player-bar.panel-active .progress-top__bg { background: #fff; }
+.player-bar.panel-active .progress-top__buffer { background: #fff; opacity: 0.2; }
 .player-bar.panel-active .progress-top__time { color: rgba(255, 255, 255, 0.8); }
 .player-bar.panel-active .volume-btn { color: rgba(255, 255, 255, 0.8); }
 .player-bar.panel-active .volume-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.15); }

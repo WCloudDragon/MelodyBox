@@ -13,6 +13,7 @@ export const usePlayerStore = defineStore('player', () => {
   const duration = ref(0)
   const volume = ref(0.7)
   const isMuted = ref(false)
+  const bufferedPercent = ref(0)
 
   // Web Audio API — 频谱分析（音频律动驱动动态背景）
   const audioCtx = ref(null)
@@ -121,6 +122,14 @@ export const usePlayerStore = defineStore('player', () => {
       console.error('音频播放错误:', codes[a.error?.code] || a.error?.code, a.error?.message || '', a.src)
       next()
     })
+    audio.value.addEventListener('progress', () => {
+      if (audio.value.buffered.length > 0) {
+        const end = audio.value.buffered.end(audio.value.buffered.length - 1)
+        if (audio.value.duration > 0) {
+          bufferedPercent.value = Math.min(100, (end / audio.value.duration) * 100)
+        }
+      }
+    })
   }
 
   // 当前播放的歌曲
@@ -181,7 +190,7 @@ export const usePlayerStore = defineStore('player', () => {
         isPlaying.value = true
       }).catch(err => {
         if (err.name === 'AbortError') return
-        console.error('播放失败:', track.path, err)
+        console.error('播放失败:', track.path, track.title, err)
       })
     }
   }
@@ -266,7 +275,9 @@ export const usePlayerStore = defineStore('player', () => {
 
     // FLAC：远距离 seek（>5s）或 seek 到当前流起始之前，需通过 URL reload 让 ffmpeg 从目标位置开始解码
     // _seekOffset > 0 时当前 WAV 流从 _seekOffset 秒开始，seek 到该点之前会导致内部时间为负，必须重载
-    if (ext === 'flac' && (distance > 5 || (_seekOffset > 0 && target < _seekOffset))) {
+    // 云端歌曲使用浏览器原生 Range seeking，不走 ffmpeg reload 路径
+    const isCloud = track?.source === 'cloud'
+    if (ext === 'flac' && !isCloud && (distance > 5 || (_seekOffset > 0 && target < _seekOffset))) {
       _seekViaReload(target)
       return
     }
@@ -451,7 +462,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   return {
     queue, currentIndex, audio, isPlaying, currentTime, duration,
-    volume, isMuted, playMode, showDesktopLyrics, savedTime, savedVolume,
+    volume, isMuted, bufferedPercent, playMode, showDesktopLyrics, savedTime, savedVolume,
     songChangeDirection, audioCtx, analyserNode,
     currentTrack, progress, hasNext, hasPrev,
     initAudio, play, pause, resume, togglePlay,

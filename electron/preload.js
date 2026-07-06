@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 文件夹选择
   selectFolder: () => ipcRenderer.invoke('dialog:selectFolder'),
   selectSingleFolder: () => ipcRenderer.invoke('dialog:selectSingleFolder'),
+  selectAudioFiles: () => ipcRenderer.invoke('dialog:selectAudioFiles'),
+  selectFolderForCloud: () => ipcRenderer.invoke('dialog:selectFolderForCloud'),
 
   // 音乐扫描（仅返回文件路径）
   scanMusic: (dirPaths) => ipcRenderer.invoke('music:scan', dirPaths),

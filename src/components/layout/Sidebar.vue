@@ -32,6 +32,17 @@
       </router-link>
     </div>
 
+    <!-- 管理员：管理后台入口 -->
+    <div class="sidebar__section" v-if="auth.isAdmin">
+      <div class="sidebar__label">
+        <span>管理</span>
+      </div>
+      <router-link to="/admin" class="nav-item admin-nav" v-ripple :class="{ active: $route.path === '/admin' }">
+        <el-icon><Monitor /></el-icon>
+        <span>管理后台</span>
+      </router-link>
+    </div>
+
     <!-- 歌单 -->
     <div class="sidebar__section">
       <div class="sidebar__label">

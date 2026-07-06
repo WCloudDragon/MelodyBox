@@ -61,6 +61,11 @@
       <el-button text @click="toggleSortOrder">
         <el-icon><SortUp v-if="libraryStore.sortOrder === 'asc'" /><SortDown v-else /></el-icon>
       </el-button>
+      <el-radio-group v-model="sourceFilter" size="small">
+        <el-radio-button value="all">全部</el-radio-button>
+        <el-radio-button value="local">本地</el-radio-button>
+        <el-radio-button value="cloud">云端</el-radio-button>
+      </el-radio-group>
       <el-radio-group v-model="libraryStore.viewMode" size="small">
         <el-radio-button value="list">
           <el-icon><List /></el-icon>
@@ -230,6 +235,7 @@ const { currentTrack } = storeToRefs(playerStore)
 const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems, showAddPlaylistDialog } = useTrackList()
 
 const ctxHandler = createCtxHandler(playerStore, router)
+const sourceFilter = ref('all')
 
 const menuItems = computed(() => buildMenuItems('library'))
 
@@ -237,7 +243,7 @@ useScrollMemory('library-list', () => document.querySelector('.tracks-list-body'
 useScrollMemory('library-grid', () => document.querySelector('.tracks-grid'))
 
 const isElectron = computed(() => !!window.electronAPI)
-const hasMusic = computed(() => libraryStore.tracks.length > 0)
+const hasMusic = computed(() => libraryStore.tracks.length > 0 || libraryStore.cloudTracks.length > 0)
 
 // 虚拟滚动（仅渲染可见 + 缓冲区行数，初始秒开）
 const { list: virtualList, containerProps, wrapperProps, scrollTo } = useVirtualList(
@@ -249,6 +255,9 @@ const { list: virtualList, containerProps, wrapperProps, scrollTo } = useVirtual
 watch(() => libraryStore.filteredTracks.length, () => {
   scrollTo(0)
 })
+
+// 来源切换器
+watch(sourceFilter, (v) => libraryStore.setSourceFilter(v))
 
 function ctxAction(action) {
   if (ctxHandler(action)) return
@@ -267,9 +276,9 @@ function toggleSortOrder() {
 }
 
 function playTrack(track) {
-  const idx = libraryStore.tracks.findIndex(t => t.path === track.path)
+  const idx = libraryStore.allTracks.findIndex(t => t.path === track.path)
   if (idx !== -1) {
-    playerStore.playAll(libraryStore.tracks, idx)
+    playerStore.playAll(libraryStore.allTracks, idx)
   }
 }
 
