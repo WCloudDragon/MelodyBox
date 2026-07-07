@@ -73,6 +73,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 import { useAiStore } from '@/stores/ai'
+import { pathToUrlSync } from '@/stores/library'
 import { useTrackList } from '@/composables/useTrackList'
 import TrackTable from '@/components/music/TrackTable.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
@@ -219,11 +220,15 @@ const headerInfo = computed(() => {
 })
 
 function normalizeTracks(data) {
-  return data.map(t => ({
-    ...t,
-    path: t.file_path || t.path,
-    cover: t.cover_url ? (t.cover_url.startsWith('http') ? t.cover_url : `http://127.0.0.1:5000/api/music/cover?path=${encodeURIComponent(t.cover_url)}`) : null,
-  }))
+  return data.map(t => {
+    const path = t.file_path || t.path
+    return {
+      ...t,
+      path,
+      cover: t.cover_url ? (t.cover_url.startsWith('http') ? t.cover_url : `http://127.0.0.1:5000/api/music/cover?path=${encodeURIComponent(t.cover_url)}`) : null,
+      url: pathToUrlSync(path),
+    }
+  })
 }
 
 async function fetchRecommendations() {

@@ -20,7 +20,7 @@ async function initAudioPort() {
 }
 
 // 本地文件路径 → HTTP 音频流 URL
-function pathToUrlSync(filePath) {
+export function pathToUrlSync(filePath) {
   return `http://127.0.0.1:${audioPort}/audio?path=${encodeURIComponent(filePath)}`
 }
 
