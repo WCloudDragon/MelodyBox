@@ -92,7 +92,7 @@
         </div>
 
         <!-- 推荐入口卡片网格 -->
-        <div v-if="aiStore.embeddingStatus.pending === 0" class="rec-entries">
+        <div v-if="hasRecData" class="rec-entries">
           <!-- 天气推荐卡片 -->
           <div
             v-if="weatherStore.isConfigured && !weatherStore.error"
@@ -506,16 +506,28 @@ const weatherGradient = computed(() => {
   return gradients[mood] || 'linear-gradient(135deg, #6366f1, #818cf8)'
 })
 
-// 推荐预览数据（卡片封面）
+// 推荐预览数据（卡片封面）— localStorage 缓存 + 按需刷新
+const PREVIEW_CACHE_KEY = 'melodybox_rec_previews'
+const PREVIEW_COLORS_KEY = 'melodybox_rec_colors'
 const recPreviews = ref({})
 const coverColors = ref({})
+const hasRecData = computed(() => aiStore.embeddingStatus.pending === 0 || Object.keys(recPreviews.value).length > 0)
+
+// 启动时立即加载缓存
+try {
+  const cached = localStorage.getItem(PREVIEW_CACHE_KEY)
+  if (cached) recPreviews.value = JSON.parse(cached)
+  const cachedColors = localStorage.getItem(PREVIEW_COLORS_KEY)
+  if (cachedColors) coverColors.value = JSON.parse(cachedColors)
+} catch {}
 
 async function loadRecPreviews() {
   try {
     const res = await fetch('http://127.0.0.1:5000/api/ai/recommend/previews')
     if (res.ok) {
-      recPreviews.value = await res.json()
-      // 异步提取封面主色
+      const data = await res.json()
+      recPreviews.value = data
+      try { localStorage.setItem(PREVIEW_CACHE_KEY, JSON.stringify(data)) } catch {}
       extractAllColors()
     }
   } catch {}
@@ -531,7 +543,6 @@ async function extractAllColors() {
       if (val?.cover) entries.push([`mood_${key}`, val.cover])
     }
   }
-  // 并行提取，但限制并发
   const BATCH = 3
   for (let i = 0; i < entries.length; i += BATCH) {
     const batch = entries.slice(i, i + BATCH)
@@ -540,8 +551,8 @@ async function extractAllColors() {
       if (colors) coverColors.value[key] = colors
     }))
   }
-  // 触发响应式更新
   coverColors.value = { ...coverColors.value }
+  try { localStorage.setItem(PREVIEW_COLORS_KEY, JSON.stringify(coverColors.value)) } catch {}
 }
 
 function getPreview(key) {
