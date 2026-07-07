@@ -498,13 +498,13 @@ def get_recommend_previews():
         # 情绪推荐：从 song_mood_scores 取各情绪最高分的歌曲
         moods = {}
         for mood_key in ('sad', 'energetic', 'calm', 'upbeat', 'fresh', 'romantic', 'inspire'):
-            cursor.execute(f'''
+            cursor.execute('''
                 SELECT s.title, s.artist, s.cover_url
                 FROM song_mood_scores sms
                 JOIN songs s ON sms.song_id = s.id
-                WHERE s.cover_url IS NOT NULL AND s.cover_url != '' AND sms.{mood_key} > 0.3
-                ORDER BY sms.{mood_key} DESC LIMIT 1
-            ''')
+                WHERE s.cover_url IS NOT NULL AND s.cover_url != '' AND sms.mood = ? AND sms.score > 0.3
+                ORDER BY sms.score DESC LIMIT 1
+            ''', (mood_key,))
             row = cursor.fetchone()
             if row:
                 cover = row['cover_url']
