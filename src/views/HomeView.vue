@@ -123,7 +123,7 @@
               </div>
               <div class="rec-entry__cover-mask"></div>
             </div>
-            <div class="rec-entry__info">
+            <div class="rec-entry__info" :style="getCoverStyle('daily')">
               <div class="rec-entry__title">每日推荐</div>
               <div class="rec-entry__subtitle">根据你的听歌偏好</div>
             </div>
@@ -142,7 +142,7 @@
               </div>
               <div class="rec-entry__cover-mask"></div>
             </div>
-            <div class="rec-entry__info">
+            <div class="rec-entry__info" :style="getCoverStyle('hidden_gem')">
               <div class="rec-entry__title">冷门宝藏</div>
               <div class="rec-entry__subtitle">被忽视的好歌</div>
             </div>
@@ -163,7 +163,7 @@
               </div>
               <div class="rec-entry__cover-mask"></div>
             </div>
-            <div class="rec-entry__info" :style="getCoverBg(`mood_${m.key}`) !== 'var(--bg-tertiary)' ? { '--card-accent': getCoverAccent(`mood_${m.key}`), '--card-bg': getCoverBg(`mood_${m.key}`) } : {}">
+            <div class="rec-entry__info" :style="getCoverStyle(m.key)">
               <div class="rec-entry__title">{{ m.label }}</div>
               <div class="rec-entry__subtitle">{{ m.sub }}</div>
             </div>
@@ -540,16 +540,32 @@ async function extractAllColors() {
   if (pv.hidden_gem?.cover) entries.push(['hidden_gem', pv.hidden_gem.cover])
   if (pv.moods) {
     for (const [key, val] of Object.entries(pv.moods)) {
-      if (val?.cover) entries.push([`mood_${key}`, val.cover])
+      if (val?.cover) entries.push([key, val.cover])
     }
+  }
+  // 预定义 fallback 色板
+  const fallbacks = {
+    daily: { mid: '#4a3f6b', shadow: '#2a2545', highlight: '#8b7fbf' },
+    hidden_gem: { mid: '#3f4a6b', shadow: '#252a45', highlight: '#7f8bbf' },
+    sad: { mid: '#4a5a4a', shadow: '#2d362d', highlight: '#8ba88b' },
+    energetic: { mid: '#6b3f3f', shadow: '#452525', highlight: '#bf7f7f' },
+    calm: { mid: '#3f4a6b', shadow: '#252a45', highlight: '#7f8bbf' },
+    upbeat: { mid: '#6b3f5a', shadow: '#452536', highlight: '#bf7fa8' },
+    fresh: { mid: '#3f6b4a', shadow: '#25452d', highlight: '#7fbf8b' },
+    romantic: { mid: '#6b3f55', shadow: '#452533', highlight: '#bf7fa3' },
+    inspire: { mid: '#6b5a3f', shadow: '#453625', highlight: '#bfa87f' },
   }
   const BATCH = 3
   for (let i = 0; i < entries.length; i += BATCH) {
     const batch = entries.slice(i, i + BATCH)
     await Promise.all(batch.map(async ([key, url]) => {
       const colors = await extractCoverColors(url)
-      if (colors) coverColors.value[key] = colors
+      coverColors.value[key] = colors || fallbacks[key] || fallbacks.daily
     }))
+  }
+  // 没有封面的条目也用 fallback
+  for (const [key, fb] of Object.entries(fallbacks)) {
+    if (!coverColors.value[key]) coverColors.value[key] = fb
   }
   coverColors.value = { ...coverColors.value }
   try { localStorage.setItem(PREVIEW_COLORS_KEY, JSON.stringify(coverColors.value)) } catch {}
@@ -562,16 +578,27 @@ function getPreview(key) {
   return pv.moods?.[key] || null
 }
 
-function getCoverBg(key) {
+function getCoverStyle(key) {
   const c = coverColors.value[key]
-  if (c) return c.shadow
-  return 'var(--bg-tertiary)'
+  if (!c) return {}
+  // 用 mid 色作为文字区域背景
+  const bg = c.mid || c.shadow
+  // 计算亮度决定文字颜色：亮背景用黑字，暗背景用白字
+  const lum = _hexLuminance(bg)
+  const textColor = lum > 0.4 ? '#1a1a2e' : '#ffffff'
+  const subColor = lum > 0.4 ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.7)'
+  return {
+    '--card-bg': bg,
+    '--card-text': textColor,
+    '--card-sub': subColor,
+  }
 }
 
-function getCoverAccent(key) {
-  const c = coverColors.value[key]
-  if (c) return c.highlight
-  return 'var(--accent-color)'
+function _hexLuminance(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255
+  const g = parseInt(hex.slice(3, 5), 16) / 255
+  const b = parseInt(hex.slice(5, 7), 16) / 255
+  return 0.299 * r + 0.587 * g + 0.114 * b
 }
 
 // 顶部语言推荐（取播放量最高的 3 种语言）
@@ -864,6 +891,12 @@ watch(() => aiStore.embeddingStatus.pending, (pending) => {
   flex-direction: column;
   gap: 3px;
   transition: background 0.3s ease;
+}
+.rec-entry--cover .rec-entry__info .rec-entry__title {
+  color: var(--card-text, var(--text-primary));
+}
+.rec-entry--cover .rec-entry__info .rec-entry__subtitle {
+  color: var(--card-sub, var(--text-tertiary));
 }
 
 /* 天气卡片特殊样式 */
