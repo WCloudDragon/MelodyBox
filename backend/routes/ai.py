@@ -469,23 +469,22 @@ def get_recommend_previews():
 
         def _pick_cover(where_clause, params=()):
             cursor.execute(f'''
-                SELECT s.title, s.artist, s.cover
+                SELECT s.title, s.artist, s.cover_url
                 FROM songs s
-                WHERE s.cover IS NOT NULL AND s.cover != '' {where_clause}
+                WHERE s.cover_url IS NOT NULL AND s.cover_url != '' {where_clause}
                 ORDER BY RANDOM() LIMIT 1
             ''', params)
             row = cursor.fetchone()
             if not row:
-                # fallback: 从 cloud_songs 取
                 cursor.execute(f'''
-                    SELECT s.title, s.artist, s.cover
+                    SELECT s.title, s.artist, s.cover_url
                     FROM cloud_songs s
-                    WHERE s.cover IS NOT NULL AND s.cover != '' {where_clause}
+                    WHERE s.cover_url IS NOT NULL AND s.cover_url != '' {where_clause}
                     ORDER BY RANDOM() LIMIT 1
                 ''', params)
                 row = cursor.fetchone()
             if row:
-                cover = row['cover']
+                cover = row['cover_url']
                 if cover and not cover.startswith('http'):
                     cover = f"http://127.0.0.1:5000/api/music/cover?path={cover}"
                 return {'title': row['title'], 'artist': row['artist'], 'cover': cover}
@@ -500,15 +499,15 @@ def get_recommend_previews():
         moods = {}
         for mood_key in ('sad', 'energetic', 'calm', 'upbeat', 'fresh', 'romantic', 'inspire'):
             cursor.execute(f'''
-                SELECT s.title, s.artist, s.cover
+                SELECT s.title, s.artist, s.cover_url
                 FROM song_mood_scores sms
                 JOIN songs s ON sms.song_id = s.id
-                WHERE s.cover IS NOT NULL AND s.cover != '' AND sms.{mood_key} > 0.3
+                WHERE s.cover_url IS NOT NULL AND s.cover_url != '' AND sms.{mood_key} > 0.3
                 ORDER BY sms.{mood_key} DESC LIMIT 1
             ''')
             row = cursor.fetchone()
             if row:
-                cover = row['cover']
+                cover = row['cover_url']
                 if cover and not cover.startswith('http'):
                     cover = f"http://127.0.0.1:5000/api/music/cover?path={cover}"
                 moods[mood_key] = {'title': row['title'], 'artist': row['artist'], 'cover': cover}
