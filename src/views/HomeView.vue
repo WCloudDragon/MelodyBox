@@ -876,10 +876,10 @@ watch(() => aiStore.embeddingStatus.pending, (pending) => {
   transition: background 0.3s ease;
 }
 .rec-entry--cover .rec-entry__info .rec-entry__title {
-  color: var(--text-primary);
+  color: #fff;
 }
 .rec-entry--cover .rec-entry__info .rec-entry__subtitle {
-  color: var(--text-tertiary);
+  color: rgba(255,255,255,0.7);
 }
 
 /* 天气卡片特殊样式 */
