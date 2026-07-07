@@ -532,6 +532,8 @@ onUnmounted(() => {
 // 推荐预览数据（卡片封面）— localStorage 缓存 + 按需刷新
 const PREVIEW_CACHE_KEY = 'melodybox_rec_previews'
 const PREVIEW_COLORS_KEY = 'melodybox_rec_colors'
+const PREVIEW_TS_KEY = 'melodybox_rec_previews_ts'
+const PREVIEW_TTL = 30 * 60 * 1000 // 30 分钟
 const recPreviews = ref({})
 const coverColors = ref({})
 const hasRecData = computed(() => aiStore.embeddingStatus.pending === 0 || Object.keys(recPreviews.value).length > 0)
@@ -544,13 +546,24 @@ try {
   if (cachedColors) coverColors.value = JSON.parse(cachedColors)
 } catch {}
 
-async function loadRecPreviews() {
+function isPreviewCacheValid() {
+  try {
+    const ts = parseInt(localStorage.getItem(PREVIEW_TS_KEY) || '0')
+    return Date.now() - ts < PREVIEW_TTL
+  } catch { return false }
+}
+
+async function loadRecPreviews(force = false) {
+  if (!force && isPreviewCacheValid()) return
   try {
     const res = await fetch('http://127.0.0.1:5000/api/ai/recommend/previews')
     if (res.ok) {
       const data = await res.json()
       recPreviews.value = data
-      try { localStorage.setItem(PREVIEW_CACHE_KEY, JSON.stringify(data)) } catch {}
+      try {
+        localStorage.setItem(PREVIEW_CACHE_KEY, JSON.stringify(data))
+        localStorage.setItem(PREVIEW_TS_KEY, String(Date.now()))
+      } catch {}
       extractAllColors()
     }
   } catch {}
@@ -685,19 +698,21 @@ function playAiTrack(track) {
 }
 
 // 监听曲库变化，曲库更新后自动刷新推荐
-watch(() => libraryStore.tracks.length, async (newLen) => {
-  if (newLen > 0) {
+watch(() => libraryStore.tracks.length, async (newLen, oldLen) => {
+  // 仅在曲库从 0 → 有数据时触发（初次加载）
+  if (newLen > 0 && oldLen === 0) {
     await aiStore.loadEmbeddingStatus()
     if (aiStore.embeddingStatus.pending === 0) {
       await aiStore.loadRecommendations()
-      loadRecPreviews()
     }
   }
 })
 
-// embedding 就绪后加载推荐预览
-watch(() => aiStore.embeddingStatus.pending, (pending) => {
-  if (pending === 0) loadRecPreviews()
+// embedding 就绪后加载推荐预览（仅在 pending 从非 0 变为 0 时触发）
+watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
+  if (pending === 0 && oldPending > 0) {
+    loadRecPreviews(true)
+  }
 })
 </script>
 
