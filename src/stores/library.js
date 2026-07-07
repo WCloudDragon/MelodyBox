@@ -137,17 +137,15 @@ export const useLibraryStore = defineStore('library', () => {
   async function loadCloudSongs() {
     try {
       const token = localStorage.getItem('auth-token')
-      if (!token) { console.log('[cloud:load] 未登录，跳过'); return false }
+      if (!token) return false
       const res = await fetch(`${API_BASE}/songs?page=1&page_size=100000&source=cloud`, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       })
-      if (!res.ok) { console.log('[cloud:load] API 错误:', res.status); return false }
+      if (!res.ok) return false
       const data = await res.json()
-      console.log('[cloud:load] 收到', data.total, '首云端歌曲')
       if (data.songs) {
         data.songs.forEach(s => {
           s.source = 'cloud'
-          console.log('[cloud:load] 歌曲:', s.title, '| cover:', s.cover, '| path:', s.path)
           fixSongUrl(s)
         })
         cloudTracks.value = data.songs

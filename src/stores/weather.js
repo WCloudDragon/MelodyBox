@@ -86,48 +86,35 @@ export const useWeatherStore = defineStore('weather', () => {
 
   /** 加载天气数据 */
   async function loadWeather() {
-    console.log('[Weather] loadWeather() called')
-    // 先尝试缓存
-    if (_loadFromCache()) {
-      console.log('[Weather] loaded from cache, skipping fetch')
-      return
-    }
+    if (_loadFromCache()) return
 
     isLoading.value = true
     error.value = null
 
     try {
-      // 尝试 Geolocation
       const geo = await _getGeoPosition()
-      console.log('[Weather] geolocation result:', geo)
       let url = `${WEATHER_BASE}/current`
       if (geo) {
         url += `?lat=${geo.lat}&lon=${geo.lon}`
       }
 
-      console.log('[Weather] fetching:', url)
       const res = await fetch(url)
       const data = await res.json()
-      console.log('[Weather] response status:', res.status, 'data:', JSON.stringify(data).slice(0, 200))
 
       if (!res.ok) {
         if (data.configured === false) {
-          console.log('[Weather] API key not configured')
           isConfigured.value = false
           error.value = '未配置天气 API Key'
         } else {
-          console.log('[Weather] API error:', data.error)
           error.value = data.error || '天气获取失败'
         }
         return
       }
 
-      console.log('[Weather] success, setting weatherData and isConfigured=true')
       weatherData.value = data
       isConfigured.value = true
       _saveToCache(data)
     } catch (e) {
-      console.error('[Weather] fetch failed:', e.message)
       error.value = '网络请求失败'
     } finally {
       isLoading.value = false

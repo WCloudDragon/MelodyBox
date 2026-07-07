@@ -82,8 +82,7 @@ def _generate_jwt(config):
     token = f'{header}.{payload}.{_b64url(signature)}'
 
     _jwt_cache['token'] = token
-    _jwt_cache['expire'] = now + 1700  # 28 分钟后刷新
-    print('[Weather] JWT generated (Ed25519)')
+    _jwt_cache['expire'] = now + 1700
     return token
 
 
@@ -104,7 +103,6 @@ def _qweather_get(path, params, config):
     url = f"https://{config['api_host']}{path}"
     query = urllib.parse.urlencode(params)
     full_url = f'{url}?{query}'
-    print(f'[Weather] request: {full_url}')
 
     req = urllib.request.Request(full_url, headers={
         'User-Agent': 'MelodyBox/1.0',
@@ -188,7 +186,6 @@ def _get_city_by_ip():
                 return city, lat, lon
             return None, None, None
     except Exception as e:
-        print(f'[Weather] ip-api.com failed: {e}')
         return None, None, None
 
 
@@ -196,8 +193,6 @@ def _get_city_by_ip():
 def get_current_weather():
     """获取当前天气信息"""
     config = _get_weather_config()
-    print(f'[Weather] key={bool(config["private_key"])}, kid={bool(config["credential_id"])}, '
-          f'pid={bool(config["project_id"])}, host={config["api_host"]}')
 
     if not all([config['private_key'], config['credential_id'], config['project_id'], config['api_host']]):
         return jsonify({'error': '天气配置不完整（需要私钥、凭据ID、项目ID、API Host）', 'configured': False}), 400
@@ -222,7 +217,6 @@ def get_current_weather():
             return jsonify(cached)
 
         weather_data = _qweather_get('/v7/weather/now', {'location': location_param}, config)
-        print(f'[Weather] response code: {weather_data.get("code")}')
 
         if weather_data.get('code') != '200':
             return jsonify({'error': '天气查询失败', 'code': weather_data.get('code')}), 502
@@ -250,11 +244,9 @@ def get_current_weather():
         }
 
         _cache_set(cache_key, result)
-        print(f'[Weather] success: {text} {now.get("temp", "")}° {city_name}')
         return jsonify(result)
 
     except Exception as e:
-        print(f'[Weather] exception: {e}')
         return jsonify({'error': str(e)}), 500
 
 
