@@ -821,11 +821,7 @@ watch(() => aiStore.embeddingStatus.pending, (pending) => {
   overflow: hidden;
   min-height: 200px;
 }
-.rec-entry:hover {
-  border-color: var(--border-color);
-  transform: translateY(-3px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-}
+
 
 /* 封面卡片样式 */
 .rec-entry--cover .rec-entry__cover-bg {
@@ -838,10 +834,6 @@ watch(() => aiStore.embeddingStatus.pending, (pending) => {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.3s ease;
-}
-.rec-entry--cover:hover .rec-entry__cover-img {
-  transform: scale(1.05);
 }
 .rec-entry__cover-mask {
   position: absolute;
