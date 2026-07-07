@@ -455,6 +455,77 @@ def get_recommendations():
         return jsonify({'error': str(e)}), 500
 
 
+# ==================== 推荐预览（首页卡片封面） ====================
+
+@ai_bp.route('/recommend/previews')
+def get_recommend_previews():
+    """
+    为首页推荐卡片返回每个类别的代表性歌曲封面（轻量接口，不走推荐引擎）。
+    返回 { daily, hidden_gem, moods: { sad, energetic, calm, ... } }
+    """
+    try:
+        db = get_db()
+        cursor = db.cursor()
+
+        def _pick_cover(where_clause, params=()):
+            cursor.execute(f'''
+                SELECT s.title, s.artist, s.cover
+                FROM songs s
+                WHERE s.cover IS NOT NULL AND s.cover != '' {where_clause}
+                ORDER BY RANDOM() LIMIT 1
+            ''', params)
+            row = cursor.fetchone()
+            if not row:
+                # fallback: 从 cloud_songs 取
+                cursor.execute(f'''
+                    SELECT s.title, s.artist, s.cover
+                    FROM cloud_songs s
+                    WHERE s.cover IS NOT NULL AND s.cover != '' {where_clause}
+                    ORDER BY RANDOM() LIMIT 1
+                ''', params)
+                row = cursor.fetchone()
+            if row:
+                cover = row['cover']
+                if cover and not cover.startswith('http'):
+                    cover = f"http://127.0.0.1:5000/api/music/cover?path={cover}"
+                return {'title': row['title'], 'artist': row['artist'], 'cover': cover}
+            return None
+
+        result = {
+            'daily': _pick_cover(''),
+            'hidden_gem': _pick_cover(''),
+        }
+
+        # 情绪推荐：从 song_mood_scores 取各情绪最高分的歌曲
+        moods = {}
+        for mood_key in ('sad', 'energetic', 'calm', 'upbeat', 'fresh', 'romantic', 'inspire'):
+            cursor.execute(f'''
+                SELECT s.title, s.artist, s.cover
+                FROM song_mood_scores sms
+                JOIN songs s ON sms.song_id = s.id
+                WHERE s.cover IS NOT NULL AND s.cover != '' AND sms.{mood_key} > 0.3
+                ORDER BY sms.{mood_key} DESC LIMIT 1
+            ''')
+            row = cursor.fetchone()
+            if row:
+                cover = row['cover']
+                if cover and not cover.startswith('http'):
+                    cover = f"http://127.0.0.1:5000/api/music/cover?path={cover}"
+                moods[mood_key] = {'title': row['title'], 'artist': row['artist'], 'cover': cover}
+            else:
+                moods[mood_key] = None
+        result['moods'] = moods
+
+        cursor.close()
+        db.close()
+        return jsonify(result)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 # ==================== 情绪分数刷新 ====================
 
 @ai_bp.route('/mood-scores/refresh', methods=['POST'])

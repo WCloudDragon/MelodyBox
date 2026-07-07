@@ -93,14 +93,7 @@
 
         <!-- 推荐入口卡片网格 -->
         <div v-if="aiStore.embeddingStatus.pending === 0" class="rec-entries">
-          <!-- DEBUG: 天气状态 -->
-          <div v-if="true" style="grid-column: 1/-1; padding: 8px 12px; background: #1a1a2e; border-radius: 8px; font-size: 11px; font-family: monospace; color: #888; margin-bottom: 4px; display: flex; align-items: center; gap: 12px;">
-            <span>[DEBUG] isConfigured={{ weatherStore.isConfigured }} | error={{ weatherStore.error }} |
-            isLoading={{ weatherStore.isLoading }} | hasData={{ !!weatherStore.weatherData }} |
-            pending={{ aiStore.embeddingStatus.pending }}</span>
-            <el-button size="small" @click="weatherStore.refreshWeather()" :loading="weatherStore.isLoading" style="flex-shrink: 0;">🔄 刷新天气</el-button>
-          </div>
-          <!-- 天气推荐卡片（仅在天气可用时显示） -->
+          <!-- 天气推荐卡片 -->
           <div
             v-if="weatherStore.isConfigured && !weatherStore.error"
             class="rec-entry rec-entry--weather"
@@ -119,12 +112,16 @@
 
           <!-- 每日推荐卡片 -->
           <div
-            class="rec-entry rec-entry--daily"
+            class="rec-entry rec-entry--cover"
             v-ripple
             @click="$router.push('/recommend?mode=comprehensive')"
           >
-            <div class="rec-entry__icon-bg rec-entry__icon-bg--daily">
-              <span class="rec-entry__icon">✨</span>
+            <div class="rec-entry__cover-bg">
+              <img v-if="getPreview('daily')?.cover" :src="getPreview('daily').cover" class="rec-entry__cover-img" />
+              <div v-else class="rec-entry__cover-placeholder">
+                <span>✨</span>
+              </div>
+              <div class="rec-entry__cover-mask"></div>
             </div>
             <div class="rec-entry__info">
               <div class="rec-entry__title">每日推荐</div>
@@ -134,12 +131,16 @@
 
           <!-- 冷门宝藏卡片 -->
           <div
-            class="rec-entry rec-entry--gem"
+            class="rec-entry rec-entry--cover"
             v-ripple
             @click="$router.push('/recommend?mode=hidden_gem')"
           >
-            <div class="rec-entry__icon-bg rec-entry__icon-bg--gem">
-              <span class="rec-entry__icon">💎</span>
+            <div class="rec-entry__cover-bg">
+              <img v-if="getPreview('hidden_gem')?.cover" :src="getPreview('hidden_gem').cover" class="rec-entry__cover-img" />
+              <div v-else class="rec-entry__cover-placeholder rec-entry__cover-placeholder--gem">
+                <span>💎</span>
+              </div>
+              <div class="rec-entry__cover-mask"></div>
             </div>
             <div class="rec-entry__info">
               <div class="rec-entry__title">冷门宝藏</div>
@@ -151,14 +152,18 @@
           <div
             v-for="m in moods.slice(0, 3)"
             :key="m.key"
-            class="rec-entry rec-entry--mood"
+            class="rec-entry rec-entry--cover"
             v-ripple
             @click="$router.push(`/recommend?mode=mood&mood=${m.key}`)"
           >
-            <div class="rec-entry__icon-bg rec-entry__icon-bg--mood" :style="{ background: m.gradient }">
-              <span class="rec-entry__icon">{{ m.icon }}</span>
+            <div class="rec-entry__cover-bg">
+              <img v-if="getPreview(m.key)?.cover" :src="getPreview(m.key).cover" class="rec-entry__cover-img" />
+              <div v-else class="rec-entry__cover-placeholder" :style="{ background: m.gradient }">
+                <span>{{ m.icon }}</span>
+              </div>
+              <div class="rec-entry__cover-mask"></div>
             </div>
-            <div class="rec-entry__info">
+            <div class="rec-entry__info" :style="getCoverBg(`mood_${m.key}`) !== 'var(--bg-tertiary)' ? { '--card-accent': getCoverAccent(`mood_${m.key}`), '--card-bg': getCoverBg(`mood_${m.key}`) } : {}">
               <div class="rec-entry__title">{{ m.label }}</div>
               <div class="rec-entry__subtitle">{{ m.sub }}</div>
             </div>
@@ -268,6 +273,7 @@ import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } fr
 import MusicCard from '@/components/music/MusicCard.vue'
 import { useScrollMemory } from '@/composables/useScrollMemory'
 import { useModal } from '@/composables/useModal'
+import { extractCoverColors } from '@/utils/coverColorExtractor'
 
 const libraryStore = useLibraryStore()
 const playerStore = usePlayerStore()
@@ -500,6 +506,63 @@ const weatherGradient = computed(() => {
   return gradients[mood] || 'linear-gradient(135deg, #6366f1, #818cf8)'
 })
 
+// 推荐预览数据（卡片封面）
+const recPreviews = ref({})
+const coverColors = ref({})
+
+async function loadRecPreviews() {
+  try {
+    const res = await fetch('http://127.0.0.1:5000/api/ai/recommend/previews')
+    if (res.ok) {
+      recPreviews.value = await res.json()
+      // 异步提取封面主色
+      extractAllColors()
+    }
+  } catch {}
+}
+
+async function extractAllColors() {
+  const pv = recPreviews.value
+  const entries = []
+  if (pv.daily?.cover) entries.push(['daily', pv.daily.cover])
+  if (pv.hidden_gem?.cover) entries.push(['hidden_gem', pv.hidden_gem.cover])
+  if (pv.moods) {
+    for (const [key, val] of Object.entries(pv.moods)) {
+      if (val?.cover) entries.push([`mood_${key}`, val.cover])
+    }
+  }
+  // 并行提取，但限制并发
+  const BATCH = 3
+  for (let i = 0; i < entries.length; i += BATCH) {
+    const batch = entries.slice(i, i + BATCH)
+    await Promise.all(batch.map(async ([key, url]) => {
+      const colors = await extractCoverColors(url)
+      if (colors) coverColors.value[key] = colors
+    }))
+  }
+  // 触发响应式更新
+  coverColors.value = { ...coverColors.value }
+}
+
+function getPreview(key) {
+  const pv = recPreviews.value
+  if (key === 'daily') return pv.daily
+  if (key === 'hidden_gem') return pv.hidden_gem
+  return pv.moods?.[key] || null
+}
+
+function getCoverBg(key) {
+  const c = coverColors.value[key]
+  if (c) return c.shadow
+  return 'var(--bg-tertiary)'
+}
+
+function getCoverAccent(key) {
+  const c = coverColors.value[key]
+  if (c) return c.highlight
+  return 'var(--accent-color)'
+}
+
 // 顶部语言推荐（取播放量最高的 3 种语言）
 const topLangs = computed(() => {
   const langs = aiStore.embeddingStatus.langs || []
@@ -583,8 +646,14 @@ watch(() => libraryStore.tracks.length, async (newLen) => {
     await aiStore.loadEmbeddingStatus()
     if (aiStore.embeddingStatus.pending === 0) {
       await aiStore.loadRecommendations()
+      loadRecPreviews()
     }
   }
+})
+
+// embedding 就绪后加载推荐预览
+watch(() => aiStore.embeddingStatus.pending, (pending) => {
+  if (pending === 0) loadRecPreviews()
 })
 </script>
 
@@ -715,29 +784,75 @@ watch(() => libraryStore.tracks.length, async (newLen) => {
 /* ---- 推荐入口卡片 ---- */
 .rec-entries {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
 .rec-entry {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
+  flex-direction: column;
   border-radius: 12px;
   background: var(--bg-secondary);
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.25s ease;
   overflow: hidden;
-  min-height: 80px;
+  min-height: 200px;
 }
 .rec-entry:hover {
   border-color: var(--border-color);
-  background: var(--bg-tertiary);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+}
+
+/* 封面卡片样式 */
+.rec-entry--cover .rec-entry__cover-bg {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+}
+.rec-entry__cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+.rec-entry--cover:hover .rec-entry__cover-img {
+  transform: scale(1.05);
+}
+.rec-entry__cover-mask {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40%;
+  background: linear-gradient(transparent, rgba(0,0,0,0.4));
+  pointer-events: none;
+}
+.rec-entry__cover-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, var(--accent-color), #818cf8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+}
+.rec-entry__cover-placeholder--gem {
+  background: linear-gradient(135deg, #7c3aed, #a78bfa);
+}
+
+/* 封面取色文字区域 */
+.rec-entry--cover .rec-entry__info {
+  padding: 12px 14px;
+  background: var(--card-bg, var(--bg-secondary));
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  transition: background 0.3s ease;
 }
 
 /* 天气卡片特殊样式 */
@@ -747,6 +862,9 @@ watch(() => libraryStore.tracks.length, async (newLen) => {
   border: none;
   padding: 0;
   overflow: hidden;
+  min-height: 100px;
+  flex-direction: row;
+  align-items: center;
 }
 .rec-entry--weather .rec-entry__bg {
   position: absolute;
@@ -768,6 +886,8 @@ watch(() => libraryStore.tracks.length, async (newLen) => {
   position: relative;
   z-index: 1;
   color: #fff;
+  padding: 16px;
+  background: transparent;
 }
 .rec-entry--weather .rec-entry__title {
   font-size: 18px;
@@ -789,33 +909,6 @@ watch(() => libraryStore.tracks.length, async (newLen) => {
   z-index: 1;
 }
 
-.rec-entry__icon-bg {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.rec-entry__icon-bg--daily {
-  background: linear-gradient(135deg, var(--accent-color), #818cf8);
-}
-.rec-entry__icon-bg--gem {
-  background: linear-gradient(135deg, #7c3aed, #a78bfa);
-}
-.rec-entry__icon-bg--mood {
-  /* background set via inline style */
-}
-.rec-entry__icon {
-  font-size: 24px;
-}
-.rec-entry__info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
 .rec-entry__title {
   font-size: 14px;
   font-weight: 600;
