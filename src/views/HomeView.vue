@@ -496,9 +496,10 @@ const CARD_WIDTH = 200
 function updateCardsPerPage() {
   const el = recEntriesRef.value
   if (!el) return
-  const w = el.clientWidth
+  // 使用父容器宽度减去 padding（左右各 20px）
+  const wrapW = el.parentElement?.clientWidth || el.clientWidth
+  const w = wrapW - 40
   recCardsPerPage.value = Math.max(1, Math.floor((w + CARD_GAP) / (CARD_WIDTH + CARD_GAP)))
-  // 确保当前页不越界
   if (recPage.value > recMaxPage.value) recPage.value = recMaxPage.value
 }
 
@@ -521,7 +522,8 @@ let resizeObserver = null
 onMounted(() => {
   updateCardsPerPage()
   resizeObserver = new ResizeObserver(updateCardsPerPage)
-  if (recEntriesRef.value) resizeObserver.observe(recEntriesRef.value)
+  // 监听父容器（rec-entries-wrap）的宽度变化
+  if (recEntriesRef.value?.parentElement) resizeObserver.observe(recEntriesRef.value.parentElement)
 })
 onUnmounted(() => {
   if (resizeObserver) resizeObserver.disconnect()
@@ -817,6 +819,7 @@ watch(() => aiStore.embeddingStatus.pending, (pending) => {
 .rec-entries-wrap {
   position: relative;
   margin-bottom: 16px;
+  padding: 0 20px;
 }
 .rec-entries {
   overflow: hidden;
@@ -824,6 +827,7 @@ watch(() => aiStore.embeddingStatus.pending, (pending) => {
 .rec-entries__track {
   display: flex;
   gap: 12px;
+  will-change: transform;
 }
 .rec-entries__arrow {
   position: absolute;
