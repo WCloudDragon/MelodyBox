@@ -25,51 +25,25 @@
     </div>
 
     <!-- 加载中 -->
-    <div v-if="isLoading" class="loading-hint">
+    <div v-if="isLoading && tracks.length === 0" class="loading-hint">
       <el-icon class="is-loading"><Loading /></el-icon>
       <span>正在生成推荐...</span>
     </div>
 
     <!-- 歌曲列表 -->
-    <div v-else-if="tracks.length > 0" class="tracks-list">
-      <div class="track-table-header">
-        <span class="col-index">#</span>
-        <span class="col-title">歌曲</span>
-        <span class="col-artist">歌手</span>
-        <span class="col-album">专辑</span>
-        <span class="col-quality">音质</span>
-        <span class="col-time">时长</span>
-      </div>
-      <div class="tracks-list-body">
-        <div
-          v-for="(track, index) in tracks"
-          :key="track.song_id"
-          class="track-row"
-          :class="{ playing: currentTrack?.path === track.path }"
-          v-ripple
-          @dblclick="playTrack(track)"
-        >
-          <span class="col-index">
-            <span class="index-num">{{ index + 1 }}</span>
-            <el-icon class="play-icon" v-ripple size="16" @click.stop="playTrack(track)"><VideoPlay /></el-icon>
-          </span>
-          <span class="col-title">
-            <LazyCover v-if="track.cover" :src="track.cover" class="row-cover" :thumb-size="72" />
-            <div v-else class="row-cover row-cover--empty"><el-icon size="14"><Headset /></el-icon></div>
-            <div class="col-title__text">
-              <span>{{ track.title }}</span>
-              <span v-if="track.reason" class="track-reason">{{ track.reason }}</span>
-            </div>
-          </span>
-          <span class="col-artist">{{ (track.artist || '').split('/').map(s => s.trim()).join(' / ') }}</span>
-          <span class="col-album">{{ track.album || '' }}</span>
-          <span class="col-quality">
-            <span v-if="track.quality" class="quality-tag" :class="qualityClass(track.quality)">{{ track.quality }}</span>
-          </span>
-          <span class="col-time">{{ formatDuration(track.duration) }}</span>
-        </div>
-      </div>
-    </div>
+    <TrackTable
+      v-else-if="tracks.length > 0"
+      :tracks="tracks"
+      :current-path="currentTrack?.path"
+      :context-target="contextMenuTarget"
+      :show-album="true"
+      :show-artist="true"
+      :multi-select-mode="multiSelectMode"
+      :selected-paths="selected"
+      @play="playTrack"
+      @contextmenu="showContextMenu"
+      @toggle-select="toggleSelect"
+    />
 
     <!-- 空状态 -->
     <div v-else class="empty-state">
@@ -78,28 +52,94 @@
         需要先生成 AI 向量才能获得个性化推荐
       </p>
     </div>
+
+    <!-- 右键菜单 -->
+    <ContextMenu
+      :visible="ctxMenu.visible"
+      :x="ctxMenu.x"
+      :y="ctxMenu.y"
+      :items="menuItems"
+      :animated="true"
+      @close="hideContextMenu"
+      @action="ctxAction"
+    />
   </div>
 </template>
 
 <script setup>
 defineOptions({ name: 'RecommendPlaylistView' })
-import { ref, computed, watch, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 import { useAiStore } from '@/stores/ai'
-import { useLibraryStore } from '@/stores/library'
-import { formatDuration, qualityClass } from '@/utils/format'
-import LazyCover from '@/components/LazyCover.vue'
+import { useTrackList } from '@/composables/useTrackList'
+import TrackTable from '@/components/music/TrackTable.vue'
+import ContextMenu from '@/components/music/ContextMenu.vue'
 
 const route = useRoute()
+const router = useRouter()
 const playerStore = usePlayerStore()
 const aiStore = useAiStore()
-const libraryStore = useLibraryStore()
 const { currentTrack } = storeToRefs(playerStore)
+
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems, showAddPlaylistDialog } = useTrackList()
+
+const ctxHandler = createCtxHandler(playerStore, router)
+const menuItems = computed(() => buildMenuItems('default'))
+
+function ctxAction(action) {
+  if (ctxHandler(action)) return
+  if (action === 'addToPlaylist') showAddPlaylistDialog(ctxMenu.value.track)
+}
 
 const tracks = ref([])
 const isLoading = ref(false)
+
+// --- 缓存 TTL（秒）---
+const CACHE_TTL = {
+  comprehensive: 'midnight', // 每日0点刷新
+  hidden_gem: 86400,    // 24h
+  mood: 21600,          // 6h
+  weather: 3600,        // 1h
+  language: 43200,       // 12h
+}
+
+function getCacheKey() {
+  const mode = route.query.mode || 'comprehensive'
+  const lang = route.query.lang || ''
+  const mood = route.query.mood || ''
+  return `rec_${mode}_${lang}_${mood}`
+}
+
+function getCacheTTL() {
+  const mode = route.query.mode || 'comprehensive'
+  const ttl = CACHE_TTL[mode] || 3600
+  if (ttl === 'midnight') {
+    // 计算距离明天 00:00:00 的秒数
+    const now = new Date()
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+    return Math.ceil((tomorrow - now) / 1000)
+  }
+  return ttl
+}
+
+function getCachedTracks() {
+  try {
+    const raw = localStorage.getItem(getCacheKey())
+    if (!raw) return null
+    const { data, ts } = JSON.parse(raw)
+    const ttl = getCacheTTL()
+    if (Date.now() - ts > ttl * 1000) return null
+    return data
+  } catch { return null }
+}
+
+function setCachedTracks(data) {
+  try {
+    localStorage.setItem(getCacheKey(), JSON.stringify({ data, ts: Date.now() }))
+  } catch {}
+}
 
 // 标题映射
 const TITLE_MAP = {
@@ -178,16 +218,27 @@ const headerInfo = computed(() => {
   }
 })
 
+function normalizeTracks(data) {
+  return data.map(t => ({
+    ...t,
+    path: t.file_path || t.path,
+    cover: t.cover_url ? (t.cover_url.startsWith('http') ? t.cover_url : `http://127.0.0.1:5000/api/music/cover?path=${encodeURIComponent(t.cover_url)}`) : null,
+  }))
+}
+
 async function fetchRecommendations() {
   const mode = route.query.mode || 'comprehensive'
   const lang = route.query.lang
   const mood = route.query.mood
   const weatherMood = route.query.weatherMood
-
-  // 天气推荐：用 weatherMood 参数覆盖 mood
   const effectiveMood = weatherMood || mood
 
-  // 每日推荐：使用当日固定种子
+  // 先显示缓存
+  const cached = getCachedTracks()
+  if (cached) {
+    tracks.value = normalizeTracks(cached)
+  }
+
   let seed = ''
   if (mode === 'comprehensive') {
     const today = new Date().toISOString().slice(0, 10)
@@ -206,20 +257,14 @@ async function fetchRecommendations() {
   try {
     const res = await fetch(url)
     if (!res.ok) {
-      tracks.value = []
+      if (!cached) tracks.value = []
       return
     }
     const data = await res.json()
-    for (const s of data) {
-      if (s.cover_url && !s.cover_url.startsWith('http')) {
-        s.cover_url = `http://127.0.0.1:5000/api/music/cover?path=${encodeURIComponent(s.cover_url)}`
-      }
-      s.path = s.file_path
-      s.cover = s.cover_url
-    }
-    tracks.value = data
+    setCachedTracks(data)
+    tracks.value = normalizeTracks(data)
   } catch {
-    tracks.value = []
+    if (!cached) tracks.value = []
   } finally {
     isLoading.value = false
   }
@@ -227,23 +272,16 @@ async function fetchRecommendations() {
 
 function playTrack(track) {
   const allTracks = tracks.value
-  const idx = allTracks.findIndex(t => t.song_id === track.song_id)
+  const idx = allTracks.findIndex(t => t.path === track.path)
   if (idx !== -1) {
-    // 补全 path 用于播放
-    const allTracksFixed = allTracks.map(t => ({
-      ...t,
-      path: t.file_path,
-    }))
-    playerStore.playAll(allTracksFixed, idx)
+    playerStore.playAll(allTracks, idx)
   }
 }
 
 function playAll() {
-  const allTracksFixed = tracks.value.map(t => ({
-    ...t,
-    path: t.file_path,
-  }))
-  playerStore.playAll(allTracksFixed, 0)
+  if (tracks.value.length) {
+    playerStore.playAll(tracks.value, 0)
+  }
 }
 
 watch(() => route.fullPath, fetchRecommendations, { immediate: true })
@@ -266,52 +304,6 @@ watch(() => route.fullPath, fetchRecommendations, { immediate: true })
 .recommend-header__info h1 { font-size: 28px; font-weight: 700; margin: 0 0 8px; }
 .recommend-header__info p { color: var(--text-tertiary); margin: 0 0 2px; font-size: 14px; }
 .recommend-header__actions { display: flex; gap: 8px; margin-top: 16px; }
-
-.tracks-list { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.track-table-header {
-  display: flex; align-items: center;
-  padding: 10px 12px; font-size: 11px;
-  color: var(--text-tertiary); text-transform: uppercase;
-  letter-spacing: 1px; border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-.tracks-list-body { flex: 1; overflow-y: auto; min-height: 0; }
-.tracks-list-body::-webkit-scrollbar { width: 6px; }
-.tracks-list-body::-webkit-scrollbar-track { background: transparent; }
-.tracks-list-body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
-
-.track-row {
-  display: flex; align-items: center;
-  padding: 0 12px; border-radius: 6px;
-  height: 52px; transition: background 0.15s; cursor: default;
-}
-.track-row:hover { background: var(--hover-bg); }
-.track-row.playing { background: var(--accent-bg); }
-.track-row.playing .col-title__text span:first-child { color: var(--accent-color); }
-
-.col-index { width: 40px; text-align: center; position: relative; }
-.col-index .index-num { font-size: 12px; color: var(--text-tertiary); transition: opacity 0.12s; }
-.col-index .play-icon {
-  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  cursor: pointer; color: var(--accent-color);
-  opacity: 0; pointer-events: none; transition: opacity 0.12s;
-}
-.track-row:hover .col-index .index-num { opacity: 0; }
-.track-row:hover .col-index .play-icon { opacity: 1; pointer-events: auto; }
-
-.col-title { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 13px; overflow: hidden; }
-.col-title__text { display: flex; flex-direction: column; min-width: 0; }
-.col-title__text span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.track-reason { font-size: 11px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row-cover { width: 36px; height: 36px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
-.row-cover--empty {
-  background: var(--bg-tertiary); display: flex;
-  align-items: center; justify-content: center; color: var(--text-tertiary);
-}
-.col-artist { width: 160px; font-size: 13px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-album { width: 180px; font-size: 13px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-quality { width: 52px; display: flex; align-items: center; justify-content: flex-end; font-size: 11px; }
-.col-time { width: 60px; text-align: right; font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 
 .loading-hint {
   display: flex; align-items: center; justify-content: center; gap: 8px;
