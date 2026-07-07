@@ -63,85 +63,99 @@
         </div>
 
         <!-- 推荐入口卡片网格 -->
-        <div v-if="hasRecData" class="rec-entries">
-          <!-- 天气推荐卡片 -->
-          <div
-            v-if="weatherStore.isConfigured && !weatherStore.error"
-            class="rec-entry rec-entry--cover rec-entry--weather"
-            v-ripple
-            @click="$router.push(`/recommend?mode=weather&mood=${weatherStore.mood}`)"
-          >
-            <div class="rec-entry__cover-bg">
-              <img v-if="weatherCover" :src="weatherCover" class="rec-entry__cover-img" />
-              <div v-else class="rec-entry__cover-placeholder rec-entry__cover-placeholder--weather">
-                <span>{{ weatherStore.weatherIcon }}</span>
+        <div v-if="hasRecData" class="rec-entries-wrap">
+          <button
+            v-if="recPage > 0"
+            class="rec-entries__arrow rec-entries__arrow--left"
+            @click="recPage--"
+          >‹</button>
+          <div class="rec-entries" ref="recEntriesRef">
+            <div class="rec-entries__track" :style="recTrackStyle">
+              <!-- 天气推荐卡片 -->
+              <div
+                v-if="weatherStore.isConfigured && !weatherStore.error"
+                class="rec-entry rec-entry--cover rec-entry--weather"
+                v-ripple
+                @click="$router.push(`/recommend?mode=weather&mood=${weatherStore.mood}`)"
+              >
+                <div class="rec-entry__cover-bg">
+                  <img v-if="weatherCover" :src="weatherCover" class="rec-entry__cover-img" />
+                  <div v-else class="rec-entry__cover-placeholder rec-entry__cover-placeholder--weather">
+                    <span>{{ weatherStore.weatherIcon }}</span>
+                  </div>
+                  <div class="rec-entry__cover-mask"></div>
+                </div>
+                <div class="rec-entry__info" :style="getCoverStyle(weatherStore.mood)">
+                  <div class="rec-entry__title">{{ weatherStore.weatherText }} {{ weatherStore.temp }}°</div>
+                  <div class="rec-entry__subtitle">{{ weatherStore.city }} · {{ weatherStore.suggestion }}</div>
+                </div>
               </div>
-              <div class="rec-entry__cover-mask"></div>
-            </div>
-            <div class="rec-entry__info" :style="getCoverStyle(weatherStore.mood)">
-              <div class="rec-entry__title">{{ weatherStore.weatherText }} {{ weatherStore.temp }}°</div>
-              <div class="rec-entry__subtitle">{{ weatherStore.city }} · {{ weatherStore.suggestion }}</div>
-            </div>
-          </div>
 
-          <!-- 每日推荐卡片 -->
-          <div
-            class="rec-entry rec-entry--cover"
-            v-ripple
-            @click="$router.push('/recommend?mode=comprehensive')"
-          >
-            <div class="rec-entry__cover-bg">
-              <img v-if="getPreview('daily')?.cover" :src="getPreview('daily').cover" class="rec-entry__cover-img" />
-              <div v-else class="rec-entry__cover-placeholder">
-                <span>✨</span>
+              <!-- 每日推荐卡片 -->
+              <div
+                class="rec-entry rec-entry--cover"
+                v-ripple
+                @click="$router.push('/recommend?mode=comprehensive')"
+              >
+                <div class="rec-entry__cover-bg">
+                  <img v-if="getPreview('daily')?.cover" :src="getPreview('daily').cover" class="rec-entry__cover-img" />
+                  <div v-else class="rec-entry__cover-placeholder">
+                    <span>✨</span>
+                  </div>
+                  <div class="rec-entry__cover-mask"></div>
+                </div>
+                <div class="rec-entry__info" :style="getCoverStyle('daily')">
+                  <div class="rec-entry__title">每日推荐</div>
+                  <div class="rec-entry__subtitle">根据你的听歌偏好</div>
+                </div>
               </div>
-              <div class="rec-entry__cover-mask"></div>
-            </div>
-            <div class="rec-entry__info" :style="getCoverStyle('daily')">
-              <div class="rec-entry__title">每日推荐</div>
-              <div class="rec-entry__subtitle">根据你的听歌偏好</div>
-            </div>
-          </div>
 
-          <!-- 冷门宝藏卡片 -->
-          <div
-            class="rec-entry rec-entry--cover"
-            v-ripple
-            @click="$router.push('/recommend?mode=hidden_gem')"
-          >
-            <div class="rec-entry__cover-bg">
-              <img v-if="getPreview('hidden_gem')?.cover" :src="getPreview('hidden_gem').cover" class="rec-entry__cover-img" />
-              <div v-else class="rec-entry__cover-placeholder rec-entry__cover-placeholder--gem">
-                <span>💎</span>
+              <!-- 冷门宝藏卡片 -->
+              <div
+                class="rec-entry rec-entry--cover"
+                v-ripple
+                @click="$router.push('/recommend?mode=hidden_gem')"
+              >
+                <div class="rec-entry__cover-bg">
+                  <img v-if="getPreview('hidden_gem')?.cover" :src="getPreview('hidden_gem').cover" class="rec-entry__cover-img" />
+                  <div v-else class="rec-entry__cover-placeholder rec-entry__cover-placeholder--gem">
+                    <span>💎</span>
+                  </div>
+                  <div class="rec-entry__cover-mask"></div>
+                </div>
+                <div class="rec-entry__info" :style="getCoverStyle('hidden_gem')">
+                  <div class="rec-entry__title">冷门宝藏</div>
+                  <div class="rec-entry__subtitle">被忽视的好歌</div>
+                </div>
               </div>
-              <div class="rec-entry__cover-mask"></div>
-            </div>
-            <div class="rec-entry__info" :style="getCoverStyle('hidden_gem')">
-              <div class="rec-entry__title">冷门宝藏</div>
-              <div class="rec-entry__subtitle">被忽视的好歌</div>
-            </div>
-          </div>
 
-          <!-- 按情绪推荐卡片（前3种） -->
-          <div
-            v-for="m in moods.slice(0, 3)"
-            :key="m.key"
-            class="rec-entry rec-entry--cover"
-            v-ripple
-            @click="$router.push(`/recommend?mode=mood&mood=${m.key}`)"
-          >
-            <div class="rec-entry__cover-bg">
-              <img v-if="getPreview(m.key)?.cover" :src="getPreview(m.key).cover" class="rec-entry__cover-img" />
-              <div v-else class="rec-entry__cover-placeholder" :style="{ background: m.gradient }">
-                <span>{{ m.icon }}</span>
+              <!-- 按情绪推荐卡片 -->
+              <div
+                v-for="m in moods"
+                :key="m.key"
+                class="rec-entry rec-entry--cover"
+                v-ripple
+                @click="$router.push(`/recommend?mode=mood&mood=${m.key}`)"
+              >
+                <div class="rec-entry__cover-bg">
+                  <img v-if="getPreview(m.key)?.cover" :src="getPreview(m.key).cover" class="rec-entry__cover-img" />
+                  <div v-else class="rec-entry__cover-placeholder" :style="{ background: m.gradient }">
+                    <span>{{ m.icon }}</span>
+                  </div>
+                  <div class="rec-entry__cover-mask"></div>
+                </div>
+                <div class="rec-entry__info" :style="getCoverStyle(m.key)">
+                  <div class="rec-entry__title">{{ m.label }}</div>
+                  <div class="rec-entry__subtitle">{{ m.sub }}</div>
+                </div>
               </div>
-              <div class="rec-entry__cover-mask"></div>
-            </div>
-            <div class="rec-entry__info" :style="getCoverStyle(m.key)">
-              <div class="rec-entry__title">{{ m.label }}</div>
-              <div class="rec-entry__subtitle">{{ m.sub }}</div>
             </div>
           </div>
+          <button
+            v-if="recPage < recMaxPage"
+            class="rec-entries__arrow rec-entries__arrow--right"
+            @click="recPage++"
+          >›</button>
         </div>
 
         <!-- 语言推荐入口（横排） -->
@@ -472,6 +486,44 @@ const weatherCover = computed(() => {
   return recPreviews.value?.moods?.[mood]?.cover || null
 })
 
+// 推荐卡片分页
+const recEntriesRef = ref(null)
+const recPage = ref(0)
+const recCardsPerPage = ref(5)
+const CARD_GAP = 12
+const CARD_WIDTH = 200
+
+function updateCardsPerPage() {
+  const el = recEntriesRef.value
+  if (!el) return
+  const w = el.clientWidth
+  recCardsPerPage.value = Math.max(1, Math.floor((w + CARD_GAP) / (CARD_WIDTH + CARD_GAP)))
+  // 确保当前页不越界
+  if (recPage.value > recMaxPage.value) recPage.value = recMaxPage.value
+}
+
+const recTotalCards = computed(() => {
+  let n = 2 + moods.length // daily + hidden_gem + moods
+  if (weatherStore.isConfigured && !weatherStore.error) n++
+  return n
+})
+
+const recMaxPage = computed(() => {
+  return Math.max(0, Math.ceil(recTotalCards.value / recCardsPerPage.value) - 1)
+})
+
+const recTrackStyle = computed(() => {
+  const offset = recPage.value * recCardsPerPage.value * (CARD_WIDTH + CARD_GAP)
+  return { transform: `translateX(-${offset}px)`, transition: 'transform 0.35s ease' }
+})
+
+onMounted(() => {
+  updateCardsPerPage()
+  const ro = new ResizeObserver(updateCardsPerPage)
+  if (recEntriesRef.value) ro.observe(recEntriesRef.value)
+  onUnmounted(() => ro.disconnect())
+})
+
 // 推荐预览数据（卡片封面）— localStorage 缓存 + 按需刷新
 const PREVIEW_CACHE_KEY = 'melodybox_rec_previews'
 const PREVIEW_COLORS_KEY = 'melodybox_rec_colors'
@@ -759,17 +811,39 @@ watch(() => aiStore.embeddingStatus.pending, (pending) => {
 }
 
 /* ---- 推荐入口卡片 ---- */
+.rec-entries-wrap {
+  position: relative;
+  margin-bottom: 16px;
+}
 .rec-entries {
+  overflow: hidden;
+}
+.rec-entries__track {
   display: flex;
   gap: 12px;
-  margin-bottom: 16px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  padding-bottom: 4px;
 }
-.rec-entries::-webkit-scrollbar { display: none; }
+.rec-entries__arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  transition: background 0.2s;
+}
+.rec-entries__arrow:hover { background: var(--bg-tertiary); }
+.rec-entries__arrow--left { left: -12px; }
+.rec-entries__arrow--right { right: -12px; }
 .rec-entry {
   position: relative;
   display: flex;
