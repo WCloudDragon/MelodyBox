@@ -517,11 +517,14 @@ const recTrackStyle = computed(() => {
   return { transform: `translateX(-${offset}px)`, transition: 'transform 0.35s ease' }
 })
 
+let resizeObserver = null
 onMounted(() => {
   updateCardsPerPage()
-  const ro = new ResizeObserver(updateCardsPerPage)
-  if (recEntriesRef.value) ro.observe(recEntriesRef.value)
-  onUnmounted(() => ro.disconnect())
+  resizeObserver = new ResizeObserver(updateCardsPerPage)
+  if (recEntriesRef.value) resizeObserver.observe(recEntriesRef.value)
+})
+onUnmounted(() => {
+  if (resizeObserver) resizeObserver.disconnect()
 })
 
 // 推荐预览数据（卡片封面）— localStorage 缓存 + 按需刷新
