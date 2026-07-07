@@ -251,7 +251,7 @@
 
 <script setup>
 defineOptions({ name: 'HomeView' })
-import { computed, watch, onBeforeUnmount, ref } from 'vue'
+import { computed, watch, onBeforeUnmount, onMounted, onUnmounted, ref } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
 import { useAiStore } from '@/stores/ai'
