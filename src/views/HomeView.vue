@@ -20,37 +20,8 @@
     </div>
 
     <template v-else>
-      <!-- 概览统计 -->
-      <div class="stats-row">
-        <div class="stat-card" v-ripple @click="$router.push('/library')">
-          <el-icon size="22"><Headset /></el-icon>
-          <div class="stat-card__value">{{ libraryStore.allTracks.length }}</div>
-          <div class="stat-card__label">首歌曲</div>
-        </div>
-        <div class="stat-card" v-ripple @click="$router.push('/library')">
-          <el-icon size="22"><Folder /></el-icon>
-          <div class="stat-card__value">{{ libraryStore.albums.length }}</div>
-          <div class="stat-card__label">张专辑</div>
-        </div>
-        <div class="stat-card" v-ripple>
-          <el-icon size="22"><User /></el-icon>
-          <div class="stat-card__value">{{ libraryStore.artists.length }}</div>
-          <div class="stat-card__label">位歌手</div>
-        </div>
-        <div class="stat-card" v-ripple>
-          <el-icon size="22"><Timer /></el-icon>
-          <div class="stat-card__value">{{ formatTotalDuration(libraryStore.totalDuration) }}</div>
-          <div class="stat-card__label">总时长</div>
-        </div>
-      </div>
-
       <!-- AI 智能推荐 -->
       <section class="section">
-        <div class="section__header">
-          <h3>
-            <span class="section__icon">✨</span> AI 智能推荐
-          </h3>
-        </div>
 
         <!-- embedding 未生成提示 -->
         <div v-if="(aiStore.embeddingStatus.pending > 0 || aiStore.embeddingStatus.audio_processing || generatingEmbeddings) && libraryStore.tracks.length > 0" class="embedding-banner">
@@ -268,7 +239,6 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
 import { useAiStore } from '@/stores/ai'
 import { useWeatherStore } from '@/stores/weather'
-import { formatTotalDuration } from '@/utils/format'
 import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } from '@/utils/scanNotify'
 import MusicCard from '@/components/music/MusicCard.vue'
 import { useScrollMemory } from '@/composables/useScrollMemory'
@@ -693,17 +663,7 @@ watch(() => aiStore.embeddingStatus.pending, (pending) => {
 .welcome-card h2 { font-size: 20px; margin-bottom: 8px; }
 .welcome-card p { color: var(--text-tertiary); margin-bottom: 24px; font-size: 14px; }
 
-.stats-row { display: flex; gap: 16px; margin-bottom: 36px; }
-.stat-card {
-  flex: 1; background: var(--bg-secondary);
-  border-radius: 12px; padding: 20px; text-align: center;
-  cursor: pointer; transition: border-color 0.2s, background 0.2s;
-  border: 1px solid transparent;
-}
-.stat-card:hover { border-color: var(--border-color); background: var(--bg-tertiary); }
-.stat-card .el-icon { color: var(--accent-color); margin-bottom: 8px; }
-.stat-card__value { font-size: 22px; font-weight: 700; }
-.stat-card__label { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+
 
 .section { margin-bottom: 36px; }
 .section__header {
