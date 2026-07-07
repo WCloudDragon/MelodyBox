@@ -67,18 +67,21 @@
           <!-- 天气推荐卡片 -->
           <div
             v-if="weatherStore.isConfigured && !weatherStore.error"
-            class="rec-entry rec-entry--weather"
+            class="rec-entry rec-entry--cover rec-entry--weather"
             v-ripple
             @click="$router.push(`/recommend?mode=weather&mood=${weatherStore.mood}`)"
           >
-            <div class="rec-entry__bg" :style="weatherGradient">
-              <span class="rec-entry__weather-icon">{{ weatherStore.weatherIcon }}</span>
+            <div class="rec-entry__cover-bg">
+              <img v-if="weatherCover" :src="weatherCover" class="rec-entry__cover-img" />
+              <div v-else class="rec-entry__cover-placeholder rec-entry__cover-placeholder--weather">
+                <span>{{ weatherStore.weatherIcon }}</span>
+              </div>
+              <div class="rec-entry__cover-mask"></div>
             </div>
-            <div class="rec-entry__info">
+            <div class="rec-entry__info" :style="getCoverStyle(weatherStore.mood)">
               <div class="rec-entry__title">{{ weatherStore.weatherText }} {{ weatherStore.temp }}°</div>
-              <div class="rec-entry__subtitle">{{ weatherStore.suggestion }}</div>
+              <div class="rec-entry__subtitle">{{ weatherStore.city }} · {{ weatherStore.suggestion }}</div>
             </div>
-            <div class="rec-entry__city">{{ weatherStore.city }}</div>
           </div>
 
           <!-- 每日推荐卡片 -->
@@ -462,18 +465,11 @@ const aiRecommendations = computed(() => {
 })
 
 // 天气卡片渐变背景
-const weatherGradient = computed(() => {
+// 天气卡片封面（取天气情绪对应的推荐封面）
+const weatherCover = computed(() => {
   const mood = weatherStore.mood
-  const gradients = {
-    sad: 'linear-gradient(135deg, #2c3e50, #4a6741)',
-    energetic: 'linear-gradient(135deg, #e74c3c, #e67e22)',
-    calm: 'linear-gradient(135deg, #2c3e50, #3498db)',
-    upbeat: 'linear-gradient(135deg, #e91e63, #9c27b0)',
-    fresh: 'linear-gradient(135deg, #27ae60, #2ecc71)',
-    romantic: 'linear-gradient(135deg, #e91e63, #f06292)',
-    inspire: 'linear-gradient(135deg, #ff9800, #ffc107)',
-  }
-  return gradients[mood] || 'linear-gradient(135deg, #6366f1, #818cf8)'
+  if (!mood) return null
+  return recPreviews.value?.moods?.[mood]?.cover || null
 })
 
 // 推荐预览数据（卡片封面）— localStorage 缓存 + 按需刷新
@@ -835,57 +831,12 @@ watch(() => aiStore.embeddingStatus.pending, (pending) => {
 }
 
 /* 天气卡片特殊样式 */
+/* 天气卡片：横跨2列 */
 .rec-entry--weather {
   grid-column: span 2;
-  background: none;
-  border: none;
-  padding: 0;
-  overflow: hidden;
-  min-height: 100px;
-  flex-direction: row;
-  align-items: center;
 }
-.rec-entry--weather .rec-entry__bg {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-}
-.rec-entry--weather .rec-entry__weather-icon {
-  font-size: 48px;
-  opacity: 0.3;
-  position: absolute;
-  right: 20px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-.rec-entry--weather .rec-entry__info {
-  position: relative;
-  z-index: 1;
-  color: #fff;
-  padding: 16px;
-  background: transparent;
-}
-.rec-entry--weather .rec-entry__title {
-  font-size: 18px;
-  font-weight: 700;
-  margin-bottom: 4px;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.3);
-}
-.rec-entry--weather .rec-entry__subtitle {
-  font-size: 13px;
-  opacity: 0.9;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.3);
-}
-.rec-entry--weather .rec-entry__city {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  font-size: 12px;
-  color: rgba(255,255,255,0.7);
-  z-index: 1;
+.rec-entry__cover-placeholder--weather {
+  background: linear-gradient(135deg, #6366f1, #818cf8);
 }
 
 .rec-entry__title {
