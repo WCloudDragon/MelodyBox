@@ -760,11 +760,16 @@ watch(() => aiStore.embeddingStatus.pending, (pending) => {
 
 /* ---- 推荐入口卡片 ---- */
 .rec-entries {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  display: flex;
   gap: 12px;
   margin-bottom: 16px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 4px;
 }
+.rec-entries::-webkit-scrollbar { display: none; }
 .rec-entry {
   position: relative;
   display: flex;
@@ -773,9 +778,11 @@ watch(() => aiStore.embeddingStatus.pending, (pending) => {
   background: var(--bg-secondary);
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.25s ease;
   overflow: hidden;
-  min-height: 200px;
+  min-width: 200px;
+  max-width: 200px;
+  flex-shrink: 0;
+  scroll-snap-align: start;
 }
 
 
@@ -830,11 +837,7 @@ watch(() => aiStore.embeddingStatus.pending, (pending) => {
   color: rgba(255,255,255,0.7);
 }
 
-/* 天气卡片特殊样式 */
-/* 天气卡片：横跨2列 */
-.rec-entry--weather {
-  grid-column: span 2;
-}
+/* 天气卡片 placeholder 背景 */
 .rec-entry__cover-placeholder--weather {
   background: linear-gradient(135deg, #6366f1, #818cf8);
 }
