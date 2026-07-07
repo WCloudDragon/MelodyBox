@@ -581,24 +581,7 @@ function getPreview(key) {
 function getCoverStyle(key) {
   const c = coverColors.value[key]
   if (!c) return {}
-  // 用 mid 色作为文字区域背景
-  const bg = c.mid || c.shadow
-  // 计算亮度决定文字颜色：亮背景用黑字，暗背景用白字
-  const lum = _hexLuminance(bg)
-  const textColor = lum > 0.4 ? '#1a1a2e' : '#ffffff'
-  const subColor = lum > 0.4 ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.7)'
-  return {
-    '--card-bg': bg,
-    '--card-text': textColor,
-    '--card-sub': subColor,
-  }
-}
-
-function _hexLuminance(hex) {
-  const r = parseInt(hex.slice(1, 3), 16) / 255
-  const g = parseInt(hex.slice(3, 5), 16) / 255
-  const b = parseInt(hex.slice(5, 7), 16) / 255
-  return 0.299 * r + 0.587 * g + 0.114 * b
+  return { '--card-bg': c.mid || c.shadow }
 }
 
 // 顶部语言推荐（取播放量最高的 3 种语言）
@@ -893,10 +876,10 @@ watch(() => aiStore.embeddingStatus.pending, (pending) => {
   transition: background 0.3s ease;
 }
 .rec-entry--cover .rec-entry__info .rec-entry__title {
-  color: var(--card-text, var(--text-primary));
+  color: var(--text-primary);
 }
 .rec-entry--cover .rec-entry__info .rec-entry__subtitle {
-  color: var(--card-sub, var(--text-tertiary));
+  color: var(--text-tertiary);
 }
 
 /* 天气卡片特殊样式 */
