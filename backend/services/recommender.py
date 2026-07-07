@@ -223,6 +223,7 @@ def _song_to_result(s, score, reason):
         'year': s['year'] or 0,
         'duration': s['duration'] or 0,
         'lang': s['lang'] or '',
+        'lyrics': s.get('lyrics') or '',
         'reason': reason,
         'score': round(score, 4),
         'source': s.get('source', 'local'),
