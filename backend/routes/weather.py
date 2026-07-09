@@ -13,11 +13,11 @@ import urllib.request
 import urllib.parse
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
+from utils.cache import cache
 
 weather_bp = Blueprint('weather', __name__, url_prefix='/api/weather')
 
-_cache = {}
-_CACHE_TTL = 1800  # 30 分钟
+_WEATHER_TTL = 1800  # 30 分钟
 
 # JWT 缓存（有效期最长 24h，我们设 30 分钟）
 _jwt_cache = {'token': None, 'expire': 0}
@@ -87,14 +87,11 @@ def _generate_jwt(config):
 
 
 def _cache_get(key):
-    entry = _cache.get(key)
-    if entry and entry[0] > time.time():
-        return entry[1]
-    return None
+    return cache.get(key)
 
 
 def _cache_set(key, data):
-    _cache[key] = (time.time() + _CACHE_TTL, data)
+    cache.set(key, data, _WEATHER_TTL)
 
 
 def _qweather_get(path, params, config):
@@ -171,7 +168,9 @@ def handle_preflight():
 
 
 def _get_city_by_ip():
-    """通过 ip-api.com 获取城市名和坐标"""
+    """通过 IP 获取城市名和坐标，支持多服务 fallback"""
+
+    # 服务 1: ip-api.com
     try:
         req = urllib.request.Request(
             'http://ip-api.com/json?lang=zh-CN&fields=city,country,lat,lon',
@@ -184,9 +183,42 @@ def _get_city_by_ip():
             lon = data.get('lon')
             if city and lat is not None and lon is not None:
                 return city, lat, lon
-            return None, None, None
-    except Exception as e:
-        return None, None, None
+    except Exception:
+        pass
+
+    # 服务 2: ip.sb
+    try:
+        req = urllib.request.Request(
+            'https://api.ip.sb/geoip',
+            headers={'User-Agent': 'MelodyBox/1.0'}
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            city = data.get('city', '')
+            lat = data.get('latitude')
+            lon = data.get('longitude')
+            if city and lat is not None and lon is not None:
+                return city, float(lat), float(lon)
+    except Exception:
+        pass
+
+    # 服务 3: ipapi.co
+    try:
+        req = urllib.request.Request(
+            'https://ipapi.co/json/',
+            headers={'User-Agent': 'MelodyBox/1.0'}
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            city = data.get('city', '')
+            lat = data.get('latitude')
+            lon = data.get('longitude')
+            if city and lat is not None and lon is not None:
+                return city, float(lat), float(lon)
+    except Exception:
+        pass
+
+    return None, None, None
 
 
 @weather_bp.route('/current')

@@ -81,13 +81,13 @@
                 <div class="rec-entry__cover-bg">
                   <img v-if="weatherCover" :src="weatherCover" class="rec-entry__cover-img" />
                   <div v-else class="rec-entry__cover-placeholder rec-entry__cover-placeholder--weather">
-                    <span>{{ weatherStore.weatherIcon }}</span>
+                    <span>{{ weatherStore.weatherText }}</span>
                   </div>
                   <div class="rec-entry__cover-mask"></div>
                 </div>
                 <div class="rec-entry__info" :style="getCoverStyle(weatherStore.mood)">
-                  <div class="rec-entry__title">{{ weatherStore.weatherText }} {{ weatherStore.temp }}°</div>
-                  <div class="rec-entry__subtitle">{{ weatherStore.city }} · {{ weatherStore.suggestion }}</div>
+                  <div class="rec-entry__title">{{ weatherStore.weatherText }} {{ weatherStore.temp }}° · {{ weatherStore.city }}</div>
+                  <div class="rec-entry__subtitle">{{ weatherStore.suggestion }}</div>
                 </div>
               </div>
 

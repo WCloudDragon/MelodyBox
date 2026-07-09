@@ -251,8 +251,18 @@ def _genre_match_score(genre_a, genre_b):
     gb = genre_b.strip().lower()
     if ga == gb:
         return 1.0
-    if ga[:2] == gb[:2] and len(ga) > 2 and len(gb) > 2:
-        return 0.5
+    # 词级 Jaccard 相似度（处理复合流派，如 "Pop Rock" vs "Rock"）
+    words_a = set(ga.replace('-', ' ').replace('&', ' ').split())
+    words_b = set(gb.replace('-', ' ').replace('&', ' ').split())
+    if words_a and words_b:
+        intersection = words_a & words_b
+        union = words_a | words_b
+        if intersection:
+            jaccard = len(intersection) / len(union)
+            return 0.3 + 0.7 * jaccard  # 归一化到 [0.3, 1.0]
+    # 4 字符前缀匹配（仅对单词流派兜底，如 "Electro" vs "Electronic"）
+    if len(ga) >= 4 and len(gb) >= 4 and ga[:4] == gb[:4]:
+        return 0.4
     return 0.0
 
 

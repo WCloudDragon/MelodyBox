@@ -334,6 +334,12 @@ def scan_music():
         cursor.close()
         db.close()
 
+        # 新歌曲入库后自动触发 embedding 生成
+        if result.get('inserted', 0) > 0 or result.get('updated', 0) > 0:
+            flask_app = current_app._get_current_object()
+            from routes.ai import auto_generate_embeddings
+            auto_generate_embeddings(flask_app)
+
         result['directories'] = dirs
         return jsonify(result)
     except Exception as e:

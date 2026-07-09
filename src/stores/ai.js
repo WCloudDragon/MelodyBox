@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
 const AI_BASE = 'http://127.0.0.1:5000/api/ai'
+const REC_CACHE_KEY = 'melodybox_ai_recommendations'
+const REC_CACHE_TTL = 30 * 60 * 1000 // 30 分钟
 
 export const useAiStore = defineStore('ai', () => {
   const recommendations = ref([])
@@ -27,6 +29,27 @@ export const useAiStore = defineStore('ai', () => {
   })
   const isDownloading = ref(false)
 
+  /** 缓存推荐结果到 localStorage */
+  function _saveRecCache(data) {
+    try {
+      localStorage.setItem(REC_CACHE_KEY, JSON.stringify({
+        data,
+        expireAt: Date.now() + REC_CACHE_TTL,
+      }))
+    } catch {}
+  }
+
+  /** 从 localStorage 恢复缓存的推荐 */
+  function _loadRecCache() {
+    try {
+      const raw = localStorage.getItem(REC_CACHE_KEY)
+      if (!raw) return null
+      const cached = JSON.parse(raw)
+      if (cached.expireAt > Date.now()) return cached.data
+    } catch {}
+    return null
+  }
+
   /** 加载 AI 推荐 */
   async function loadRecommendations(limit = 20) {
     isLoading.value = true
@@ -37,7 +60,13 @@ export const useAiStore = defineStore('ai', () => {
       }
       const res = await fetch(url)
       if (!res.ok) {
-        recommendations.value = []
+        // 后端返回错误，尝试离线降级
+        const cached = _loadRecCache()
+        if (cached) {
+          recommendations.value = cached
+        } else {
+          recommendations.value = []
+        }
         isLoaded.value = true
         return
       }
@@ -54,7 +83,13 @@ export const useAiStore = defineStore('ai', () => {
       }
       recommendations.value = data
       isLoaded.value = true
+      _saveRecCache(data)
     } catch {
+      // 网络不可用，尝试离线降级
+      const cached = _loadRecCache()
+      if (cached) {
+        recommendations.value = cached
+      }
       isLoaded.value = true
     } finally {
       isLoading.value = false

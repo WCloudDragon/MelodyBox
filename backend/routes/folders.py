@@ -200,6 +200,10 @@ def add_folder():
                         _scan_progress['inserted'] = result.get('inserted', 0)
                         _scan_progress['updated'] = result.get('updated', 0)
                         _scan_progress['deleted'] = result.get('deleted', 0)
+                        # 新歌曲入库后自动触发 embedding 生成
+                        if result.get('inserted', 0) > 0 or result.get('updated', 0) > 0:
+                            from routes.ai import auto_generate_embeddings
+                            auto_generate_embeddings(flask_app)
             except Exception as e:
                 traceback.print_exc()
             finally:
@@ -298,6 +302,10 @@ def rescan_folder(id):
                         _scan_progress['inserted'] = result.get('inserted', 0)
                         _scan_progress['updated'] = result.get('updated', 0)
                         _scan_progress['deleted'] = result.get('deleted', 0)
+                        # 新歌曲入库后自动触发 embedding 生成
+                        if result.get('inserted', 0) > 0 or result.get('updated', 0) > 0:
+                            from routes.ai import auto_generate_embeddings
+                            auto_generate_embeddings(flask_app)
             except Exception as e:
                 traceback.print_exc()
             finally:
