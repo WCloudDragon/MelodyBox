@@ -15,7 +15,7 @@
       <!-- 模糊背景：切歌时交叉淡入淡出 -->
       <div class="np-bg">
         <Transition name="bg-fade">
-          <img v-if="currentTrack?.cover" :key="currentTrack?.path" :src="currentTrack.cover" class="np-bg__img" decoding="async" />
+          <img v-if="bgBlurCover" :key="currentTrack?.path" :src="bgBlurCover" class="np-bg__img" :style="{ filter: `blur(60px) brightness(${bgBrightness})` }" decoding="async" />
         </Transition>
         <!-- 动态流光：6 张径向渐变 PNG 光球 -->
         <div v-if="settings.enableDynamicBg && flowBlobs" class="np-bg__flow">
@@ -148,12 +148,12 @@ function generateBlobPNG(hex, size = 400) {
   const { r, g, b } = hexToRgb(hex)
   const cx = size / 2
   const gradient = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx)
-  // 整体透明度降低，增强朦胧感
-  gradient.addColorStop(0,    `rgba(${r},${g},${b},0.5)`)   // 中心：半透明
-  gradient.addColorStop(0.3,  `rgba(${r},${g},${b},0.4)`)   // 30%：较淡
-  gradient.addColorStop(0.55, `rgba(${r},${g},${b},0.2)`)   // 55%：淡
-  gradient.addColorStop(0.75, `rgba(${r},${g},${b},0.08)`)  // 75%：很淡
-  gradient.addColorStop(0.9,  `rgba(${r},${g},${b},0.02)`)  // 90%：极淡
+  // 整体透明度适中，略微明显
+  gradient.addColorStop(0,    `rgba(${r},${g},${b},0.65)`)  // 中心：较明显
+  gradient.addColorStop(0.3,  `rgba(${r},${g},${b},0.5)`)   // 30%：中等
+  gradient.addColorStop(0.55, `rgba(${r},${g},${b},0.25)`)  // 55%：淡
+  gradient.addColorStop(0.75, `rgba(${r},${g},${b},0.1)`)   // 75%：较淡
+  gradient.addColorStop(0.9,  `rgba(${r},${g},${b},0.03)`)  // 90%：很淡
   gradient.addColorStop(1,    `rgba(${r},${g},${b},0)`)     // 边缘：完全透明
   ctx.fillStyle = gradient
   ctx.fillRect(0, 0, size, size)
@@ -187,6 +187,56 @@ function toThumbUrl(coverUrl, size = 332) {
   } catch {}
   return coverUrl // fallback：非标准 HTTP URL 走原路径
 }
+
+// 模糊背景使用200px缩略图（小图模糊后放大，性能优化）
+const bgBlurCover = computed(() => toThumbUrl(currentTrack.value?.cover, 200))
+
+// 封面亮度检测（用于动态调整背景亮度）
+const coverBrightness = ref(128) // 默认中等亮度
+
+async function detectCoverBrightness(coverUrl) {
+  if (!coverUrl) return 128
+  try {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.src = coverUrl
+    await new Promise((resolve, reject) => {
+      img.onload = resolve
+      img.onerror = reject
+    })
+    const canvas = document.createElement('canvas')
+    const size = 50 // 小尺寸采样，性能优先
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(img, 0, 0, size, size)
+    const data = ctx.getImageData(0, 0, size, size).data
+    let totalBrightness = 0
+    for (let i = 0; i < data.length; i += 4) {
+      // 人眼感知亮度公式
+      totalBrightness += data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
+    }
+    return totalBrightness / (size * size)
+  } catch {
+    return 128 // 出错时返回中等亮度
+  }
+}
+
+// 动态背景亮度（根据封面亮度自适应）
+const bgBrightness = computed(() => {
+  const b = coverBrightness.value
+  if (b > 180) return 0.3   // 太白，大幅降低
+  if (b > 150) return 0.4   // 偏白，降低
+  if (b < 40) return 0.8    // 太黑，大幅提高
+  if (b < 70) return 0.7    // 偏黑，提高
+  return 0.5                 // 正常范围
+})
+
+// 封面变化时检测亮度
+watch(() => currentTrack.value?.cover, async (cover) => {
+  const thumbUrl = toThumbUrl(cover, 200)
+  coverBrightness.value = await detectCoverBrightness(thumbUrl)
+})
 
 // 封面变化时异步提取主色
 watch(() => currentTrack.value?.cover, async (cover) => {
@@ -1133,7 +1183,7 @@ onBeforeUnmount(() => {
   top: -10%;
   left: -10%;
   object-fit: cover;
-  filter: blur(90px) brightness(0.5);
+  /* filter 通过内联样式动态设置，根据封面亮度自适应 */
   will-change: filter;
 }
 
