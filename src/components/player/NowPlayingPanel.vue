@@ -149,11 +149,11 @@ function generateBlobPNG(hex, size = 400) {
   const cx = size / 2
   const gradient = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx)
   // 整体透明度适中，略微明显
-  gradient.addColorStop(0,    `rgba(${r},${g},${b},0.65)`)  // 中心：较明显
-  gradient.addColorStop(0.3,  `rgba(${r},${g},${b},0.5)`)   // 30%：中等
-  gradient.addColorStop(0.55, `rgba(${r},${g},${b},0.25)`)  // 55%：淡
-  gradient.addColorStop(0.75, `rgba(${r},${g},${b},0.1)`)   // 75%：较淡
-  gradient.addColorStop(0.9,  `rgba(${r},${g},${b},0.03)`)  // 90%：很淡
+  gradient.addColorStop(0,    `rgba(${r},${g},${b},0.8)`)   // 中心：明显
+  gradient.addColorStop(0.3,  `rgba(${r},${g},${b},0.6)`)   // 30%：较明显
+  gradient.addColorStop(0.55, `rgba(${r},${g},${b},0.3)`)   // 55%：中等
+  gradient.addColorStop(0.75, `rgba(${r},${g},${b},0.12)`)  // 75%：较淡
+  gradient.addColorStop(0.9,  `rgba(${r},${g},${b},0.04)`)  // 90%：很淡
   gradient.addColorStop(1,    `rgba(${r},${g},${b},0)`)     // 边缘：完全透明
   ctx.fillStyle = gradient
   ctx.fillRect(0, 0, size, size)
