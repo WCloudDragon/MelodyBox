@@ -139,7 +139,7 @@ function hexToRgb(hex) {
   return { r, g, b }
 }
 
-// Canvas 生成径向渐变 PNG（400×400），中心不透明 → 边缘同色零透
+// Canvas 生成径向渐变 PNG（400×400），中心半透明 → 边缘零透（朦胧效果）
 function generateBlobPNG(hex, size = 400) {
   const canvas = document.createElement('canvas')
   canvas.width = size
@@ -148,11 +148,13 @@ function generateBlobPNG(hex, size = 400) {
   const { r, g, b } = hexToRgb(hex)
   const cx = size / 2
   const gradient = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx)
-  gradient.addColorStop(0,    `rgba(${r},${g},${b},1)`)    // 中心：完全不透明
-  gradient.addColorStop(0.35, `rgba(${r},${g},${b},0.95)`)  // 35%：保持高不透明
-  gradient.addColorStop(0.6,  `rgba(${r},${g},${b},0.6)`)   // 60%：开始淡出
-  gradient.addColorStop(0.85, `rgba(${r},${g},${b},0.15)`)  // 85%：很淡
-  gradient.addColorStop(1,    `rgba(${r},${g},${b},0)`)     // 边缘：同色零透，避免 soft-light 黑边
+  // 整体透明度降低，增强朦胧感
+  gradient.addColorStop(0,    `rgba(${r},${g},${b},0.5)`)   // 中心：半透明
+  gradient.addColorStop(0.3,  `rgba(${r},${g},${b},0.4)`)   // 30%：较淡
+  gradient.addColorStop(0.55, `rgba(${r},${g},${b},0.2)`)   // 55%：淡
+  gradient.addColorStop(0.75, `rgba(${r},${g},${b},0.08)`)  // 75%：很淡
+  gradient.addColorStop(0.9,  `rgba(${r},${g},${b},0.02)`)  // 90%：极淡
+  gradient.addColorStop(1,    `rgba(${r},${g},${b},0)`)     // 边缘：完全透明
   ctx.fillStyle = gradient
   ctx.fillRect(0, 0, size, size)
   return canvas.toDataURL('image/png')
@@ -1131,7 +1133,7 @@ onBeforeUnmount(() => {
   top: -10%;
   left: -10%;
   object-fit: cover;
-  filter: blur(60px) brightness(0.5);
+  filter: blur(90px) brightness(0.5);
   will-change: filter;
 }
 
@@ -1140,77 +1142,81 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: -10%;
   z-index: 1;
-  mix-blend-mode: soft-light;
+  mix-blend-mode: screen;
   pointer-events: none;
-  filter: contrast(1.15) saturate(1.4);
+  opacity: 0.5;
 }
 .np-bg__blob {
   position: absolute;
   /* 径向渐变已预渲染到 PNG 中，无 blur/filter 开销 */
-  opacity: 0.7;
+  opacity: 0.9;
   display: block;
   will-change: top, left, transform;
 }
-.np-bg__blob--1 { --base-dur: 14s; width: 45%; height: 45%; top: 10%; left: 10%; animation-name: blob-float-1; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
-.np-bg__blob--2 { --base-dur: 17s; width: 50%; height: 50%; top: 50%; left: 60%; animation: blob-float-2 17s ease-in-out infinite 2s; }
-.np-bg__blob--3 { --base-dur: 15s; width: 38%; height: 38%; top: 60%; left: 20%; animation: blob-float-3 15s ease-in-out infinite 4s; }
-.np-bg__blob--4 { --base-dur: 19s; width: 42%; height: 42%; top: 0%;  left: 50%; animation: blob-float-4 19s ease-in-out infinite 1s; }
-.np-bg__blob--5 { --base-dur: 13s; width: 35%; height: 35%; top: 30%; left: 70%; animation: blob-float-5 13s ease-in-out infinite 5s; }
-.np-bg__blob--6 { --base-dur: 21s; width: 48%; height: 48%; top: 70%; left: 40%; animation: blob-float-6 21s ease-in-out infinite 3s; }
+/* 环形布局初始位置 + 大幅错开 delay（约动画周期 1/6） */
+.np-bg__blob--1 { --base-dur: 45s; width: 45%; height: 45%; top: 15%; left: 15%; animation: blob-float-1 var(--base-dur) ease-in-out infinite; }
+.np-bg__blob--2 { --base-dur: 52s; width: 50%; height: 50%; top: 10%; left: 50%; animation: blob-float-2 var(--base-dur) ease-in-out infinite 8s; }
+.np-bg__blob--3 { --base-dur: 48s; width: 38%; height: 38%; top: 20%; left: 85%; animation: blob-float-3 var(--base-dur) ease-in-out infinite 16s; }
+.np-bg__blob--4 { --base-dur: 55s; width: 42%; height: 42%; top: 80%; left: 85%; animation: blob-float-4 var(--base-dur) ease-in-out infinite 24s; }
+.np-bg__blob--5 { --base-dur: 42s; width: 35%; height: 35%; top: 90%; left: 50%; animation: blob-float-5 var(--base-dur) ease-in-out infinite 32s; }
+.np-bg__blob--6 { --base-dur: 58s; width: 48%; height: 48%; top: 80%; left: 15%; animation: blob-float-6 var(--base-dur) ease-in-out infinite 40s; }
 
 /* 分层响应：低频能量 → 所有光球缩放 | 中频能量 → 光球 2/5 透明度 | 全频能量 → 光球 1/4 透明度 */
 .np-bg__blob--2, .np-bg__blob--5 { opacity: var(--flow-opacity-mid, 0.7); }
 .np-bg__blob--1, .np-bg__blob--4 { opacity: var(--flow-opacity-hl, 0.7); }
 
+/* 环形布局：左上→上→右上→右下→下→左下 */
 @keyframes blob-float-1 {
-  0%, 100% { top: 10%; left: 10%; transform: rotate(0deg)   scale(var(--flow-scale, 1)); }
-  15%       { top: 35%; left: 20%; transform: rotate(54deg)  scale(var(--flow-scale, 1)); }
-  30%       { top: 20%; left: 50%; transform: rotate(108deg) scale(var(--flow-scale, 1)); }
-  45%       { top: 45%; left: 40%; transform: rotate(162deg) scale(var(--flow-scale, 1)); }
-  60%       { top: 15%; left: 60%; transform: rotate(216deg) scale(var(--flow-scale, 1)); }
-  75%       { top: 40%; left: 30%; transform: rotate(270deg) scale(var(--flow-scale, 1)); }
-  90%       { top: 5%;  left: 45%; transform: rotate(324deg) scale(var(--flow-scale, 1)); }
+  /* 光球1：重心左上(15%,20%)，可到中右 */
+  0%, 100% { top: 15%; left: 15%; transform: rotate(0deg)   scale(var(--flow-scale, 1)); }
+  16%       { top: 30%; left: 40%; transform: rotate(58deg)  scale(var(--flow-scale, 1)); }
+  33%       { top: 10%; left: 65%; transform: rotate(119deg) scale(var(--flow-scale, 1)); }
+  50%       { top: 40%; left: 25%; transform: rotate(180deg) scale(var(--flow-scale, 1)); }
+  66%       { top: 20%; left: 55%; transform: rotate(238deg) scale(var(--flow-scale, 1)); }
+  83%       { top: 35%; left: 10%; transform: rotate(299deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-2 {
-  0%, 100% { top: 50%; left: 60%; transform: rotate(0deg)    scale(var(--flow-scale, 1)); }
-  15%       { top: 30%; left: 40%; transform: rotate(-54deg)  scale(var(--flow-scale, 1)); }
-  30%       { top: 60%; left: 30%; transform: rotate(-108deg) scale(var(--flow-scale, 1)); }
-  45%       { top: 25%; left: 50%; transform: rotate(-162deg) scale(var(--flow-scale, 1)); }
-  60%       { top: 55%; left: 70%; transform: rotate(-216deg) scale(var(--flow-scale, 1)); }
-  75%       { top: 40%; left: 55%; transform: rotate(-270deg) scale(var(--flow-scale, 1)); }
-  90%       { top: 65%; left: 45%; transform: rotate(-324deg) scale(var(--flow-scale, 1)); }
+  /* 光球2：重心上(50%,10%)，可到左右 */
+  0%, 100% { top: 10%; left: 50%; transform: rotate(0deg)    scale(var(--flow-scale, 1)); }
+  16%       { top: 25%; left: 25%; transform: rotate(-58deg)  scale(var(--flow-scale, 1)); }
+  33%       { top: 5%; left: 75%; transform: rotate(-119deg) scale(var(--flow-scale, 1)); }
+  50%       { top: 30%; left: 45%; transform: rotate(-180deg) scale(var(--flow-scale, 1)); }
+  66%       { top: 15%; left: 60%; transform: rotate(-238deg) scale(var(--flow-scale, 1)); }
+  83%       { top: 20%; left: 30%; transform: rotate(-299deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-3 {
-  0%, 100% { top: 60%; left: 20%; transform: rotate(0deg)  scale(var(--flow-scale, 1)); }
-  20%       { top: 40%; left: 45%; transform: rotate(72deg) scale(var(--flow-scale, 1)); }
-  40%       { top: 65%; left: 60%; transform: rotate(144deg) scale(var(--flow-scale, 1)); }
-  60%       { top: 20%; left: 35%; transform: rotate(216deg) scale(var(--flow-scale, 1)); }
-  80%       { top: 50%; left: 15%; transform: rotate(288deg) scale(var(--flow-scale, 1)); }
+  /* 光球3：重心右上(85%,20%)，可到中左 */
+  0%, 100% { top: 20%; left: 85%; transform: rotate(0deg)  scale(var(--flow-scale, 1)); }
+  20%       { top: 35%; left: 60%; transform: rotate(72deg) scale(var(--flow-scale, 1)); }
+  40%       { top: 15%; left: 35%; transform: rotate(144deg) scale(var(--flow-scale, 1)); }
+  60%       { top: 40%; left: 75%; transform: rotate(216deg) scale(var(--flow-scale, 1)); }
+  80%       { top: 25%; left: 50%; transform: rotate(288deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-4 {
-  0%, 100% { top: 0%;  left: 50%; transform: rotate(0deg)    scale(var(--flow-scale, 1)); }
-  15%       { top: 25%; left: 65%; transform: rotate(-54deg)  scale(var(--flow-scale, 1)); }
-  30%       { top: 10%; left: 30%; transform: rotate(-108deg) scale(var(--flow-scale, 1)); }
-  45%       { top: 40%; left: 55%; transform: rotate(-162deg) scale(var(--flow-scale, 1)); }
-  60%       { top: 5%;  left: 70%; transform: rotate(-216deg) scale(var(--flow-scale, 1)); }
-  75%       { top: 30%; left: 35%; transform: rotate(-270deg) scale(var(--flow-scale, 1)); }
-  90%       { top: 15%; left: 60%; transform: rotate(-324deg) scale(var(--flow-scale, 1)); }
+  /* 光球4：重心右下(85%,80%)，可到中左 */
+  0%, 100% { top: 80%; left: 85%; transform: rotate(0deg)    scale(var(--flow-scale, 1)); }
+  16%       { top: 65%; left: 60%; transform: rotate(-58deg)  scale(var(--flow-scale, 1)); }
+  33%       { top: 90%; left: 35%; transform: rotate(-119deg) scale(var(--flow-scale, 1)); }
+  50%       { top: 60%; left: 75%; transform: rotate(-180deg) scale(var(--flow-scale, 1)); }
+  66%       { top: 85%; left: 50%; transform: rotate(-238deg) scale(var(--flow-scale, 1)); }
+  83%       { top: 70%; left: 65%; transform: rotate(-299deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-5 {
-  0%, 100% { top: 30%; left: 70%; transform: rotate(0deg)   scale(var(--flow-scale, 1)); }
-  20%       { top: 55%; left: 50%; transform: rotate(72deg)  scale(var(--flow-scale, 1)); }
-  40%       { top: 40%; left: 20%; transform: rotate(144deg) scale(var(--flow-scale, 1)); }
-  60%       { top: 15%; left: 45%; transform: rotate(216deg) scale(var(--flow-scale, 1)); }
-  80%       { top: 50%; left: 60%; transform: rotate(288deg) scale(var(--flow-scale, 1)); }
+  /* 光球5：重心下(50%,90%)，可到左右 */
+  0%, 100% { top: 90%; left: 50%; transform: rotate(0deg)   scale(var(--flow-scale, 1)); }
+  20%       { top: 75%; left: 75%; transform: rotate(72deg)  scale(var(--flow-scale, 1)); }
+  40%       { top: 95%; left: 25%; transform: rotate(144deg) scale(var(--flow-scale, 1)); }
+  60%       { top: 70%; left: 60%; transform: rotate(216deg) scale(var(--flow-scale, 1)); }
+  80%       { top: 85%; left: 40%; transform: rotate(288deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-6 {
-  0%, 100% { top: 70%; left: 40%; transform: rotate(0deg)    scale(var(--flow-scale, 1)); }
-  15%       { top: 45%; left: 25%; transform: rotate(-54deg)  scale(var(--flow-scale, 1)); }
-  30%       { top: 60%; left: 55%; transform: rotate(-108deg) scale(var(--flow-scale, 1)); }
-  45%       { top: 35%; left: 60%; transform: rotate(-162deg) scale(var(--flow-scale, 1)); }
-  60%       { top: 55%; left: 15%; transform: rotate(-216deg) scale(var(--flow-scale, 1)); }
-  75%       { top: 65%; left: 50%; transform: rotate(-270deg) scale(var(--flow-scale, 1)); }
-  90%       { top: 40%; left: 35%; transform: rotate(-324deg) scale(var(--flow-scale, 1)); }
+  /* 光球6：重心左下(15%,80%)，可到中右 */
+  0%, 100% { top: 80%; left: 15%; transform: rotate(0deg)    scale(var(--flow-scale, 1)); }
+  16%       { top: 65%; left: 40%; transform: rotate(-58deg)  scale(var(--flow-scale, 1)); }
+  33%       { top: 85%; left: 65%; transform: rotate(-119deg) scale(var(--flow-scale, 1)); }
+  50%       { top: 60%; left: 25%; transform: rotate(-180deg) scale(var(--flow-scale, 1)); }
+  66%       { top: 75%; left: 55%; transform: rotate(-238deg) scale(var(--flow-scale, 1)); }
+  83%       { top: 70%; left: 35%; transform: rotate(-299deg) scale(var(--flow-scale, 1)); }
 }
 
 
