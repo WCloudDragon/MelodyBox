@@ -1198,6 +1198,8 @@ onBeforeUnmount(() => {
 }
 .np-bg__blob {
   position: absolute;
+  /* 让 left/top 锚定光球几何中心（PNG 渐变亮点在正中），避免整体右下偏移 */
+  transform: translate(-50%, -50%);
   /* 径向渐变已预渲染到 PNG 中，无 blur/filter 开销 */
   opacity: 0.9;
   display: block;
@@ -1218,55 +1220,55 @@ onBeforeUnmount(() => {
 /* 环形布局：左上→上→右上→右下→下→左下 */
 @keyframes blob-float-1 {
   /* 光球1：重心左上(15%,20%)，可到中右 */
-  0%, 100% { top: 15%; left: 15%; transform: rotate(0deg)   scale(var(--flow-scale, 1)); }
-  16%       { top: 30%; left: 40%; transform: rotate(58deg)  scale(var(--flow-scale, 1)); }
-  33%       { top: 10%; left: 65%; transform: rotate(119deg) scale(var(--flow-scale, 1)); }
-  50%       { top: 40%; left: 25%; transform: rotate(180deg) scale(var(--flow-scale, 1)); }
-  66%       { top: 20%; left: 55%; transform: rotate(238deg) scale(var(--flow-scale, 1)); }
-  83%       { top: 35%; left: 10%; transform: rotate(299deg) scale(var(--flow-scale, 1)); }
+  0%, 100% { top: 15%; left: 15%; transform: translate(-50%, -50%) rotate(0deg)   scale(var(--flow-scale, 1)); }
+  16%       { top: 30%; left: 40%; transform: translate(-50%, -50%) rotate(58deg)  scale(var(--flow-scale, 1)); }
+  33%       { top: 10%; left: 65%; transform: translate(-50%, -50%) rotate(119deg) scale(var(--flow-scale, 1)); }
+  50%       { top: 40%; left: 25%; transform: translate(-50%, -50%) rotate(180deg) scale(var(--flow-scale, 1)); }
+  66%       { top: 20%; left: 55%; transform: translate(-50%, -50%) rotate(238deg) scale(var(--flow-scale, 1)); }
+  83%       { top: 35%; left: 10%; transform: translate(-50%, -50%) rotate(299deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-2 {
   /* 光球2：重心上(50%,10%)，可到左右 */
-  0%, 100% { top: 10%; left: 50%; transform: rotate(0deg)    scale(var(--flow-scale, 1)); }
-  16%       { top: 25%; left: 25%; transform: rotate(-58deg)  scale(var(--flow-scale, 1)); }
-  33%       { top: 5%; left: 75%; transform: rotate(-119deg) scale(var(--flow-scale, 1)); }
-  50%       { top: 30%; left: 45%; transform: rotate(-180deg) scale(var(--flow-scale, 1)); }
-  66%       { top: 15%; left: 60%; transform: rotate(-238deg) scale(var(--flow-scale, 1)); }
-  83%       { top: 20%; left: 30%; transform: rotate(-299deg) scale(var(--flow-scale, 1)); }
+  0%, 100% { top: 10%; left: 50%; transform: translate(-50%, -50%) rotate(0deg)    scale(var(--flow-scale, 1)); }
+  16%       { top: 25%; left: 25%; transform: translate(-50%, -50%) rotate(-58deg)  scale(var(--flow-scale, 1)); }
+  33%       { top: 5%; left: 75%; transform: translate(-50%, -50%) rotate(-119deg) scale(var(--flow-scale, 1)); }
+  50%       { top: 30%; left: 45%; transform: translate(-50%, -50%) rotate(-180deg) scale(var(--flow-scale, 1)); }
+  66%       { top: 15%; left: 60%; transform: translate(-50%, -50%) rotate(-238deg) scale(var(--flow-scale, 1)); }
+  83%       { top: 20%; left: 30%; transform: translate(-50%, -50%) rotate(-299deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-3 {
   /* 光球3：重心右上(85%,20%)，可到中左 */
-  0%, 100% { top: 20%; left: 85%; transform: rotate(0deg)  scale(var(--flow-scale, 1)); }
-  20%       { top: 35%; left: 60%; transform: rotate(72deg) scale(var(--flow-scale, 1)); }
-  40%       { top: 15%; left: 35%; transform: rotate(144deg) scale(var(--flow-scale, 1)); }
-  60%       { top: 40%; left: 75%; transform: rotate(216deg) scale(var(--flow-scale, 1)); }
-  80%       { top: 25%; left: 50%; transform: rotate(288deg) scale(var(--flow-scale, 1)); }
+  0%, 100% { top: 20%; left: 85%; transform: translate(-50%, -50%) rotate(0deg)  scale(var(--flow-scale, 1)); }
+  20%       { top: 35%; left: 60%; transform: translate(-50%, -50%) rotate(72deg) scale(var(--flow-scale, 1)); }
+  40%       { top: 15%; left: 35%; transform: translate(-50%, -50%) rotate(144deg) scale(var(--flow-scale, 1)); }
+  60%       { top: 40%; left: 75%; transform: translate(-50%, -50%) rotate(216deg) scale(var(--flow-scale, 1)); }
+  80%       { top: 25%; left: 50%; transform: translate(-50%, -50%) rotate(288deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-4 {
   /* 光球4：重心右下(85%,80%)，可到中左 */
-  0%, 100% { top: 80%; left: 85%; transform: rotate(0deg)    scale(var(--flow-scale, 1)); }
-  16%       { top: 65%; left: 60%; transform: rotate(-58deg)  scale(var(--flow-scale, 1)); }
-  33%       { top: 90%; left: 35%; transform: rotate(-119deg) scale(var(--flow-scale, 1)); }
-  50%       { top: 60%; left: 75%; transform: rotate(-180deg) scale(var(--flow-scale, 1)); }
-  66%       { top: 85%; left: 50%; transform: rotate(-238deg) scale(var(--flow-scale, 1)); }
-  83%       { top: 70%; left: 65%; transform: rotate(-299deg) scale(var(--flow-scale, 1)); }
+  0%, 100% { top: 80%; left: 85%; transform: translate(-50%, -50%) rotate(0deg)    scale(var(--flow-scale, 1)); }
+  16%       { top: 65%; left: 60%; transform: translate(-50%, -50%) rotate(-58deg)  scale(var(--flow-scale, 1)); }
+  33%       { top: 90%; left: 35%; transform: translate(-50%, -50%) rotate(-119deg) scale(var(--flow-scale, 1)); }
+  50%       { top: 60%; left: 75%; transform: translate(-50%, -50%) rotate(-180deg) scale(var(--flow-scale, 1)); }
+  66%       { top: 85%; left: 50%; transform: translate(-50%, -50%) rotate(-238deg) scale(var(--flow-scale, 1)); }
+  83%       { top: 70%; left: 65%; transform: translate(-50%, -50%) rotate(-299deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-5 {
   /* 光球5：重心下(50%,90%)，可到左右 */
-  0%, 100% { top: 90%; left: 50%; transform: rotate(0deg)   scale(var(--flow-scale, 1)); }
-  20%       { top: 75%; left: 75%; transform: rotate(72deg)  scale(var(--flow-scale, 1)); }
-  40%       { top: 95%; left: 25%; transform: rotate(144deg) scale(var(--flow-scale, 1)); }
-  60%       { top: 70%; left: 60%; transform: rotate(216deg) scale(var(--flow-scale, 1)); }
-  80%       { top: 85%; left: 40%; transform: rotate(288deg) scale(var(--flow-scale, 1)); }
+  0%, 100% { top: 90%; left: 50%; transform: translate(-50%, -50%) rotate(0deg)   scale(var(--flow-scale, 1)); }
+  20%       { top: 75%; left: 75%; transform: translate(-50%, -50%) rotate(72deg)  scale(var(--flow-scale, 1)); }
+  40%       { top: 95%; left: 25%; transform: translate(-50%, -50%) rotate(144deg) scale(var(--flow-scale, 1)); }
+  60%       { top: 70%; left: 60%; transform: translate(-50%, -50%) rotate(216deg) scale(var(--flow-scale, 1)); }
+  80%       { top: 85%; left: 40%; transform: translate(-50%, -50%) rotate(288deg) scale(var(--flow-scale, 1)); }
 }
 @keyframes blob-float-6 {
   /* 光球6：重心左下(15%,80%)，可到中右 */
-  0%, 100% { top: 80%; left: 15%; transform: rotate(0deg)    scale(var(--flow-scale, 1)); }
-  16%       { top: 65%; left: 40%; transform: rotate(-58deg)  scale(var(--flow-scale, 1)); }
-  33%       { top: 85%; left: 65%; transform: rotate(-119deg) scale(var(--flow-scale, 1)); }
-  50%       { top: 60%; left: 25%; transform: rotate(-180deg) scale(var(--flow-scale, 1)); }
-  66%       { top: 75%; left: 55%; transform: rotate(-238deg) scale(var(--flow-scale, 1)); }
-  83%       { top: 70%; left: 35%; transform: rotate(-299deg) scale(var(--flow-scale, 1)); }
+  0%, 100% { top: 80%; left: 15%; transform: translate(-50%, -50%) rotate(0deg)    scale(var(--flow-scale, 1)); }
+  16%       { top: 65%; left: 40%; transform: translate(-50%, -50%) rotate(-58deg)  scale(var(--flow-scale, 1)); }
+  33%       { top: 85%; left: 65%; transform: translate(-50%, -50%) rotate(-119deg) scale(var(--flow-scale, 1)); }
+  50%       { top: 60%; left: 25%; transform: translate(-50%, -50%) rotate(-180deg) scale(var(--flow-scale, 1)); }
+  66%       { top: 75%; left: 55%; transform: translate(-50%, -50%) rotate(-238deg) scale(var(--flow-scale, 1)); }
+  83%       { top: 70%; left: 35%; transform: translate(-50%, -50%) rotate(-299deg) scale(var(--flow-scale, 1)); }
 }
 
 

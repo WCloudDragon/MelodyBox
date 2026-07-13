@@ -31,7 +31,6 @@ try:
     _LANGDETECT_OK = True
 except ImportError:
     _LANGDETECT_OK = False
-    print('[scanner] 警告: langdetect 未安装，语言检测将跳过。pip install langdetect')
 
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.aac', '.m4a', '.wma', '.ape'}
 
@@ -450,7 +449,7 @@ def parse_metadata(file_path):
             result['lyrics'] = extract_lyrics(full_audio, file_path)
 
     except Exception as e:
-        print(f'[scanner] 解析失败: {file_path} - {e}')
+        pass
 
     # 计算指纹：md5(title|artist|album) — 与 stats.make_fingerprint 保持一致
     fp_str = f"{result['title']}|{result['artist']}|{result['album']}".strip().lower()
@@ -652,7 +651,6 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
                     _reconnect_orphaned_play_history(cursor, song_id, meta['fingerprint'])
 
         except Exception as e:
-            print(f'[scanner] DB错误: {file_path} - {e}')
             errors += 1
 
     db_conn.commit()

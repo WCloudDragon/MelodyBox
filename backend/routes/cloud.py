@@ -60,7 +60,6 @@ def stream_cloud_audio(file_path, start=0, end=None, is_range=False):
     _, mn, mx, chunked = NETWORK_MODES.get(_current_mode, NETWORK_MODES['4g'])
 
     if not os.path.exists(file_path):
-        print(f'[cloud:stream] 文件不存在: {file_path}')
         yield b''
         return
 
@@ -68,8 +67,6 @@ def stream_cloud_audio(file_path, start=0, end=None, is_range=False):
     if end is None:
         end = file_size - 1
     byte_count = end - start + 1
-    print(f'[cloud:stream] 流式传输: {os.path.basename(file_path)} '
-          f'({file_size} bytes), 模式: {_current_mode}, Range: {start}-{end} ({byte_count} bytes), is_range={is_range}')
 
     # 初始连接延迟（Range/seek 请求跳过，因连接已建立）
     if not is_range and (mn > 0 or mx > 0):
@@ -91,7 +88,7 @@ def stream_cloud_audio(file_path, start=0, end=None, is_range=False):
     except GeneratorExit:
         pass
     except Exception as e:
-        print(f'[cloud:stream] 流式传输异常: {e}')
+        pass
 
 
 # ========== 歌曲 CRUD ==========
@@ -238,13 +235,12 @@ def add_cloud_songs():
                     lyrics = extract_lyrics(full_mf, fp)
                     if cover_url:
                         cover_paths_to_thumb.append(cover_url)
-                        print(f'[cloud:add] 封面已提取: {cover_url}')
                     else:
-                        print(f'[cloud:add] 该文件无内嵌封面: {os.path.basename(fp)}')
+                        pass
                     if lyrics:
-                        print(f'[cloud:add] 歌词已提取 ({len(lyrics)} 字): {os.path.basename(fp)}')
+                        pass
             except Exception as ex:
-                print(f'[cloud:add] 封面/歌词提取异常: {ex}')
+                pass
 
             # 检查重复
             cursor.execute('SELECT id FROM cloud_songs WHERE fingerprint = ? OR file_path = ?',
@@ -265,9 +261,7 @@ def add_cloud_songs():
 
     # 批量生成缩略图
     if cover_paths_to_thumb:
-        print(f'[cloud:add] 开始生成 {len(cover_paths_to_thumb)} 张缩略图...')
         pre_generate_thumbs_batch(cover_paths_to_thumb)
-        print(f'[cloud:add] 缩略图生成完成')
 
     db.commit()
     cursor.close()
@@ -399,7 +393,6 @@ def cloud_stream():
         return resp
 
     file_path = request.args.get('path', '')
-    print(f'[cloud:stream] 请求路径: {file_path}, exists={os.path.isfile(file_path)}')
     if not file_path or not os.path.isfile(file_path):
         return jsonify({'error': f'文件不存在: {file_path}'}), 404
 

@@ -185,7 +185,7 @@ def generate_embeddings():
             try:
                 _get_model()  # 首次调用会触发下载
             except Exception as e:
-                print(f'[embedding] E5 模型加载失败: {e}')
+                pass
 
         def _start_mert_download():
             """后台触发 MERT 模型下载+ONNX 导出"""
@@ -193,7 +193,7 @@ def generate_embeddings():
             try:
                 _get_audio_model()  # 首次调用会触发下载+导出
             except Exception as e:
-                print(f'[audio-embedding] MERT 模型加载失败: {e}')
+                pass
 
         # 启动下载线程（如果模型已就绪会立即返回）
         threading.Thread(target=_start_e5_download, daemon=True).start()
@@ -208,16 +208,13 @@ def generate_embeddings():
             )
 
             # 等待 E5 模型就绪
-            print('[embedding] 等待 E5 模型就绪...')
             wait_for_e5_download(timeout=600)
             # 检查模型是否真的加载成功
             from services.embedding import _get_model
             if _get_model() is None:
-                print('[embedding] E5 模型加载失败，文本分析跳过')
                 _generating_text_embeddings = False
                 return
             _generating_text_embeddings = True
-            print('[embedding] E5 模型就绪，开始编码')
 
             with flask_app.app_context():
                 db2 = get_db()
@@ -234,7 +231,6 @@ def generate_embeddings():
                             use_cpu = False
                             switched = True
                             _text_use_gpu = True
-                            print('[embedding] 音频任务已完成，切换到 GPU 加速...')
                             from services.embedding import _get_model
                             _get_model()
 
@@ -250,10 +246,7 @@ def generate_embeddings():
                         db2.commit()
                         current = min(offset + batch_size, total)
                         provider = 'GPU' if not use_cpu else 'CPU'
-                        print(f'[embedding] 进度: {current}/{total} ({provider})')
-                    print(f'[embedding] 完成: {total} 首歌曲的 embedding 已生成')
                 except Exception as e:
-                    print(f'[embedding] 生成失败: {e}')
                     db2.rollback()
                 finally:
                     cursor2.close()
@@ -269,11 +262,9 @@ def generate_embeddings():
             with flask_app.app_context():
                 try:
                     # 等待 MERT 模型就绪
-                    print('[audio-embedding] 等待 MERT 模型就绪...')
                     from services.embedding import wait_for_mert_download
                     wait_for_mert_download(timeout=600)
                     _generating_audio_embeddings = True
-                    print('[audio-embedding] MERT 模型就绪，开始编码')
                     # 查询所有需要音频 embedding 的歌曲（不依赖文本 embedding 完成）
                     db3 = get_db()
                     cursor3 = db3.cursor()
@@ -289,13 +280,11 @@ def generate_embeddings():
                     db3.close()
 
                     if not audio_pending:
-                        print('[audio-embedding] 所有歌曲音频 embedding 已生成')
                         _audio_embedding_done.set()
                         return
 
                     _audio_total = len(audio_pending)
                     _audio_done_count = 0
-                    print(f'[audio-embedding] 待处理: {_audio_total} 首')
 
                     from services.embedding import encode_audio_batch
                     # 构建 (song_id, source) 映射，传递给 encode 函数时只传 (song_id, file_path)
@@ -304,10 +293,8 @@ def generate_embeddings():
                     results = encode_audio_batch(
                         audio_pairs,
                         batch_size=8,
-                        progress_callback=lambda cur, tot: (
-                            setattr(sys.modules[__name__], '_audio_done_count', cur),
-                            print(f'[audio-embedding] 进度: {cur}/{tot}')
-                        )
+                        progress_callback=lambda cur, tot:
+                            setattr(sys.modules[__name__], '_audio_done_count', cur)
                     )
                     db4 = get_db()
                     cursor4 = db4.cursor()
@@ -325,9 +312,7 @@ def generate_embeddings():
                     cursor4.close()
                     db4.close()
                     _audio_done_count = blob_audio_count
-                    print(f'[audio-embedding] 完成: {blob_audio_count}/{_audio_total} 首')
                 except Exception as e:
-                    print(f'[audio-embedding] 音频 embedding 生成失败: {e}')
                     import traceback
                     traceback.print_exc()
                 finally:
@@ -360,15 +345,13 @@ def generate_embeddings():
             # 情绪分数异步计算（不阻塞 embedding 生成完成回调）
             def _compute_mood_async():
                 try:
-                    print('[mood] 开始计算情绪分数...')
                     with flask_app.app_context():
                         from services.recommender import compute_all_mood_scores
                         mood_db = get_db()
                         mood_count = compute_all_mood_scores(mood_db)
                         mood_db.close()
-                        print(f'[mood] 情绪分数计算完成: {mood_count} 条记录')
                 except Exception as e:
-                    print(f'[mood] 情绪分数计算失败: {e}')
+                    pass
 
             threading.Thread(target=_compute_mood_async, daemon=True).start()
 
@@ -404,12 +387,11 @@ def auto_generate_embeddings(flask_app):
             db.close()
 
         if pending > 0:
-            print(f'[auto-embedding] 检测到 {pending} 首新歌曲，自动触发 embedding 生成')
             # 复用 generate_embeddings 的逻辑（直接调用会因缺少 request 上下文失败）
             # 所以直接启动后台线程执行核心逻辑
             _start_embedding_generation(flask_app)
     except Exception as e:
-        print(f'[auto-embedding] 自动 embedding 触发失败: {e}')
+        pass
 
 
 def _start_embedding_generation(flask_app):
@@ -446,14 +428,14 @@ def _start_embedding_generation(flask_app):
                 try:
                     _get_model()
                 except Exception as e:
-                    print(f'[embedding] E5 模型加载失败: {e}')
+                    pass
 
             def _start_mert_download():
                 from services.embedding import _get_audio_model
                 try:
                     _get_audio_model()
                 except Exception as e:
-                    print(f'[audio-embedding] MERT 模型加载失败: {e}')
+                    pass
 
             threading.Thread(target=_start_e5_download, daemon=True).start()
             threading.Thread(target=_start_mert_download, daemon=True).start()
@@ -484,7 +466,6 @@ def _start_embedding_generation(flask_app):
                                 cursor2.execute(f'UPDATE {table} SET embedding = ? WHERE id = ?', (blob, song['id']))
                             db2.commit()
                     except Exception as e:
-                        print(f'[auto-embedding] 文本 embedding 生成失败: {e}')
                         db2.rollback()
                     finally:
                         cursor2.close()
@@ -558,12 +539,71 @@ def _start_embedding_generation(flask_app):
             threading.Thread(target=_run_all, daemon=True).start()
 
         except Exception as e:
-            print(f'[auto-embedding] 生成失败: {e}')
+            pass
 
     threading.Thread(target=_worker, daemon=True).start()
 
 
 # ==================== 推荐接口 ====================
+
+def _get_history_ids(db):
+    """获取用户最近播放的歌曲 ID（按播放时间倒序，最多 20 首）。"""
+    cursor = db.cursor()
+    cursor.execute('''
+        SELECT DISTINCT s.id
+        FROM play_history ph
+        JOIN songs s ON ph.song_id = s.id
+        WHERE ph.song_id IS NOT NULL
+        GROUP BY ph.fingerprint
+        ORDER BY MAX(ph.played_at) DESC
+        LIMIT 20
+    ''')
+    history_ids = [row['id'] for row in cursor.fetchall()]
+    cursor.close()
+    return history_ids
+
+
+def _fetch_recommendations(mode='comprehensive', limit=20, lang=None, mood=None, song_id=None,
+                           cache_ttl=300):
+    """
+    走完整推荐引擎获取结果（含缓存 + 封面 URL 处理）。
+    供 /recommend 接口与 /recommend/previews 卡片封面共用，确保卡片封面
+    与点击进入推荐页后看到的第一首歌保持一致。
+
+    Returns:
+        (results, cache_key, hit) — results 为推荐结果列表；
+        hit 为 True 表示命中缓存。失败时 results 为 []。
+    """
+    from services.recommender import recommend as do_recommend
+
+    db = get_db()
+    try:
+        history_ids = _get_history_ids(db)
+
+        # 构建缓存 key（含用户历史，确保不同用户历史得到不同推荐）
+        # weather 与 mood 共享缓存，确保天气卡片封面 = 推荐列表榜首
+        cache_mode = 'mood' if mode == 'weather' else mode
+        cache_key = f"rec:{cache_mode}:{lang or ''}:{mood or ''}:{song_id or ''}:{limit}:{hashlib.md5(str(history_ids).encode()).hexdigest()[:8]}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached, cache_key, True
+
+        # 使用确定性种子（基于缓存 key），同一缓存周期内结果一致
+        seed = int(hashlib.md5(cache_key.encode()).hexdigest()[:8], 16)
+        results = do_recommend(db, history_ids, mode=mode, limit=limit, seed=seed,
+                               lang=lang, mood=mood, song_id=song_id)
+
+        # 处理封面 URL
+        for r in results:
+            cover = r.get('cover_url', '')
+            if cover and not cover.startswith('http'):
+                r['cover_url'] = f"http://127.0.0.1:5000/api/music/cover?path={cover}"
+
+        cache.set(cache_key, results, ttl=cache_ttl)
+        return results, cache_key, False
+    finally:
+        db.close()
+
 
 @ai_bp.route('/recommend')
 def get_recommendations():
@@ -601,46 +641,9 @@ def get_recommendations():
         mood = request.args.get('mood', type=str)
         song_id = request.args.get('song_id', type=int)
 
-        db = get_db()
-        cursor = db.cursor()
-
-        # 获取用户最近播放的歌曲 ID（按播放时间倒序）
-        cursor.execute('''
-            SELECT DISTINCT s.id
-            FROM play_history ph
-            JOIN songs s ON ph.song_id = s.id
-            WHERE ph.song_id IS NOT NULL
-            GROUP BY ph.fingerprint
-            ORDER BY MAX(ph.played_at) DESC
-            LIMIT 20
-        ''')
-        history_ids = [row['id'] for row in cursor.fetchall()]
-        cursor.close()
-        db.close()
-
-        # 构建缓存 key（含用户历史，确保不同用户历史得到不同推荐）
-        cache_key = f"rec:{mode}:{lang or ''}:{mood or ''}:{song_id or ''}:{limit}:{hashlib.md5(str(history_ids).encode()).hexdigest()[:8]}"
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return jsonify(cached)
-
-        # 调用推荐引擎
-        from services.recommender import recommend as do_recommend
-
-        # 使用确定性种子（基于缓存 key），同一缓存周期内结果一致
-        seed = int(hashlib.md5(cache_key.encode()).hexdigest()[:8], 16)
-        db2 = get_db()
-        results = do_recommend(db2, history_ids, mode=mode, limit=limit, seed=seed,
-                               lang=lang, mood=mood, song_id=song_id)
-
-        # 处理封面 URL
-        for r in results:
-            cover = r.get('cover_url', '')
-            if cover and not cover.startswith('http'):
-                r['cover_url'] = f"http://127.0.0.1:5000/api/music/cover?path={cover}"
-
-        # 缓存 5 分钟
-        cache.set(cache_key, results, ttl=300)
+        results, cache_key, hit = _fetch_recommendations(
+            mode=mode, limit=limit, lang=lang, mood=mood, song_id=song_id, cache_ttl=300
+        )
         return jsonify(results)
 
     except Exception as e:
@@ -654,32 +657,85 @@ def get_recommendations():
 @ai_bp.route('/recommend/previews')
 def get_recommend_previews():
     """
-    为首页推荐卡片返回每个类别的代表性歌曲封面（轻量接口，不走推荐引擎）。
+    为首页推荐卡片返回每个类别的代表性歌曲封面。
+
+    两道防线：
+    1. 推荐引擎优先 — 走 _fetch_recommendations 获取推荐结果，
+       取第一首带封面的歌（与推荐页榜首一致）。
+    2. DB fallback 保底 — 推荐引擎返回空 / 全部无封面 / 抛异常时，
+       直接查库取一首带封面的歌（确保不显示 emoji）。
+
     返回 { daily, hidden_gem, moods: { sad, energetic, calm, ... } }
     """
     try:
-        db = get_db()
-        cursor = db.cursor()
+        from services.embedding import is_available
+        st_available = is_available()
 
-        def _pick_cover(where_clause='', params=(), order_by='ps.play_count DESC'):
-            cursor.execute(f'''
-                SELECT s.title, s.artist, s.cover_url
-                FROM songs s
-                LEFT JOIN play_stats ps ON s.fingerprint = ps.fingerprint
-                WHERE s.cover_url IS NOT NULL AND s.cover_url != ''
-                  AND s.embedding IS NOT NULL {where_clause}
-                ORDER BY {order_by} LIMIT 1
-            ''', params)
-            row = cursor.fetchone()
-            if not row:
+        def _first_cover(results):
+            """从推荐结果列表取第一首带封面的歌曲，返回卡片预览 dict。"""
+            for r in results:
+                cover = r.get('cover_url') or ''
+                if cover:
+                    return {'title': r.get('title', ''), 'artist': r.get('artist', ''), 'cover': cover}
+            return None
+
+        def _pick_cover_fallback(db, category, mood_key=None):
+            """
+            DB 保底：直接查库取一首带封面的歌（WHERE cover_url IS NOT NULL AND != ''）。
+            确保封面 URL 一定非空。
+            """
+            cursor = db.cursor()
+
+            if category == 'hidden_gem':
+                order_by = 'COALESCE(ps.play_count, 0) ASC'
+            else:
+                order_by = 'ps.play_count DESC'
+
+            if mood_key and category == 'mood':
+                # 情绪模式：从 song_mood_scores 取最高分且带封面的歌
+                cursor.execute('''
+                    SELECT s.title, s.artist, s.cover_url
+                    FROM song_mood_scores sms
+                    JOIN songs s ON sms.song_id = s.id
+                    WHERE s.cover_url IS NOT NULL AND s.cover_url != ''
+                      AND sms.mood = ? AND sms.score > 0.3
+                    ORDER BY sms.score DESC LIMIT 1
+                ''', (mood_key,))
+                row = cursor.fetchone()
+                if not row:
+                    # 情绪表无数据，按播放量取
+                    cursor.execute('''
+                        SELECT s.title, s.artist, s.cover_url
+                        FROM songs s
+                        LEFT JOIN play_stats ps ON s.fingerprint = ps.fingerprint
+                        WHERE s.cover_url IS NOT NULL AND s.cover_url != ''
+                          AND s.embedding IS NOT NULL
+                        ORDER BY ps.play_count DESC LIMIT 1
+                    ''')
+                    row = cursor.fetchone()
+            else:
+                # daily / hidden_gem：按播放量排序取带封面的歌
                 cursor.execute(f'''
                     SELECT s.title, s.artist, s.cover_url
-                    FROM cloud_songs s
+                    FROM songs s
+                    LEFT JOIN play_stats ps ON s.fingerprint = ps.fingerprint
                     WHERE s.cover_url IS NOT NULL AND s.cover_url != ''
-                      AND s.embedding IS NOT NULL {where_clause}
-                    LIMIT 1
-                ''', params)
+                      AND s.embedding IS NOT NULL
+                    ORDER BY {order_by} LIMIT 1
+                ''')
                 row = cursor.fetchone()
+                if not row:
+                    # 本地无结果，尝试云端
+                    cursor.execute('''
+                        SELECT title, artist, cover_url
+                        FROM cloud_songs
+                        WHERE cover_url IS NOT NULL AND cover_url != ''
+                          AND embedding IS NOT NULL
+                        LIMIT 1
+                    ''')
+                    row = cursor.fetchone()
+
+            cursor.close()
             if row:
                 cover = row['cover_url']
                 if cover and not cover.startswith('http'):
@@ -687,33 +743,43 @@ def get_recommend_previews():
                 return {'title': row['title'], 'artist': row['artist'], 'cover': cover}
             return None
 
+        def _get_card_cover(mode, mood_key=None):
+            """
+            获取单个卡片的封面：推荐引擎优先，DB fallback 保底。
+            返回 { title, artist, cover } 或 None。
+            """
+            tag = mood_key or mode
+
+            # 第一道防线：推荐引擎
+            if st_available:
+                try:
+                    res, _, _ = _fetch_recommendations(
+                        mode=mode, limit=50, mood=mood_key, cache_ttl=300
+                    )
+                    pick = _first_cover(res)
+                    if pick:
+                        return pick
+                except Exception as e:
+                    pass
+
+            # 第二道防线：DB 直接查询
+            try:
+                db = get_db()
+                pick = _pick_cover_fallback(db, mode, mood_key)
+                db.close()
+                return pick
+            except Exception as e:
+                return None
+
+        # 生成各卡片封面
         result = {
-            'daily': _pick_cover(order_by='ps.play_count DESC'),
-            'hidden_gem': _pick_cover(order_by='COALESCE(ps.play_count, 0) ASC'),
+            'daily': _get_card_cover('comprehensive'),
+            'hidden_gem': _get_card_cover('hidden_gem'),
         }
-
-        # 情绪推荐：从 song_mood_scores 取各情绪最高分的歌曲
-        moods = {}
+        result['moods'] = {}
         for mood_key in ('sad', 'energetic', 'calm', 'upbeat', 'fresh', 'romantic', 'inspire'):
-            cursor.execute('''
-                SELECT s.title, s.artist, s.cover_url
-                FROM song_mood_scores sms
-                JOIN songs s ON sms.song_id = s.id
-                WHERE s.cover_url IS NOT NULL AND s.cover_url != '' AND sms.mood = ? AND sms.score > 0.3
-                ORDER BY sms.score DESC LIMIT 1
-            ''', (mood_key,))
-            row = cursor.fetchone()
-            if row:
-                cover = row['cover_url']
-                if cover and not cover.startswith('http'):
-                    cover = f"http://127.0.0.1:5000/api/music/cover?path={cover}"
-                moods[mood_key] = {'title': row['title'], 'artist': row['artist'], 'cover': cover}
-            else:
-                moods[mood_key] = None
-        result['moods'] = moods
+            result['moods'][mood_key] = _get_card_cover('mood', mood_key=mood_key)
 
-        cursor.close()
-        db.close()
         return jsonify(result)
 
     except Exception as e:
@@ -756,9 +822,8 @@ def refresh_mood_scores():
                     mood_db = get_db()
                     mood_count = compute_all_mood_scores(mood_db)
                     mood_db.close()
-                    print(f'[mood] 情绪分数刷新完成: {mood_count} 条记录')
                 except Exception as e:
-                    print(f'[mood] 情绪分数刷新失败: {e}')
+                    pass
 
         threading.Thread(target=_refresh_async, daemon=True).start()
         return jsonify({

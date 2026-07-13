@@ -68,7 +68,6 @@ def _ensure_users_table_and_admin():
             ('admin', pwd_hash, 'admin')
         )
         db.commit()
-        print('[auth] 默认管理员已创建: admin / admin123')
 
     cursor.close()
     db.close()

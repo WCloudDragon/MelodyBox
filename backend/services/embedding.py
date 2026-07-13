@@ -106,18 +106,13 @@ def _retry_snapshot_download(repo_id, cache_dir=None, local_dir=None, tqdm_class
     if local_dir:
         kwargs['local_dir'] = local_dir
 
-    time_start = time.monotonic()
     for attempt in range(1, max_retries + 1):
         try:
             result = snapshot_download(**kwargs)
-            elapsed = time.monotonic() - time_start
-            print(f'[download] {label}下载完成 ({elapsed:.0f}s)')
             return result
         except Exception as e:
             if attempt < max_retries:
                 wait = 3 * attempt
-                print(f'[download] {label}下载失败 (尝试 {attempt}/{max_retries}): {e}')
-                print(f'[download] {wait}秒后重试...')
                 if progress_dict:
                     progress_dict.update({
                         'status': 'retrying',
@@ -125,7 +120,6 @@ def _retry_snapshot_download(repo_id, cache_dir=None, local_dir=None, tqdm_class
                     })
                 time.sleep(wait)
             else:
-                print(f'[download] {label}下载失败，已达最大重试次数')
                 raise
 
 
@@ -154,10 +148,7 @@ def _clear_e5_cache():
     for d in dirs_to_clear:
         if os.path.isdir(d):
             shutil.rmtree(d, ignore_errors=True)
-            print(f'[embedding] 已清除缓存: {d}')
             cleared = True
-    if not cleared:
-        print(f'[embedding] 未找到缓存目录，将从头下载')
     return cleared
 
 
@@ -246,8 +237,6 @@ def _get_model():
                 'percent': 1,
                 'message': '模型不存在，准备下载 ~2.2GB...',
             })
-            print(f'[embedding] 模型未缓存，准备下载到: {model_root}')
-
             # 预下载：用 snapshot_download(cache_dir=...) 统一写入
             # TextEmbedding 内部也用相同 cache_dir，二次查询秒返回
             from huggingface_hub import snapshot_download
@@ -283,7 +272,6 @@ def _get_model():
                             'message': f'正在下载文本分析模型{speed}',
                         })
 
-            print(f'[embedding] 开始下载 E5 模型到: {model_root}')
             try:
                 _retry_snapshot_download(
                     _MODEL_HF_REPO,
@@ -293,7 +281,6 @@ def _get_model():
                     label='文本分析',
                 )
             except Exception as pre_e:
-                print(f'[embedding] E5 下载失败: {pre_e}')
                 _download_progress.update({
                     'status': 'error',
                     'message': f'下载失败: {str(pre_e)[:100]}',
@@ -302,7 +289,7 @@ def _get_model():
                 _e5_downloaded.set()
                 return None
         else:
-            print(f'[embedding] 模型已缓存: {model_root}')
+            pass
 
         _download_progress.update({
             'status': 'preparing',
@@ -311,9 +298,6 @@ def _get_model():
         })
 
         try:
-            print(f'[embedding] 加载模型 {_MODEL_NAME}...')
-            if providers:
-                print(f'[embedding] 推理后端: {providers[0]}')
             _MODEL = TextEmbedding(
                 model_name=_MODEL_NAME,
                 cache_dir=cache_dir,
@@ -325,11 +309,9 @@ def _get_model():
                 _MODEL_DIM = int(_MODEL.embedding_size or 0) or _MODEL_DIM
             except Exception:
                 pass
-            print(f'[embedding] 模型加载完成，向量维度: {_MODEL_DIM}')
         except Exception as e:
             err = str(e)
             if 'onnx_data' in err or 'No such file' in err or 'RUNTIME_EXCEPTION' in err or 'bad allocation' in err:
-                print(f'[embedding] 模型文件损坏或内存不足，清除缓存后重试...')
                 _clear_e5_cache()
                 try:
                     _MODEL = TextEmbedding(
@@ -343,9 +325,7 @@ def _get_model():
                         _MODEL_DIM = int(_MODEL.embedding_size or 0) or _MODEL_DIM
                     except Exception:
                         pass
-                    print(f'[embedding] CPU 模型加载成功，向量维度: {_MODEL_DIM}')
                 except Exception as retry_e:
-                    print(f'[embedding] 重新加载也失败: {retry_e}')
                     _download_progress.update({
                         'status': 'error',
                         'message': str(retry_e)[:150],
@@ -376,7 +356,6 @@ def _get_cpu_model():
     if _CPU_MODEL is None:
         from fastembed import TextEmbedding
         warnings.filterwarnings('ignore', message='.*now uses mean pooling.*')
-        print('[embedding] 加载 CPU 专用 E5 模型（与 GPU 并行）...')
         cache_dir = _CACHE_DIR or _resolve_cache_dir()
 
         def _try_load():
@@ -392,17 +371,14 @@ def _get_cpu_model():
         except Exception as e:
             err = str(e)
             if 'onnx_data' in err or 'No such file' in err or 'RUNTIME_EXCEPTION' in err or 'bad allocation' in err:
-                print(f'[embedding] CPU 模型加载失败，清除缓存后重试: {e}')
                 _clear_e5_cache()
                 try:
                     _CPU_MODEL = _try_load()
                 except Exception as retry_e:
-                    print(f'[embedding] CPU 模型重试也失败，将跳过 CPU 并行人: {retry_e}')
                     _CPU_MODEL = None
             else:
                 raise
 
-        print('[embedding] CPU E5 模型加载完成')
     return _CPU_MODEL
 
 
@@ -421,7 +397,6 @@ def _detect_providers():
         # 部分环境中 DML 已安装但 get_available_providers() 不返回（虚拟环境兼容性问题）
         # 此时显式请求 DML，ONNX Runtime 会在创建 session 时尝试加载，失败则回退 CPU
         if _is_directml_installed():
-            print('[embedding] 已检测到 onnxruntime-directml，主动启用 DmlExecutionProvider')
             return ['DmlExecutionProvider', 'CPUExecutionProvider']
     except Exception:
         pass
@@ -478,13 +453,10 @@ def _auto_enable_gpu():
 
     if not dml_installed:
         # 首次安装：后台执行（不阻塞），当前会话用 CPU
-        print('[embedding] 检测到 GPU，正在后台安装 GPU 加速组件（仅首次，约 30s）...')
-        print('[embedding] 本次将使用 CPU 推理，下次启动自动切换至 GPU。')
         _download_progress['message'] = '正在安装 GPU 加速组件（仅首次，约 30s）...'
         _install_directml_async()
     else:
-        # 已安装但 provider 未出现 → 当前进程加载了 CPU 版 DLL，需重启
-        print('[embedding] onnxruntime-directml 已安装，GPU 加速将在下次启动时生效。')
+        pass
 
     return ['CPUExecutionProvider']
 
@@ -554,7 +526,6 @@ def _install_directml_async():
                 if result.returncode == 0:
                     installed = True
                     break
-                print(f'[embedding] 镜像 {mirror} 失败，尝试下一个...')
 
             if not installed:
                 # 回退到官方源
@@ -566,7 +537,6 @@ def _install_directml_async():
                     env={**os.environ, 'PIP_REQUIRE_VIRTUALENV': 'false'}
                 )
             if result.returncode == 0:
-                print('[embedding] GPU 加速组件安装完成，等待安全时机自动重启...')
                 _download_progress['message'] = 'GPU 组件已安装，等待生成任务完成后自动重启...'
 
                 # 等待正在进行的 embedding 生成完成（最多等 5 分钟）
@@ -574,14 +544,10 @@ def _install_directml_async():
                 while _GENERATION_ACTIVE and waited < 300:
                     time.sleep(3)
                     waited += 3
-                    if waited % 15 == 0:
-                        print(f'[embedding] 等待 embedding 生成完成中... （已等 {waited}s）')
 
                 if _GENERATION_ACTIVE:
-                    print('[embedding] 等待超时，延迟到下次启动自动切换 GPU。')
                     _download_progress['message'] = 'GPU 组件已安装，下次启动自动切换。'
                 else:
-                    print('[embedding] 正在重启进程以启用 GPU 加速...')
                     _download_progress.update({
                         'status': 'restarting',
                         'message': '正在重启应用以启用 GPU 加速...',
@@ -592,10 +558,8 @@ def _install_directml_async():
                     os.execl(sys.executable, sys.executable, *sys.argv)
             else:
                 error_msg = (result.stderr or '').strip()[-200:]
-                print(f'[embedding] GPU 组件安装失败: {error_msg}')
                 _download_progress['message'] = f'GPU 组件安装失败: {error_msg[:100]}'
         except Exception as e:
-            print(f'[embedding] GPU 组件安装异常: {e}')
             _download_progress['message'] = f'GPU 组件安装异常: {str(e)[:100]}'
         finally:
             _GPU_INSTALL_PENDING = False
@@ -780,7 +744,6 @@ def _load_audio_clip(file_path):
             waveform = waveform[:target_samples]
         return waveform.astype(np.float32)
     except Exception as e:
-        print(f'[audio-embedding] 音频加载失败: {file_path} - {e}')
         return None
 
 
@@ -824,14 +787,12 @@ def _cleanup_pytorch_cache():
         pytorch_cache_dir = os.path.join(HF_HUB_CACHE, f'models--{cache_name}')
         if os.path.isdir(pytorch_cache_dir):
             shutil.rmtree(pytorch_cache_dir, ignore_errors=True)
-            print(f'[audio-embedding] 已清理 PyTorch 模型缓存: {pytorch_cache_dir}')
         # 清理废弃的 fp16 模型文件
         fp16_path = _get_audio_onnx_path().replace('.onnx', '-fp16.onnx')
         if os.path.isfile(fp16_path):
             os.remove(fp16_path)
-            print(f'[audio-embedding] 已清理废弃 fp16 模型: {fp16_path}')
-    except Exception as e:
-        print(f'[audio-embedding] 清理缓存失败（可忽略）: {e}')
+    except Exception:
+        pass
 
 
 def _export_mert_to_onnx():
@@ -849,9 +810,6 @@ def _export_mert_to_onnx():
             'ONNX 导出需要 transformers、torch 和 onnx。'
             '请运行: pip install transformers torch onnx'
         )
-
-    print(f'[audio-embedding] 首次运行：下载 {_AUDIO_MODEL_NAME} 并导出 ONNX...')
-    print('[audio-embedding] 模型约 370MB，请耐心等待...')
 
     _mert_download_progress = {
         'status': 'checking',
@@ -908,7 +866,6 @@ def _export_mert_to_onnx():
         'percent': 95,
         'message': '正在准备音频分析引擎...',
     })
-    print('[audio-embedding] 下载完成，正在导出 ONNX...')
 
     # 使用 HF 镜像（app.py 已设置 HF_ENDPOINT）
     model = Wav2Vec2Model.from_pretrained(local_dir_snapshot)
@@ -944,7 +901,6 @@ def _export_mert_to_onnx():
         opset_version=14,
         dynamo=False,  # 使用旧版 ONNX 导出，不需要 onnxscript
     )
-    print(f'[audio-embedding] ONNX 导出完成: {onnx_path}')
 
     # 释放 PyTorch 模型内存
     del model, wrapper
@@ -1000,8 +956,6 @@ def _get_audio_model():
             providers=providers,
         )
 
-        print(f'[audio-embedding] 加载 ONNX 模型: {onnx_path}')
-        print(f'[audio-embedding] 推理后端: {providers[0]}')
     return _AUDIO_MODEL
 
 
@@ -1048,7 +1002,6 @@ def encode_audio_batch(clips, batch_size=8, progress_callback=None):
             except Exception as e:
                 err = str(e)
                 if not _audio_gpu_failed and ('Gelu' in err or 'Dml' in err or 'UnicodeDecodeError' in repr(e) or '0x8007000E' in err):
-                    print(f'[audio-embedding] GPU 推理失败，回退 CPU: {err[:120]}')
                     _audio_gpu_failed = True
                     global _AUDIO_MODEL
                     _AUDIO_MODEL = None
@@ -1061,7 +1014,6 @@ def encode_audio_batch(clips, batch_size=8, progress_callback=None):
                         providers=['CPUExecutionProvider'],
                     )
                     model = _AUDIO_MODEL
-                    print('[audio-embedding] 已切换为 CPU 推理')
                     outputs = model.run(None, {'input_values': stacked})
                 else:
                     raise

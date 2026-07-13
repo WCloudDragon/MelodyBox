@@ -14,7 +14,6 @@ let actionsRegistered = false
  */
 export function initMediaSession() {
   if (!('mediaSession' in navigator)) {
-    console.log('[SMTC] navigator.mediaSession 不可用')
     return
   }
 
@@ -40,7 +39,6 @@ export function initMediaSession() {
       }
     })
     actionsRegistered = true
-    console.log('[SMTC] 动作处理器已注册')
   }
 
   // ==================== 监听歌曲切换 → 更新元数据 ====================

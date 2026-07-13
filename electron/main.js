@@ -20,7 +20,6 @@ function getFlaskPath() {
 function startFlask() {
   const flaskPath = getFlaskPath()
   if (!flaskPath) {
-    console.log('[flask] 开发模式，跳过自动启动')
     return Promise.resolve()
   }
   if (!fs.existsSync(flaskPath)) {
@@ -28,7 +27,6 @@ function startFlask() {
     return Promise.resolve()
   }
 
-  console.log('[flask] 启动:', flaskPath)
   const internalDir = path.join(path.dirname(flaskPath), '_internal')
   flaskProcess = spawn(flaskPath, [], {
     cwd: path.dirname(flaskPath),
@@ -38,15 +36,12 @@ function startFlask() {
 
   flaskProcess.stdout.on('data', data => {
     const msg = data.toString().trim()
-    if (msg) console.log('[flask]', msg)
   })
   flaskProcess.stderr.on('data', data => {
     const msg = data.toString().trim()
-    if (msg) console.log('[flask]', msg)
   })
   flaskProcess.on('error', err => console.error('[flask] 启动失败:', err.message))
   flaskProcess.on('exit', code => {
-    console.log('[flask] 退出, code:', code)
     flaskProcess = null
   })
 
@@ -55,7 +50,6 @@ function startFlask() {
     const check = () => {
       const req = http.get('http://127.0.0.1:5000/api/health', (res) => {
         if (res.statusCode === 200) {
-          console.log('[flask] 就绪')
           resolve()
         } else {
           setTimeout(check, 500)
@@ -70,7 +64,6 @@ function startFlask() {
 
 function stopFlask() {
   if (flaskProcess) {
-    console.log('[flask] 正在关闭...')
     if (process.platform === 'win32') {
       spawn('taskkill', ['/pid', String(flaskProcess.pid), '/f', '/t'])
     } else {
@@ -112,7 +105,6 @@ function getFfmpegPath() {
   const packagedPath = path.join(process.resourcesPath, 'bin', 'ffmpeg.exe')
   const candidate = app.isPackaged ? packagedPath : devPath
   if (fs.existsSync(candidate)) {
-    console.log(`[audio-server] 使用内嵌 FFmpeg: ${candidate}`)
     return candidate
   }
   // 回退到系统 PATH
@@ -123,7 +115,6 @@ try {
   ffmpegPath = getFfmpegPath()
   execSync(`"${ffmpegPath}" -version`, { stdio: 'ignore', timeout: 5000 })
   ffmpegAvailable = true
-  console.log('[audio-server] FFmpeg 可用')
 } catch {
   ffmpegPath = 'ffmpeg'
   console.warn('[audio-server] FFmpeg 不可用，FLAC 将使用 Chromium 原生解码（可能失败）')
@@ -179,8 +170,6 @@ function startAudioServer() {
         const range = req.headers.range
         const startTime = parseFloat(reqUrl.searchParams.get('start')) || 0
 
-        console.log(`[audio] ${req.method} ${req.url} Range=${range || 'none'} ext=${ext} size=${fileSize} start=${startTime || 0}`)
-
         // CORS
         res.setHeader('Access-Control-Allow-Origin', '*')
         res.setHeader('Accept-Ranges', 'bytes')
@@ -191,9 +180,7 @@ function startAudioServer() {
         // Chromium 的 Audio 元素能在 WAV 内部直接 seek，不需要 HTTP Range。
         if (ext === '.flac' && ffmpegAvailable) {
           const info = parseFlacStreaminfo(filePath)
-          if (info) {
-            console.log(`[ffmpeg] FLAC: ${info.channels}ch ${info.sampleRate}Hz ${info.bitsPerSample}bit, blocksize ${info.minBlockSize}-${info.maxBlockSize}, ${info.duration.toFixed(1)}s`)
-          } else {
+          if (!info) {
             console.warn(`[ffmpeg] FLAC STREAMINFO 解析失败: ${path.basename(filePath)}`)
           }
 
@@ -303,13 +290,11 @@ function startAudioServer() {
     // 端口: 优先 51234，被占用则随机
     audioServer.listen(51234, '127.0.0.1', () => {
       audioServerPort = 51234
-      console.log(`[audio-server] 启动在 http://127.0.0.1:${audioServerPort}`)
       resolve()
     }).on('error', () => {
       // 51234 被占用，随机端口
       audioServer.listen(0, '127.0.0.1', () => {
         audioServerPort = audioServer.address().port
-        console.log(`[audio-server] 启动在 http://127.0.0.1:${audioServerPort}`)
         resolve()
       })
     })
@@ -322,8 +307,6 @@ function stopAudioServer() {
     audioServer = null
   }
 }
-
-console.log('[main] 主进程启动')
 
 let mainWindow = null
 let lyricsWindow = null
@@ -666,15 +649,11 @@ ipcMain.on('rhythm:update', (_event, data) => updateRhythmDebugData(data))
 ipcMain.on('lyrics:resize', (_event, { width, height }) => {
   if (lyricsWindow && !lyricsWindow.isDestroyed()) {
     const before = lyricsWindow.getSize()
-    console.log('[main] lyrics:resize before:', before, '-> target:', width, height)
     lyricsWindow.setSize(width, height)
     // 锁定垂直高度，仅允许左右拖动调整宽度
     lyricsWindow.setMinimumSize(200, height)
     lyricsWindow.setMaximumSize(10000, height)
     const after = lyricsWindow.getSize()
-    console.log('[main] lyrics:resize after:', after)
-  } else {
-    console.log('[main] lyrics:resize skipped - window not available')
   }
 })
 

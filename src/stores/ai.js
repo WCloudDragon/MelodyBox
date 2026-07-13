@@ -71,6 +71,7 @@ export const useAiStore = defineStore('ai', () => {
         return
       }
       const data = await res.json()
+      console.debug(`[recommend] mode=${currentMode.value} 第一首:`, data[0]?.title, '-', data[0]?.artist, '| cover:', data[0]?.cover_url)
       // 修复封面 URL
       for (const s of data) {
         if (s.cover_url && !s.cover_url.startsWith('http')) {

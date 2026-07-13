@@ -176,7 +176,6 @@ export const useLibraryStore = defineStore('library', () => {
         return
       }
       const result = await res.json()
-      console.log(`[store] 扫描完成: 共${result.total}文件, 新增${result.inserted}, 更新${result.updated}, 删除${result.deleted}`)
 
       scanDirs.value = dirs
       saveScanDirs()

@@ -412,7 +412,6 @@ def serve_cover():
         return resp
 
     # 首次请求：先返回原图（不阻塞加载），后台线程生成缩略图供下次使用
-    print(f'[cover:thumb] async generating {thumb}px for {os.path.basename(path)}')
     def _generate():
         tmp = thumb_path + '.tmp'
         try:
@@ -421,9 +420,7 @@ def serve_cover():
             fmt = img.format or 'JPEG'
             img.save(tmp, format=fmt, quality=85)
             os.replace(tmp, thumb_path)
-            print(f'[cover:thumb] saved {thumb}px: {os.path.getsize(thumb_path)} bytes')
         except Exception as e:
-            print(f'[cover:thumb] ERROR: {e}')
             if os.path.exists(tmp):
                 os.remove(tmp)
     threading.Thread(target=_generate, daemon=True).start()

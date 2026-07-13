@@ -524,16 +524,23 @@ onMounted(() => {
   resizeObserver = new ResizeObserver(updateCardsPerPage)
   // 监听父容器（rec-entries-wrap）的宽度变化
   if (recEntriesRef.value?.parentElement) resizeObserver.observe(recEntriesRef.value.parentElement)
+  // 首次加载推荐卡片封面。loadRecPreviews 内部会判断缓存是否过期：
+  //  - 缓存有效 → 直接用 localStorage 里的数据（启动时已读入 recPreviews），不重复请求
+  //  - 缓存过期/不存在 → 拉取最新 previews
+  // 此处必须主动调用，否则在 embedding 早已生成完的场景下，
+  // pending 启动即为 0 且不再变化，下方 watch 永不触发，封面会一直显示 emoji。
+  loadRecPreviews()
 })
 onUnmounted(() => {
   if (resizeObserver) resizeObserver.disconnect()
 })
 
 // 推荐预览数据（卡片封面）— localStorage 缓存 + 按需刷新
-const PREVIEW_CACHE_KEY = 'melodybox_rec_previews'
-const PREVIEW_COLORS_KEY = 'melodybox_rec_colors'
-const PREVIEW_TS_KEY = 'melodybox_rec_previews_ts'
-const PREVIEW_TTL = 30 * 60 * 1000 // 30 分钟
+const PREVIEW_CACHE_KEY = 'melodybox_rec_previews_v2'
+const PREVIEW_COLORS_KEY = 'melodybox_rec_colors_v2'
+const PREVIEW_TS_KEY = 'melodybox_rec_previews_ts_v2'
+// 与后端 /recommend 的 5 分钟缓存对齐，避免首页卡片封面与推荐页榜首长时间不一致
+const PREVIEW_TTL = 5 * 60 * 1000 // 5 分钟
 const recPreviews = ref({})
 const coverColors = ref({})
 const hasRecData = computed(() => aiStore.embeddingStatus.pending === 0 || Object.keys(recPreviews.value).length > 0)
@@ -541,10 +548,42 @@ const hasRecData = computed(() => aiStore.embeddingStatus.pending === 0 || Objec
 // 启动时立即加载缓存
 try {
   const cached = localStorage.getItem(PREVIEW_CACHE_KEY)
-  if (cached) recPreviews.value = JSON.parse(cached)
+  if (cached) {
+    const parsed = JSON.parse(cached)
+    _applyDerivedCovers(parsed)
+    recPreviews.value = parsed
+  }
   const cachedColors = localStorage.getItem(PREVIEW_COLORS_KEY)
   if (cachedColors) coverColors.value = JSON.parse(cachedColors)
 } catch {}
+
+/**
+ * 读取推荐列表派生的封面数据（由 RecommendPlaylistView 写入），
+ * 覆盖 previews 中对应模式的卡片，确保封面 = 推荐列表榜首。
+ */
+function _applyDerivedCovers(data) {
+  try {
+    const raw = localStorage.getItem('melodybox_derived_covers')
+    if (!raw) return
+    const map = JSON.parse(raw)
+    if (map.daily && data) data.daily = map.daily
+    if (map.hidden_gem && data) data.hidden_gem = map.hidden_gem
+    if (map.moods || data?.moods) {
+      if (!data.moods) data.moods = {}
+      for (const [key, val] of Object.entries(map)) {
+        if (key.startsWith('mood_') && val) {
+          const moodKey = key.slice(5) // 'mood_sad' → 'sad'
+          data.moods[moodKey] = val
+        }
+        // weather 专用 key 也覆盖到 moods，供天气卡片读取
+        if (key.startsWith('weather_') && val) {
+          const moodKey = key.slice(8) // 'weather_sad' → 'sad'
+          data.moods[moodKey] = val
+        }
+      }
+    }
+  } catch {}
+}
 
 function isPreviewCacheValid() {
   try {
@@ -559,6 +598,8 @@ async function loadRecPreviews(force = false) {
     const res = await fetch('http://127.0.0.1:5000/api/ai/recommend/previews')
     if (res.ok) {
       const data = await res.json()
+      console.debug('[previews] 封面卡片数据:', data)
+      _applyDerivedCovers(data)
       recPreviews.value = data
       try {
         localStorage.setItem(PREVIEW_CACHE_KEY, JSON.stringify(data))

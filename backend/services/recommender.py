@@ -79,11 +79,9 @@ def compute_all_mood_scores(db):
     cursor.close()
 
     # 编码 7 种情绪查询文本
-    print('[mood] 编码 7 种情绪查询向量...')
     mood_vecs = {}
     for mood_key, query_text in MOOD_QUERIES.items():
         mood_vecs[mood_key] = encode_text(query_text)
-    print(f'[mood] 情绪查询向量编码完成，共 {len(mood_vecs)} 种')
 
     # 计算文本情绪分数，并按 mood 分组排序
     mood_text_scores = {}  # {mood_key: [(song_id, score), ...]}
@@ -98,7 +96,6 @@ def compute_all_mood_scores(db):
     # 如果有音频 embedding，为每种情绪构建音频原型（top-5 文本匹配歌曲的音频平均向量）
     mood_audio_prototypes = {}
     if has_audio:
-        print('[mood] 构建 7 种情绪的音频原型向量...')
         audio_dim = get_audio_model_dim()
         for mood_key in MOOD_QUERIES:
             top_songs = mood_text_scores[mood_key][:5]

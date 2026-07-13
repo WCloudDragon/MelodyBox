@@ -399,9 +399,7 @@ def init_db(app):
         "file_mtime REAL DEFAULT 0",
     ]:
         try:
-            col_name = col_def.split()[0]
             cursor.execute(f'ALTER TABLE cloud_songs ADD COLUMN {col_def}')
-            print(f'[db] cloud_songs 新增列: {col_name}')
         except Exception:
             pass  # 列已存在
     # 修复已有行的 NULL 状态
@@ -468,11 +466,9 @@ def init_db(app):
             ('admin', generate_password_hash('admin123'), 'admin@melodybox.local', 'admin')
         )
         conn2.commit()
-        print('[db] 默认管理员已创建: admin / admin123')
+
     cur2.close()
     conn2.close()
-
-    print(f'[db] SQLite 初始化完成 (18 张表 + all_songs VIEW): {db_path}')
 
 
 def get_db(app):
@@ -499,7 +495,6 @@ def _init_ai_model_dir(app):
             if row and row['model_cache_dir']:
                 from services.embedding import set_cache_dir
                 set_cache_dir(row['model_cache_dir'])
-                print(f'[app] AI 模型缓存路径: {row["model_cache_dir"]}')
     except Exception:
         pass
 
@@ -507,6 +502,10 @@ def _init_ai_model_dir(app):
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+
+    # 静默 werkzeug 访问日志
+    import logging
+    logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
     os.makedirs(app.config['COVER_DIR'], exist_ok=True)
 
@@ -548,6 +547,8 @@ def create_app():
 
 
 if __name__ == '__main__':
+    import logging
+    logging.getLogger('werkzeug').setLevel(logging.ERROR)
     app = create_app()
     print('MelodyBox API starting on http://127.0.0.1:5000')
     app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)
