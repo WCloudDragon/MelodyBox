@@ -258,7 +258,6 @@ import { useAiStore } from '@/stores/ai'
 import { useWeatherStore } from '@/stores/weather'
 import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } from '@/utils/scanNotify'
 import MusicCard from '@/components/music/MusicCard.vue'
-import { useScrollMemory } from '@/composables/useScrollMemory'
 import { useModal } from '@/composables/useModal'
 import { extractCoverColors } from '@/utils/coverColorExtractor'
 
@@ -289,8 +288,6 @@ watch(() => libraryStore.scanProgress, (p) => {
   }
 })
 onBeforeUnmount(clearScanNotify)
-
-useScrollMemory('home', () => document.querySelector('.main-content'))
 
 const hasMusic = computed(() => libraryStore.tracks.length > 0 || libraryStore.cloudTracks.length > 0)
 const recentTracks = computed(() => libraryStore.allTracks.slice(0, 12))

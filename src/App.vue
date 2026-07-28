@@ -54,7 +54,7 @@
 
 <script setup>
 import { ref, computed, onMounted, provide, watch, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
 import { initMediaSession } from '@/utils/mediaSession'
@@ -70,6 +70,7 @@ import { createModalProvider } from '@/composables/useModal'
 const playerStore = usePlayerStore()
 const settingsStore = useSettingsStore()
 const route = useRoute()
+const router = useRouter()
 // 直接用 location.hash 判断，避免路由初始化时序导致 route.name 为 undefined
 const isDesktopLyricsRoute = computed(() => {
   return window.location.hash === '#/desktop-lyrics' || route.name === 'desktopLyrics'
@@ -118,48 +119,73 @@ function handleClose() {
 
 // 记录每个路由路径的 .main-content 滚动位置
 const pageScrollMap = {}
+// 路由切换前捕获的离开/进入页滚动（beforeEach 写入，过渡钩子读取）
+let pendingLeaveScroll = 0
+let pendingEnterScroll = 0
+// 过渡序列号：快速切换时过滤掉过期回调
+let transitionSeq = 0
+// 安全兜底定时器
+let transitionSafetyTimer = null
 
-// 路由变化前保存当前页面的滚动位置
-watch(() => route.path, (newPath, oldPath) => {
-  if (oldPath) {
+/**
+ * 在路由真正切换之前保存滚动位置。
+ */
+router.beforeEach((to, from) => {
+  if (from.path && from.path !== to.path) {
     const main = document.querySelector('.main-content')
     if (main) {
-      pageScrollMap[oldPath] = main.scrollTop
+      pendingLeaveScroll = main.scrollTop
+      pageScrollMap[from.path] = main.scrollTop
+      pendingEnterScroll = pageScrollMap[to.path] ?? 0
     }
   }
+  return true
 })
 
-/**
- * leave 过渡钩子：进出元素均用当前滚动位置偏移，确保过渡期间都在可视区内。
- * 同时插入一个 spacer 保持容器可滚动高度，防止两个元素都 absolute 后
- * 正常流内容归零导致 scrollTop 被浏览器强制 clamp 为 0。
- */
-function onPageBeforeLeave() {
-  const main = document.querySelector('.main-content')
-  if (!main) return
-  const offset = `${main.scrollTop}px`
-  main.style.setProperty('--leave-offset', offset)
-  main.style.setProperty('--enter-offset', offset)
-  // 插入正常流占位元素，防止容器高度塌陷后 scrollTop 被归零
-  const spacer = document.createElement('div')
-  spacer.id = 'page-transition-spacer'
-  spacer.style.cssText = `height:${main.scrollHeight}px;width:1px;position:relative`
-  main.appendChild(spacer)
-}
-
-/**
- * enter 完成后：恢复目标页面的滚动位置，清除 CSS 变量
- */
-function onPageAfterEnter() {
+/** 统一清理过渡态 */
+function _cleanupTransition() {
+  if (transitionSafetyTimer) { clearTimeout(transitionSafetyTimer); transitionSafetyTimer = null }
   const main = document.querySelector('.main-content')
   if (!main) return
   const targetScroll = pageScrollMap[route.path] ?? 0
   main.scrollTop = targetScroll
-  main.style.removeProperty('--leave-offset')
-  main.style.removeProperty('--enter-offset')
-  // 移除占位 spacer
+  main.classList.remove('page-transitioning')
+  main.style.removeProperty('--leave-scroll')
+  main.style.removeProperty('--enter-scroll')
+  pendingLeaveScroll = 0
+  pendingEnterScroll = 0
+}
+
+/**
+ * leave 过渡开始：设置 CSS 变量，锁定 overflow，scrollTop 归零。
+ */
+function onPageBeforeLeave() {
+  const main = document.querySelector('.main-content')
+  if (!main) return
+
+  const seq = ++transitionSeq
+  if (transitionSafetyTimer) { clearTimeout(transitionSafetyTimer); transitionSafetyTimer = null }
+
+  main.classList.add('page-transitioning')
+  main.style.setProperty('--leave-scroll', `${pendingLeaveScroll}px`)
+  main.style.setProperty('--enter-scroll', `${pendingEnterScroll}px`)
+  main.scrollTop = 0
+
   const spacer = document.getElementById('page-transition-spacer')
   if (spacer) spacer.remove()
+
+  // 兜底：800ms 后强制清理，防止 @after-enter 因取消/中断永不触发
+  const capturedSeq = seq
+  transitionSafetyTimer = setTimeout(() => {
+    if (transitionSeq === capturedSeq) _cleanupTransition()
+  }, 800)
+}
+
+/**
+ * enter 过渡完成：恢复目标页 scrollTop，清理过渡态。
+ */
+function onPageAfterEnter() {
+  _cleanupTransition()
 }
 
 // ==================== 主题色管理 ====================
@@ -295,6 +321,9 @@ onMounted(() => {
   background: var(--bg-secondary);
   position: relative; /* 为页面过渡动画提供定位参考 */
 }
+.main-content.page-transitioning {
+  overflow: hidden;
+}
 
 /* 滚动条样式 */
 .main-content::-webkit-scrollbar {
@@ -312,20 +341,20 @@ onMounted(() => {
 }
 
 /* ===== 页面切换过渡动画 ===== */
-/* 使用 @keyframes 动画而非 transition，确保每次路由切换都从 from 状态开始，
-   避免 keep-alive 缓存页激活时因初始状态已可见导致的"闪现" */
-/* 进入/离开元素均设为绝对定位并完全重叠，消除布局跳动 */
+/* absolute 子元素相对 .main-content 滚动视口定位，不随 scrollTop 移动。
+   首页等在 main-content 上滚动的页面，离开时用 top 负向偏移复现滚后视觉位置；
+   音乐库等页面 main-content 几乎不滚动（--leave-scroll ≈ 0），故不受影响。 */
 .page-enter-active {
   animation: page-enter 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0) both;
   position: absolute;
-  top: calc(24px + var(--enter-offset, 0px));
+  top: calc(24px - var(--enter-scroll, 0px));
   left: 32px;
   right: 32px;
 }
 .page-leave-active {
   animation: page-leave 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0) both;
   position: absolute;
-  top: calc(24px + var(--leave-offset, 0px));
+  top: calc(24px - var(--leave-scroll, 0px));
   left: 32px;
   right: 32px;
   z-index: 1;
