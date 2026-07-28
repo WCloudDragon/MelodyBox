@@ -131,7 +131,8 @@ watch(() => route.path, (newPath, oldPath) => {
 
 /**
  * leave 过渡钩子：进出元素均用当前滚动位置偏移，确保过渡期间都在可视区内。
- * 同时用 min-height 锁定容器高度，防止两个元素都 absolute 后 scrollTop 被 clamp 到 0。
+ * 同时插入一个 spacer 保持容器可滚动高度，防止两个元素都 absolute 后
+ * 正常流内容归零导致 scrollTop 被浏览器强制 clamp 为 0。
  */
 function onPageBeforeLeave() {
   const main = document.querySelector('.main-content')
@@ -139,8 +140,11 @@ function onPageBeforeLeave() {
   const offset = `${main.scrollTop}px`
   main.style.setProperty('--leave-offset', offset)
   main.style.setProperty('--enter-offset', offset)
-  // 锁定可滚动高度，防止绝对定位的元素脱离正常流后容器高度塌陷导致 scrollTop 归零
-  main.style.minHeight = `${main.scrollHeight}px`
+  // 插入正常流占位元素，防止容器高度塌陷后 scrollTop 被归零
+  const spacer = document.createElement('div')
+  spacer.id = 'page-transition-spacer'
+  spacer.style.cssText = `height:${main.scrollHeight}px;width:1px;position:relative`
+  main.appendChild(spacer)
 }
 
 /**
@@ -153,7 +157,9 @@ function onPageAfterEnter() {
   main.scrollTop = targetScroll
   main.style.removeProperty('--leave-offset')
   main.style.removeProperty('--enter-offset')
-  main.style.removeProperty('min-height')
+  // 移除占位 spacer
+  const spacer = document.getElementById('page-transition-spacer')
+  if (spacer) spacer.remove()
 }
 
 // ==================== 主题色管理 ====================
