@@ -172,26 +172,11 @@ function setCachedTracks(data) {
 }
 
 /**
- * 将推荐列表第一首歌的封面写入共享 localStorage，
+ * 将推荐列表第一首歌的封面写入 store（单一数据源），
  * 供首页封面卡片读取，确保卡片封面 = 推荐列表榜首。
  */
 function _writeDerivedCover(mode, mood, firstTrack) {
-  if (!firstTrack) return
-  const cover = firstTrack.cover_url || ''
-  if (!cover) return
-  const cardKey = mode === 'comprehensive' ? 'daily'
-    : mode === 'hidden_gem' ? 'hidden_gem'
-    : mood ? `mood_${mood}` : null
-  if (!cardKey) return
-  try {
-    const KEY = 'melodybox_derived_covers'
-    const map = JSON.parse(localStorage.getItem(KEY) || '{}')
-    const entry = { title: firstTrack.title || '', artist: firstTrack.artist || '', cover }
-    map[cardKey] = entry
-    // weather 模式额外写入专用 key，供天气卡片直接读取
-    if (mode === 'weather' && mood) map[`weather_${mood}`] = entry
-    localStorage.setItem(KEY, JSON.stringify(map))
-  } catch {}
+  aiStore.updateCoverFromRecommend(mode, mood, firstTrack)
 }
 
 // 标题映射
@@ -308,7 +293,7 @@ async function fetchRecommendations() {
     seed = `&seed=${Math.abs(hash)}`
   }
 
-  let url = `http://127.0.0.1:5000/api/ai/recommend?limit=50&mode=${mode}${seed}`
+  let url = `http://127.0.0.1:5000/api/ai/recommend?limit=20&mode=${mode}${seed}`
   if (lang) url += `&lang=${encodeURIComponent(lang)}`
   if (effectiveMood) url += `&mood=${encodeURIComponent(effectiveMood)}`
 

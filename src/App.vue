@@ -11,7 +11,7 @@
       <Sidebar />
       <main class="main-content">
         <router-view v-slot="{ Component, route: currentRoute }">
-          <transition name="page">
+          <transition name="page" @before-leave="onPageBeforeLeave">
             <keep-alive include="HomeView,LibraryView,AlbumsView,ArtistsView,SettingsView,UserView,FoldersView">
               <component :is="Component" :key="currentRoute.path" />
             </keep-alive>
@@ -112,6 +112,15 @@ function handleClose() {
   panelFading.value = false
   textShifted.value = false
   nextTick(() => { panelVisible.value = false })
+}
+
+// 页面切换过渡动画：在 leave 动画开始前滚动容器到顶部，
+// 确保 position: absolute 的过渡元素在可视区域内
+function onPageBeforeLeave() {
+  const main = document.querySelector('.main-content')
+  if (main && main.scrollTop > 0) {
+    main.scrollTop = 0
+  }
 }
 
 // ==================== 主题色管理 ====================

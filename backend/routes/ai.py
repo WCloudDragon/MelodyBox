@@ -754,7 +754,7 @@ def get_recommend_previews():
             if st_available:
                 try:
                     res, _, _ = _fetch_recommendations(
-                        mode=mode, limit=50, mood=mood_key, cache_ttl=300
+                        mode=mode, limit=20, mood=mood_key, cache_ttl=300
                     )
                     pick = _first_cover(res)
                     if pick:

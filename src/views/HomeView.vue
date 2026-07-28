@@ -524,129 +524,29 @@ onMounted(() => {
   resizeObserver = new ResizeObserver(updateCardsPerPage)
   // 监听父容器（rec-entries-wrap）的宽度变化
   if (recEntriesRef.value?.parentElement) resizeObserver.observe(recEntriesRef.value.parentElement)
-  // 首次加载推荐卡片封面。loadRecPreviews 内部会判断缓存是否过期：
-  //  - 缓存有效 → 直接用 localStorage 里的数据（启动时已读入 recPreviews），不重复请求
+  // 首次加载推荐卡片封面。loadPreviews 内部会判断缓存是否过期：
+  //  - 缓存有效 → 直接用 store 缓存的数据，不重复请求
   //  - 缓存过期/不存在 → 拉取最新 previews
-  // 此处必须主动调用，否则在 embedding 早已生成完的场景下，
-  // pending 启动即为 0 且不再变化，下方 watch 永不触发，封面会一直显示 emoji。
-  loadRecPreviews()
+  aiStore.loadPreviews()
 })
 onUnmounted(() => {
   if (resizeObserver) resizeObserver.disconnect()
 })
 
-// 推荐预览数据（卡片封面）— localStorage 缓存 + 按需刷新
-const PREVIEW_CACHE_KEY = 'melodybox_rec_previews_v2'
-const PREVIEW_COLORS_KEY = 'melodybox_rec_colors_v2'
-const PREVIEW_TS_KEY = 'melodybox_rec_previews_ts_v2'
-// 与后端 /recommend 的 5 分钟缓存对齐，避免首页卡片封面与推荐页榜首长时间不一致
-const PREVIEW_TTL = 5 * 60 * 1000 // 5 分钟
-const recPreviews = ref({})
-const coverColors = ref({})
+// 推荐预览数据（单一数据源：ai store）
+const recPreviews = computed(() => aiStore.previews)
+const coverColors = computed(() => aiStore.coverColors)
 const hasRecData = computed(() => aiStore.embeddingStatus.pending === 0 || Object.keys(recPreviews.value).length > 0)
 
-// 启动时立即加载缓存
-try {
-  const cached = localStorage.getItem(PREVIEW_CACHE_KEY)
-  if (cached) {
-    const parsed = JSON.parse(cached)
-    _applyDerivedCovers(parsed)
-    recPreviews.value = parsed
-  }
-  const cachedColors = localStorage.getItem(PREVIEW_COLORS_KEY)
-  if (cachedColors) coverColors.value = JSON.parse(cachedColors)
-} catch {}
+// 启动时从 store 缓存恢复预览数据（store 内部处理 localStorage）
+aiStore.loadPreviews()
 
 /**
- * 读取推荐列表派生的封面数据（由 RecommendPlaylistView 写入），
+ * 读取推荐列表派生的封面数据（由 RecommendPlaylistView 调用 store.updateCoverFromRecommend），
  * 覆盖 previews 中对应模式的卡片，确保封面 = 推荐列表榜首。
+ * 注意：此逻辑已迁移至 ai store 的 updateCoverFromRecommend 方法，
+ * 首页通过 computed 直接读取 store 的 previews 数据。
  */
-function _applyDerivedCovers(data) {
-  try {
-    const raw = localStorage.getItem('melodybox_derived_covers')
-    if (!raw) return
-    const map = JSON.parse(raw)
-    if (map.daily && data) data.daily = map.daily
-    if (map.hidden_gem && data) data.hidden_gem = map.hidden_gem
-    if (map.moods || data?.moods) {
-      if (!data.moods) data.moods = {}
-      for (const [key, val] of Object.entries(map)) {
-        if (key.startsWith('mood_') && val) {
-          const moodKey = key.slice(5) // 'mood_sad' → 'sad'
-          data.moods[moodKey] = val
-        }
-        // weather 专用 key 也覆盖到 moods，供天气卡片读取
-        if (key.startsWith('weather_') && val) {
-          const moodKey = key.slice(8) // 'weather_sad' → 'sad'
-          data.moods[moodKey] = val
-        }
-      }
-    }
-  } catch {}
-}
-
-function isPreviewCacheValid() {
-  try {
-    const ts = parseInt(localStorage.getItem(PREVIEW_TS_KEY) || '0')
-    return Date.now() - ts < PREVIEW_TTL
-  } catch { return false }
-}
-
-async function loadRecPreviews(force = false) {
-  if (!force && isPreviewCacheValid()) return
-  try {
-    const res = await fetch('http://127.0.0.1:5000/api/ai/recommend/previews')
-    if (res.ok) {
-      const data = await res.json()
-      console.debug('[previews] 封面卡片数据:', data)
-      _applyDerivedCovers(data)
-      recPreviews.value = data
-      try {
-        localStorage.setItem(PREVIEW_CACHE_KEY, JSON.stringify(data))
-        localStorage.setItem(PREVIEW_TS_KEY, String(Date.now()))
-      } catch {}
-      extractAllColors()
-    }
-  } catch {}
-}
-
-async function extractAllColors() {
-  const pv = recPreviews.value
-  const entries = []
-  if (pv.daily?.cover) entries.push(['daily', pv.daily.cover])
-  if (pv.hidden_gem?.cover) entries.push(['hidden_gem', pv.hidden_gem.cover])
-  if (pv.moods) {
-    for (const [key, val] of Object.entries(pv.moods)) {
-      if (val?.cover) entries.push([key, val.cover])
-    }
-  }
-  // 预定义 fallback 色板
-  const fallbacks = {
-    daily: { mid: '#4a3f6b', shadow: '#2a2545', highlight: '#8b7fbf' },
-    hidden_gem: { mid: '#3f4a6b', shadow: '#252a45', highlight: '#7f8bbf' },
-    sad: { mid: '#4a5a4a', shadow: '#2d362d', highlight: '#8ba88b' },
-    energetic: { mid: '#6b3f3f', shadow: '#452525', highlight: '#bf7f7f' },
-    calm: { mid: '#3f4a6b', shadow: '#252a45', highlight: '#7f8bbf' },
-    upbeat: { mid: '#6b3f5a', shadow: '#452536', highlight: '#bf7fa8' },
-    fresh: { mid: '#3f6b4a', shadow: '#25452d', highlight: '#7fbf8b' },
-    romantic: { mid: '#6b3f55', shadow: '#452533', highlight: '#bf7fa3' },
-    inspire: { mid: '#6b5a3f', shadow: '#453625', highlight: '#bfa87f' },
-  }
-  const BATCH = 3
-  for (let i = 0; i < entries.length; i += BATCH) {
-    const batch = entries.slice(i, i + BATCH)
-    await Promise.all(batch.map(async ([key, url]) => {
-      const colors = await extractCoverColors(url)
-      coverColors.value[key] = colors || fallbacks[key] || fallbacks.daily
-    }))
-  }
-  // 没有封面的条目也用 fallback
-  for (const [key, fb] of Object.entries(fallbacks)) {
-    if (!coverColors.value[key]) coverColors.value[key] = fb
-  }
-  coverColors.value = { ...coverColors.value }
-  try { localStorage.setItem(PREVIEW_COLORS_KEY, JSON.stringify(coverColors.value)) } catch {}
-}
 
 function getPreview(key) {
   const pv = recPreviews.value
@@ -752,7 +652,7 @@ watch(() => libraryStore.tracks.length, async (newLen, oldLen) => {
 // embedding 就绪后加载推荐预览（仅在 pending 从非 0 变为 0 时触发）
 watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
   if (pending === 0 && oldPending > 0) {
-    loadRecPreviews(true)
+    aiStore.loadPreviews(true)
   }
 })
 </script>
