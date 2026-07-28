@@ -11,7 +11,7 @@
       <Sidebar />
       <main class="main-content">
         <router-view v-slot="{ Component, route: currentRoute }">
-          <transition name="page" @before-leave="onPageBeforeLeave">
+          <transition name="page" @before-leave="onPageBeforeLeave" @after-enter="onPageAfterEnter">
             <keep-alive include="HomeView,LibraryView,AlbumsView,ArtistsView,SettingsView,UserView,FoldersView">
               <component :is="Component" :key="currentRoute.path" />
             </keep-alive>
@@ -114,13 +114,46 @@ function handleClose() {
   nextTick(() => { panelVisible.value = false })
 }
 
-// 页面切换过渡动画：在 leave 动画开始前滚动容器到顶部，
-// 确保 position: absolute 的过渡元素在可视区域内
+// ==================== 页面切换过渡动画 ====================
+
+// 记录每个路由路径的 .main-content 滚动位置
+const pageScrollMap = {}
+
+// 路由变化前保存当前页面的滚动位置
+watch(() => route.path, (newPath, oldPath) => {
+  if (oldPath) {
+    const main = document.querySelector('.main-content')
+    if (main) {
+      pageScrollMap[oldPath] = main.scrollTop
+    }
+  }
+})
+
+/**
+ * leave 过渡钩子：进出元素均用当前滚动位置偏移，确保过渡期间都在可视区内。
+ * 同时用 min-height 锁定容器高度，防止两个元素都 absolute 后 scrollTop 被 clamp 到 0。
+ */
 function onPageBeforeLeave() {
   const main = document.querySelector('.main-content')
-  if (main && main.scrollTop > 0) {
-    main.scrollTop = 0
-  }
+  if (!main) return
+  const offset = `${main.scrollTop}px`
+  main.style.setProperty('--leave-offset', offset)
+  main.style.setProperty('--enter-offset', offset)
+  // 锁定可滚动高度，防止绝对定位的元素脱离正常流后容器高度塌陷导致 scrollTop 归零
+  main.style.minHeight = `${main.scrollHeight}px`
+}
+
+/**
+ * enter 完成后：恢复目标页面的滚动位置，清除 CSS 变量
+ */
+function onPageAfterEnter() {
+  const main = document.querySelector('.main-content')
+  if (!main) return
+  const targetScroll = pageScrollMap[route.path] ?? 0
+  main.scrollTop = targetScroll
+  main.style.removeProperty('--leave-offset')
+  main.style.removeProperty('--enter-offset')
+  main.style.removeProperty('min-height')
 }
 
 // ==================== 主题色管理 ====================
@@ -279,14 +312,14 @@ onMounted(() => {
 .page-enter-active {
   animation: page-enter 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0) both;
   position: absolute;
-  top: 24px;
+  top: calc(24px + var(--enter-offset, 0px));
   left: 32px;
   right: 32px;
 }
 .page-leave-active {
   animation: page-leave 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0) both;
   position: absolute;
-  top: 24px;
+  top: calc(24px + var(--leave-offset, 0px));
   left: 32px;
   right: 32px;
   z-index: 1;
