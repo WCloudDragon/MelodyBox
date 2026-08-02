@@ -129,13 +129,18 @@ let transitionSafetyTimer = null
 
 /**
  * 在路由真正切换之前保存滚动位置。
+ * 注意：快速切换时，上一个过渡的 before-leave 已将 scrollTop 清零且尚未恢复
+ * （page-transitioning class 仍在），此时若覆盖 pageScrollMap 会丢失该页的真实位置。
+ * 因此过渡窗口期沿用已保存的位置，仅稳定状态下才更新记录。
  */
 router.beforeEach((to, from) => {
   if (from.path && from.path !== to.path) {
     const main = document.querySelector('.main-content')
     if (main) {
-      pendingLeaveScroll = main.scrollTop
-      pageScrollMap[from.path] = main.scrollTop
+      const isTransitioning = main.classList.contains('page-transitioning')
+      const scroll = isTransitioning ? (pageScrollMap[from.path] ?? main.scrollTop) : main.scrollTop
+      pendingLeaveScroll = scroll
+      if (!isTransitioning) pageScrollMap[from.path] = scroll
       pendingEnterScroll = pageScrollMap[to.path] ?? 0
     }
   }
@@ -148,10 +153,22 @@ function _cleanupTransition() {
   const main = document.querySelector('.main-content')
   if (!main) return
   const targetScroll = pageScrollMap[route.path] ?? 0
-  main.scrollTop = targetScroll
+  const capturedSeq = transitionSeq
   main.classList.remove('page-transitioning')
   main.style.removeProperty('--leave-scroll')
   main.style.removeProperty('--enter-scroll')
+  // 优先同步恢复滚动：确保内容高度已足够（否则 scrollTop 会被 clamp 到 0，导致位置丢失）。
+  // 首页有异步内容渲染时高度可能不足，则延迟到下一帧重试。
+  if (main.scrollHeight > targetScroll) {
+    main.scrollTop = targetScroll
+  } else {
+    requestAnimationFrame(() => {
+      // 若期间又触发了新过渡（seq 变化），跳过本次恢复，由新过渡完成后统一恢复
+      if (transitionSeq === capturedSeq) {
+        main.scrollTop = targetScroll
+      }
+    })
+  }
   pendingLeaveScroll = 0
   pendingEnterScroll = 0
 }
@@ -183,9 +200,16 @@ function onPageBeforeLeave() {
 
 /**
  * enter 过渡完成：恢复目标页 scrollTop，清理过渡态。
+ * 快速切换时旧过渡的 after-enter 可能晚到，延迟一帧再检查 seq：
+ * 若期间又有新过渡开始（seq 变化），跳过本次清理，由最后一次过渡负责恢复。
  */
 function onPageAfterEnter() {
-  _cleanupTransition()
+  const seqAtEnter = transitionSeq
+  requestAnimationFrame(() => {
+    if (transitionSeq === seqAtEnter) {
+      _cleanupTransition()
+    }
+  })
 }
 
 // ==================== 主题色管理 ====================
