@@ -165,6 +165,8 @@ export const useAiStore = defineStore('ai', () => {
       const cached = _loadPreviewsCache()
       if (cached && Object.keys(cached).length > 0) {
         previews.value = cached
+        // 缓存命中也要恢复取色：有缓存颜色直接恢复，无则按需补提取
+        await extractAllColors()
         return
       }
     }

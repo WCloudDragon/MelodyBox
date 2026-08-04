@@ -70,7 +70,11 @@
             @click="recPage--"
           >‹</button>
           <div class="rec-entries" ref="recEntriesRef">
-            <div class="rec-entries__track" :style="recTrackStyle">
+            <div
+              class="rec-entries__track"
+              :class="{ 'cards-revealed': cardsRevealed }"
+              :style="recTrackStyle"
+            >
               <template v-if="!recPreviewsLoading">
               <!-- 天气推荐卡片（常显：未配置/加载中/失败也有占位状态） -->
               <div
@@ -609,6 +613,14 @@ const coverColors = computed(() => aiStore.coverColors)
 const recPreviewsLoading = computed(() => aiStore.previewsLoading)
 const skeletonCount = computed(() => Math.max(recCardsPerPage.value, 1))
 
+// 骨架 → 真实卡片时只播放一次入场动画（返回首页不重复触发）
+const cardsRevealed = ref(false)
+watch(recPreviewsLoading, (loading) => {
+  if (!loading) {
+    cardsRevealed.value = true
+  }
+})
+
 // 启动时从 store 缓存恢复预览数据（store 内部处理 localStorage）
 aiStore.loadPreviews()
 
@@ -984,11 +996,11 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
   100% { background-position: -200% 0; }
 }
 
-/* 骨架 → 真实卡片的渐变过渡：淡入上浮 + 封面高光斜向扫过 */
-.rec-entry--cover:not(.rec-entry--skeleton) {
+/* 骨架 → 真实卡片时播放一次入场动画（返回首页不重复触发） */
+.rec-entries__track.cards-revealed .rec-entry--cover:not(.rec-entry--skeleton) {
   animation: recCardReveal 0.55s ease-out both;
 }
-.rec-entry--cover:not(.rec-entry--skeleton) .rec-entry__cover-bg::after {
+.rec-entries__track.cards-revealed .rec-entry--cover:not(.rec-entry--skeleton) .rec-entry__cover-bg::after {
   content: '';
   position: absolute;
   top: 0;
@@ -1009,11 +1021,9 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
 @keyframes recCardReveal {
   from {
     opacity: 0;
-    transform: translateY(8px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 @keyframes recCardShine {
