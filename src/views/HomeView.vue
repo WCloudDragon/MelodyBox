@@ -984,6 +984,44 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
   100% { background-position: -200% 0; }
 }
 
+/* 骨架 → 真实卡片的渐变过渡：淡入上浮 + 封面高光斜向扫过 */
+.rec-entry--cover:not(.rec-entry--skeleton) {
+  animation: recCardReveal 0.55s ease-out both;
+}
+.rec-entry--cover:not(.rec-entry--skeleton) .rec-entry__cover-bg::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 60%;
+  height: 100%;
+  z-index: 6;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.28) 50%,
+    transparent 100%
+  );
+  transform: translateX(-160%) skewX(-12deg);
+  animation: recCardShine 0.9s ease-out 0.12s 1 forwards;
+}
+@keyframes recCardReveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes recCardShine {
+  to {
+    transform: translateX(320%) skewX(-12deg);
+  }
+}
+
 .rec-entry__title {
   font-size: 14px;
   font-weight: 600;
