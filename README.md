@@ -107,8 +107,30 @@ melodybox/
 │   │   └── weather.py                 # 天气 API（和风天气 + LLM 情绪语义映射）
 │   ├── services/
 │   │   ├── embedding.py               # AI Embedding 服务（E5 文本 + MERT 音频，GPU/CPU 自适应）
-│   │   ├── recommender.py             # AI 推荐引擎（余弦相似度 + 加权融合 + MMR 重排）
+│   │   ├── vectors.py                 # 向量存储（song_vectors 表 + 归一化矩阵 + 版本化缓存）
+│   │   ├── events.py                  # 行为事件（play/skip/complete/like/dislike）落库
+│   │   ├── profile.py                 # 用户画像（事件聚合 + 时间衰减 + 正负样本）
+│   │   ├── recommender.py             # 统一推荐流水线（候选→打分→过滤→MMR→解释，配置化权重）
 │   │   └── scanner.py                 # mutagen 元数据解析 + 增量扫描 + 缩略图生成
+
+### 6. AI 推荐架构（v2 重构）
+
+推荐功能重构为**事件驱动的统一流水线**，核心变化：
+
+- **向量独立表**：`song_vectors`（song_id + source 复合主键），带 `text_version` / `audio_version`，
+  模型升级只重算版本不符的歌曲；旧 `songs.embedding` 列自动迁移后只读。
+- **用户画像持久化**：`events` 表记录播放/跳过/听完/喜欢/不喜欢，
+  `user_profiles` 表存储加权平均向量、流派/语种分布、最近听过列表，每次行为异步刷新。
+- **统一流水线**：五种模式（综合/语言/情绪/相似/冷门宝藏）收敛为同一套
+  "候选生成 → 特征打分 → 规则过滤 → MMR 多样性重排 → 解释"，权重集中在
+  `config/recommend_config.py`，可配置可评估。
+- **缓存收敛**：前端去掉 localStorage 推荐缓存，改由后端按
+  `(画像版本, 向量代次, 模式参数, 日期)` 做服务端缓存，画像/向量变更自动失效。
+- **分数可比**：特征级 min-max 归一化 + z-score→sigmoid 校准，跨模式分数同一量纲。
+- **情绪软原型**：情绪分数用全库 softmax 加权（温度 0.1）计算音频原型，
+  替代旧版"top-5 文本匹配歌曲音频均值"的自证循环。
+- **评估工具**：`tools/evaluate_recommendations.py` 离线切分播放历史，
+  输出 precision@k / recall@k / 多样性 / 覆盖率；`recommend_log.txt` 记录每次请求耗时。
 │   ├── utils/
 │   │   └── cache.py                   # LRU 缓存工具
 │   └── tools/

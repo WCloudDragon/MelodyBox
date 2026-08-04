@@ -1,24 +1,34 @@
 """
-MelodyBox AI 推荐路由
+MelodyBox AI 推荐路由（重构版）
 
-提供 Embedding 生成和 AI 推荐接口。
+提供：
+- Embedding 生成 / 状态（写入独立 song_vectors 表，带版本号）
+- 统一推荐接口（画像驱动 + 服务端缓存）
+- 首页推荐卡片封面预览
+- 情绪分数预计算刷新
+- 模型缓存目录管理
 """
 from flask import Blueprint, request, jsonify, current_app
 import threading
 import time
 import hashlib
-import numpy as np
 import sys
+
 from utils.cache import cache
+from config.recommend_config import (
+    TEXT_VECTOR_VERSION,
+    AUDIO_VECTOR_VERSION,
+    RECOMMEND_CACHE_TTL,
+)
 
 ai_bp = Blueprint('ai', __name__, url_prefix='/api/ai')
 
-# embedding 生成状态（模块级标志）
+# embedding 生成状态（模块级标志，供前端轮询）
 _generating_text_embeddings = False
 _generating_audio_embeddings = False
 _audio_total = 0
 _audio_done_count = 0
-_text_use_gpu = False  # E5 当前是否在使用 GPU
+_text_use_gpu = False
 # 音频 embedding 完成信号（用于 CPU→GPU 切换）
 _audio_embedding_done = threading.Event()
 
@@ -39,11 +49,64 @@ def get_db():
     return current_app.get_db()
 
 
-# ==================== Embedding 生成 ====================
+# ==================== 待处理歌曲查询（向量表版） ====================
+
+def _pending_songs(db, audio=False):
+    """查询尚未生成（当前版本）文本/音频向量的歌曲，返回 list[dict]。"""
+    col = 'audio_vec' if audio else 'text_vec'
+    vcol = 'audio_version' if audio else 'text_version'
+    version = AUDIO_VECTOR_VERSION if audio else TEXT_VECTOR_VERSION
+    exists_sql = (
+        f'SELECT 1 FROM song_vectors v '
+        f'WHERE v.song_id = s.id AND v.source = \'local\' '
+        f'AND v.{col} IS NOT NULL AND v.{vcol} = ?'
+    )
+    cursor = db.cursor()
+    cursor.execute(
+        f'SELECT id, title, artist, genre, year, lyrics, lang, "local" AS source '
+        f'FROM songs s WHERE NOT EXISTS ({exists_sql})',
+        (version,)
+    )
+    rows = [dict(r) for r in cursor.fetchall()]
+    cloud_exists = exists_sql.replace("v.source = 'local'", "v.source = 'cloud'")
+    cursor.execute(
+        f'SELECT id, title, artist, genre, year, lyrics, lang, "cloud" AS source '
+        f'FROM cloud_songs s WHERE NOT EXISTS ({cloud_exists})',
+        (version,)
+    )
+    rows.extend([dict(r) for r in cursor.fetchall()])
+    cursor.close()
+    return rows
+
+
+def _count_pending(db, audio=False):
+    col = 'audio_vec' if audio else 'text_vec'
+    vcol = 'audio_version' if audio else 'text_version'
+    version = AUDIO_VECTOR_VERSION if audio else TEXT_VECTOR_VERSION
+    cursor = db.cursor()
+    cursor.execute(
+        f'''SELECT
+              (SELECT COUNT(*) FROM songs s WHERE NOT EXISTS (
+                  SELECT 1 FROM song_vectors v
+                  WHERE v.song_id = s.id AND v.source = 'local'
+                    AND v.{col} IS NOT NULL AND v.{vcol} = ?)) +
+              (SELECT COUNT(*) FROM cloud_songs s WHERE NOT EXISTS (
+                  SELECT 1 FROM song_vectors v
+                  WHERE v.song_id = s.id AND v.source = 'cloud'
+                    AND v.{col} IS NOT NULL AND v.{vcol} = ?))
+              AS cnt''',
+        (version, version)
+    )
+    cnt = cursor.fetchone()['cnt']
+    cursor.close()
+    return cnt
+
+
+# ==================== Embedding 状态 ====================
 
 @ai_bp.route('/embedding/status')
 def embedding_status():
-    """获取全库 embedding 生成状态"""
+    """获取全库 embedding 生成状态（前端轮询）。"""
     try:
         from services.embedding import is_available
 
@@ -55,34 +118,39 @@ def embedding_status():
         cloud_total = cursor.fetchone()['total']
         total = local_total + cloud_total
 
-        cursor.execute('SELECT COUNT(*) as done FROM songs WHERE embedding IS NOT NULL')
-        local_done = cursor.fetchone()['done']
-        cursor.execute('SELECT COUNT(*) as done FROM cloud_songs WHERE embedding IS NOT NULL')
-        cloud_done = cursor.fetchone()['done']
-        done = local_done + cloud_done
+        cursor.execute(
+            'SELECT COUNT(*) as done FROM song_vectors '
+            'WHERE text_vec IS NOT NULL AND text_version = ?',
+            (TEXT_VECTOR_VERSION,)
+        )
+        done = cursor.fetchone()['done']
 
-        # 可用的语言列表（在 close 前查询）
-        cursor.execute('''
-            SELECT lang, COUNT(*) as cnt FROM songs
-            WHERE lang != "" AND embedding IS NOT NULL
-            GROUP BY lang
-            ORDER BY cnt DESC
-        ''')
+        cursor.execute(
+            '''SELECT s.lang, COUNT(*) as cnt FROM songs s
+               WHERE s.lang != "" AND EXISTS (
+                   SELECT 1 FROM song_vectors v
+                   WHERE v.song_id = s.id AND v.source = 'local'
+                     AND v.text_vec IS NOT NULL AND v.text_version = ?
+               )
+               GROUP BY s.lang ORDER BY cnt DESC''',
+            (TEXT_VECTOR_VERSION,)
+        )
         langs = [row['lang'] for row in cursor.fetchall()]
 
-        # 检查情绪分数是否已预计算
         cursor.execute('SELECT COUNT(*) as cnt FROM song_mood_scores')
         mood_scores_ready = cursor.fetchone()['cnt'] > 0
 
-        # 音频 embedding 统计（处理中用实时计数，完成后用数据库计数）
-        cursor.execute('SELECT COUNT(*) as done FROM songs WHERE audio_embedding IS NOT NULL')
-        local_audio_done = cursor.fetchone()['done']
-        cursor.execute('SELECT COUNT(*) as done FROM cloud_songs WHERE audio_embedding IS NOT NULL')
-        cloud_audio_done = cursor.fetchone()['done']
-        audio_done_db = local_audio_done + cloud_audio_done
+        cursor.execute(
+            'SELECT COUNT(*) as done FROM song_vectors '
+            'WHERE audio_vec IS NOT NULL AND audio_version = ?',
+            (AUDIO_VECTOR_VERSION,)
+        )
+        audio_done_db = cursor.fetchone()['done']
+        cursor.close()
+        db.close()
+
         audio_processing = _generating_audio_embeddings
         text_processing = _generating_text_embeddings
-        # 处理中用实时进度，完成后用数据库实际数量
         audio_done = _audio_done_count if audio_processing else audio_done_db
         audio_available = False
         try:
@@ -91,7 +159,6 @@ def embedding_status():
         except Exception:
             pass
 
-        # 获取模型下载进度
         e5_download = {'status': 'completed', 'percent': 100}
         mert_download = {'status': 'completed', 'percent': 100}
         try:
@@ -101,10 +168,6 @@ def embedding_status():
         except Exception:
             pass
 
-        cursor.close()
-        db.close()
-
-        # 推理后端信息
         provider = 'cpu'
         generating = False
         try:
@@ -137,14 +200,195 @@ def embedding_status():
         return jsonify({'error': str(e)}), 500
 
 
+# ==================== Embedding 生成 ====================
+
+def _upsert_vector(cursor, song_id, source, blob, audio=False):
+    """写入（或更新）song_vectors 行。"""
+    if audio:
+        cursor.execute(
+            '''INSERT INTO song_vectors (song_id, source, audio_vec, audio_version, updated_at)
+               VALUES (?, ?, ?, ?, datetime('now','localtime'))
+               ON CONFLICT(song_id, source) DO UPDATE SET
+                 audio_vec = excluded.audio_vec,
+                 audio_version = excluded.audio_version,
+                 updated_at = datetime('now','localtime')''',
+            (song_id, source, blob)
+        )
+    else:
+        cursor.execute(
+            '''INSERT INTO song_vectors (song_id, source, text_vec, text_version, updated_at)
+               VALUES (?, ?, ?, ?, datetime('now','localtime'))
+               ON CONFLICT(song_id, source) DO UPDATE SET
+                 text_vec = excluded.text_vec,
+                 text_version = excluded.text_version,
+                 updated_at = datetime('now','localtime')''',
+            (song_id, source, blob)
+        )
+
+
+def _run_generation(flask_app, pending_songs, audio_pending):
+    """
+    并行生成文本（CPU 起步，音频完成后切 GPU）与音频向量。
+    全部完成后：失效向量缓存 → 异步刷新情绪分数 → 异步刷新用户画像。
+    """
+    global _generating_text_embeddings, _generating_audio_embeddings
+    global _text_use_gpu, _audio_total, _audio_done_count
+
+    from services.embedding import (
+        set_generation_active, wait_for_e5_download, wait_for_mert_download,
+        encode_songs_batch, encode_audio_batch,
+        embedding_to_blob,
+    )
+
+    set_generation_active(True)
+    _audio_embedding_done.clear()
+
+    def _start_e5_download():
+        from services.embedding import _get_model
+        try:
+            _get_model()
+        except Exception:
+            pass
+
+    def _start_mert_download():
+        from services.embedding import _get_audio_model
+        try:
+            _get_audio_model()
+        except Exception:
+            pass
+
+    threading.Thread(target=_start_e5_download, daemon=True).start()
+    threading.Thread(target=_start_mert_download, daemon=True).start()
+
+    def _text_worker():
+        global _generating_text_embeddings, _text_use_gpu
+        wait_for_e5_download(timeout=600)
+        from services.embedding import _get_model
+        if _get_model() is None:
+            return
+        _generating_text_embeddings = True
+        _text_use_gpu = False
+        use_cpu = True
+        switched = False
+        try:
+            with flask_app.app_context():
+                db = get_db()
+                cursor = db.cursor()
+                try:
+                    total = len(pending_songs)
+                    for offset in range(0, total, 5):
+                        if use_cpu and not switched and _audio_embedding_done.is_set():
+                            use_cpu = False
+                            switched = True
+                            _text_use_gpu = True
+                            from services.embedding import _get_model as _gm
+                            _gm()
+                        batch = pending_songs[offset:offset + 5]
+                        embeddings = encode_songs_batch(
+                            batch, progress_callback=None, use_cpu=use_cpu
+                        )
+                        for song, emb in zip(batch, embeddings):
+                            _upsert_vector(
+                                cursor, song['id'], song.get('source', 'local'),
+                                embedding_to_blob(emb), audio=False
+                            )
+                        db.commit()
+                except Exception:
+                    db.rollback()
+                finally:
+                    cursor.close()
+                    db.close()
+        finally:
+            _generating_text_embeddings = False
+            if not _generating_audio_embeddings:
+                set_generation_active(False)
+
+    def _audio_worker():
+        global _generating_audio_embeddings, _audio_total, _audio_done_count
+        wait_for_mert_download(timeout=600)
+        _generating_audio_embeddings = True
+        try:
+            with flask_app.app_context():
+                if not audio_pending:
+                    _audio_embedding_done.set()
+                    return
+                _audio_total = len(audio_pending)
+                _audio_done_count = 0
+                audio_pairs = [(sid, fp) for sid, fp, _src in audio_pending]
+                results = encode_audio_batch(
+                    audio_pairs,
+                    batch_size=8,
+                    progress_callback=lambda cur, tot: setattr(
+                        sys.modules[__name__], '_audio_done_count', cur
+                    ),
+                )
+                db = get_db()
+                cursor = db.cursor()
+                blob_count = 0
+                for song_id, emb in results:
+                    if emb is not None:
+                        src = next((s for s in (audio_pending) if s[0] == song_id), None)
+                        source = src[2] if src else 'local'
+                        _upsert_vector(
+                            cursor, song_id, source,
+                            emb.astype('float32').tobytes(), audio=True
+                        )
+                        blob_count += 1
+                db.commit()
+                cursor.close()
+                db.close()
+                _audio_done_count = blob_count
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        finally:
+            _generating_audio_embeddings = False
+            _audio_embedding_done.set()
+            if not _generating_text_embeddings:
+                set_generation_active(False)
+
+    def _finalize():
+        t1 = threading.Thread(target=_text_worker, daemon=True)
+        t2 = threading.Thread(target=_audio_worker, daemon=True)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        # 向量已变更：失效缓存 + 异步刷新情绪分数与画像
+        from services.recommender import invalidate_embedding_cache
+        invalidate_embedding_cache()
+
+        def _mood():
+            try:
+                with flask_app.app_context():
+                    from services.recommender import compute_all_mood_scores
+                    db = get_db()
+                    compute_all_mood_scores(db)
+                    db.close()
+            except Exception:
+                pass
+
+        def _profile():
+            try:
+                with flask_app.app_context():
+                    from services.profile import refresh_profile
+                    from services.vectors import VectorStore
+                    db = get_db()
+                    refresh_profile(db, user_id=1, vectors=VectorStore.load(db))
+                    db.close()
+            except Exception:
+                pass
+
+        threading.Thread(target=_mood, daemon=True).start()
+        threading.Thread(target=_profile, daemon=True).start()
+
+    threading.Thread(target=_finalize, daemon=True).start()
+
+
 @ai_bp.route('/embedding/generate', methods=['POST'])
 def generate_embeddings():
-    """
-    为全库中尚未生成 embedding 的歌曲批量生成向量。
-    异步执行，前端可轮询 /api/ai/embedding/status 查看进度。
-
-    返回: { success: true, message: "开始生成 X 首歌曲的 embedding..." }
-    """
+    """为尚未生成向量（当前版本）的歌曲批量生成。异步执行，前端轮询状态。"""
     from services.embedding import is_available
     if not is_available():
         return jsonify({
@@ -153,447 +397,121 @@ def generate_embeddings():
 
     try:
         db = get_db()
-        cursor = db.cursor()
-
-        # 查询尚未生成 embedding 的歌曲（本地 + 云端）
-        cursor.execute(
-            'SELECT id, title, artist, genre, year, lyrics, lang, "local" AS source '
-            'FROM songs WHERE embedding IS NULL'
-        )
-        pending_songs = [dict(row) for row in cursor.fetchall()]
-        cursor.execute(
-            'SELECT id, title, artist, genre, year, lyrics, lang, "cloud" AS source '
-            'FROM cloud_songs WHERE embedding IS NULL'
-        )
-        pending_songs.extend([dict(row) for row in cursor.fetchall()])
-        cursor.close()
+        pending_songs = _pending_songs(db, audio=False)
+        audio_pending = _pending_audio(db)
         db.close()
 
-        if not pending_songs:
-            return jsonify({'success': True, 'message': '所有歌曲的 embedding 已生成'})
+        if not pending_songs and not audio_pending:
+            return jsonify({'success': True, 'message': '所有歌曲的向量已生成'})
 
         flask_app = current_app._get_current_object()
-
-        # 标记生成任务开始（整个生成周期有效，不因单个 worker 失败而提前清除）
-        from services.embedding import set_generation_active
-        set_generation_active(True)
-
-        # --- 并行启动两个模型下载（如果尚未就绪） ---
-        def _start_e5_download():
-            """后台触发 E5 模型下载（fastembed 会自动缓存）"""
-            from services.embedding import _get_model
-            try:
-                _get_model()  # 首次调用会触发下载
-            except Exception as e:
-                pass
-
-        def _start_mert_download():
-            """后台触发 MERT 模型下载+ONNX 导出"""
-            from services.embedding import _get_audio_model
-            try:
-                _get_audio_model()  # 首次调用会触发下载+导出
-            except Exception as e:
-                pass
-
-        # 启动下载线程（如果模型已就绪会立即返回）
-        threading.Thread(target=_start_e5_download, daemon=True).start()
-        threading.Thread(target=_start_mert_download, daemon=True).start()
-
-        def _text_worker():
-            """文本 embedding 线程：等待 E5 下载完成后开始编码"""
-            global _generating_text_embeddings, _text_use_gpu
-            from services.embedding import (
-                encode_songs_batch, embedding_to_blob,
-                set_generation_active, wait_for_e5_download
-            )
-
-            # 等待 E5 模型就绪
-            wait_for_e5_download(timeout=600)
-            # 检查模型是否真的加载成功
-            from services.embedding import _get_model
-            if _get_model() is None:
-                _generating_text_embeddings = False
-                return
-            _generating_text_embeddings = True
-
-            with flask_app.app_context():
-                db2 = get_db()
-                cursor2 = db2.cursor()
-                batch_size = 5
-                use_cpu = True  # 初始 CPU，与 MERT GPU 并行
-                _text_use_gpu = False
-                switched = False
-                try:
-                    total = len(pending_songs)
-                    for offset in range(0, total, batch_size):
-                        # 检测音频是否已完成（Event 信号），完成后切 GPU
-                        if use_cpu and not switched and _audio_embedding_done.is_set():
-                            use_cpu = False
-                            switched = True
-                            _text_use_gpu = True
-                            from services.embedding import _get_model
-                            _get_model()
-
-                        batch = pending_songs[offset:offset + batch_size]
-                        embeddings = encode_songs_batch(batch, progress_callback=None, use_cpu=use_cpu)
-                        for song, emb in zip(batch, embeddings):
-                            blob = embedding_to_blob(emb)
-                            table = 'cloud_songs' if song.get('source') == 'cloud' else 'songs'
-                            cursor2.execute(
-                                f'UPDATE {table} SET embedding = ? WHERE id = ?',
-                                (blob, song['id'])
-                            )
-                        db2.commit()
-                        current = min(offset + batch_size, total)
-                        provider = 'GPU' if not use_cpu else 'CPU'
-                except Exception as e:
-                    db2.rollback()
-                finally:
-                    cursor2.close()
-                    db2.close()
-                    _generating_text_embeddings = False
-                    # 两个 worker 都完成后才清除生成状态
-                    if not _generating_audio_embeddings:
-                        set_generation_active(False)
-
-        def _audio_worker():
-            """音频 embedding 线程：等待 MERT 下载+导出完成后开始编码"""
-            global _generating_audio_embeddings, _audio_total, _audio_done_count
-            with flask_app.app_context():
-                try:
-                    # 等待 MERT 模型就绪
-                    from services.embedding import wait_for_mert_download
-                    wait_for_mert_download(timeout=600)
-                    _generating_audio_embeddings = True
-                    # 查询所有需要音频 embedding 的歌曲（不依赖文本 embedding 完成）
-                    db3 = get_db()
-                    cursor3 = db3.cursor()
-                    cursor3.execute(
-                        'SELECT id, file_path, "local" AS source FROM songs WHERE audio_embedding IS NULL'
-                    )
-                    audio_pending = [(row['id'], row['file_path'], row['source']) for row in cursor3.fetchall()]
-                    cursor3.execute(
-                        'SELECT id, file_path, "cloud" AS source FROM cloud_songs WHERE audio_embedding IS NULL'
-                    )
-                    audio_pending.extend([(row['id'], row['file_path'], row['source']) for row in cursor3.fetchall()])
-                    cursor3.close()
-                    db3.close()
-
-                    if not audio_pending:
-                        _audio_embedding_done.set()
-                        return
-
-                    _audio_total = len(audio_pending)
-                    _audio_done_count = 0
-
-                    from services.embedding import encode_audio_batch
-                    # 构建 (song_id, source) 映射，传递给 encode 函数时只传 (song_id, file_path)
-                    audio_source_map = {sid: src for sid, _, src in audio_pending}
-                    audio_pairs = [(sid, fp) for sid, fp, _ in audio_pending]
-                    results = encode_audio_batch(
-                        audio_pairs,
-                        batch_size=8,
-                        progress_callback=lambda cur, tot:
-                            setattr(sys.modules[__name__], '_audio_done_count', cur)
-                    )
-                    db4 = get_db()
-                    cursor4 = db4.cursor()
-                    blob_audio_count = 0
-                    for song_id, emb in results:
-                        if emb is not None:
-                            blob = emb.astype(np.float32).tobytes()
-                            table = 'cloud_songs' if audio_source_map.get(song_id) == 'cloud' else 'songs'
-                            cursor4.execute(
-                                f'UPDATE {table} SET audio_embedding = ? WHERE id = ?',
-                                (blob, song_id)
-                            )
-                            blob_audio_count += 1
-                    db4.commit()
-                    cursor4.close()
-                    db4.close()
-                    _audio_done_count = blob_audio_count
-                except Exception as e:
-                    import traceback
-                    traceback.print_exc()
-                finally:
-                    _generating_audio_embeddings = False
-                    _audio_embedding_done.set()
-                    # 两个 worker 都完成后才清除生成状态
-                    if not _generating_text_embeddings:
-                        from services.embedding import set_generation_active
-                        set_generation_active(False)
-
-        def _generate_async():
-            """并行启动文本（CPU）和音频（GPU）embedding，完成后异步计算情绪分数"""
-            # 重置音频完成信号
-            _audio_embedding_done.clear()
-
-            # 并行启动两个线程
-            t_text = threading.Thread(target=_text_worker, daemon=True)
-            t_audio = threading.Thread(target=_audio_worker, daemon=True)
-            t_text.start()
-            t_audio.start()
-
-            # 等待两者都完成
-            t_text.join()
-            t_audio.join()
-
-            # 清空 embedding 缓存，确保新生成的 embedding 可见
-            from services.recommender import invalidate_embedding_cache
-            invalidate_embedding_cache()
-
-            # 情绪分数异步计算（不阻塞 embedding 生成完成回调）
-            def _compute_mood_async():
-                try:
-                    with flask_app.app_context():
-                        from services.recommender import compute_all_mood_scores
-                        mood_db = get_db()
-                        mood_count = compute_all_mood_scores(mood_db)
-                        mood_db.close()
-                except Exception as e:
-                    pass
-
-            threading.Thread(target=_compute_mood_async, daemon=True).start()
-
-        threading.Thread(target=_generate_async, daemon=True).start()
+        _run_generation(flask_app, pending_songs, audio_pending)
 
         return jsonify({
             'success': True,
-            'message': f'开始生成 {len(pending_songs)} 首歌曲的 embedding...'
+            'message': f'开始生成 {len(pending_songs)} 首歌曲的文本向量、{len(audio_pending)} 首音频向量...'
         })
-
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-# ==================== 自动 Embedding（供扫描完成后调用） ====================
-
-def auto_generate_embeddings(flask_app):
-    """
-    自动为新入库的歌曲生成 embedding。
-    供扫描完成后调用，内部检查 fastembed 可用性和待处理歌曲数量。
-    """
-    try:
-        from services.embedding import is_available
-        if not is_available():
-            return
-
-        with flask_app.app_context():
-            db = get_db()
-            cursor = db.cursor()
-            cursor.execute('SELECT COUNT(*) as cnt FROM songs WHERE embedding IS NULL')
-            pending = cursor.fetchone()['cnt']
-            cursor.close()
-            db.close()
-
-        if pending > 0:
-            # 复用 generate_embeddings 的逻辑（直接调用会因缺少 request 上下文失败）
-            # 所以直接启动后台线程执行核心逻辑
-            _start_embedding_generation(flask_app)
-    except Exception as e:
-        pass
+def _pending_audio(db):
+    """查询尚未生成（当前版本）音频向量的歌曲，返回 [(id, file_path, source)]。"""
+    cursor = db.cursor()
+    cursor.execute(
+        '''SELECT s.id, s.file_path, 'local' AS source FROM songs s
+           WHERE NOT EXISTS (
+               SELECT 1 FROM song_vectors v
+               WHERE v.song_id = s.id AND v.source = 'local'
+                 AND v.audio_vec IS NOT NULL AND v.audio_version = ?
+           )''',
+        (AUDIO_VECTOR_VERSION,)
+    )
+    rows = [(r['id'], r['file_path'], r['source']) for r in cursor.fetchall()]
+    cursor.execute(
+        '''SELECT s.id, s.file_path, 'cloud' AS source FROM cloud_songs s
+           WHERE NOT EXISTS (
+               SELECT 1 FROM song_vectors v
+               WHERE v.song_id = s.id AND v.source = 'cloud'
+                 AND v.audio_vec IS NOT NULL AND v.audio_version = ?
+           )''',
+        (AUDIO_VECTOR_VERSION,)
+    )
+    rows.extend([(r['id'], r['file_path'], r['source']) for r in cursor.fetchall()])
+    cursor.close()
+    return rows
 
 
 def _start_embedding_generation(flask_app):
-    """启动 embedding 生成（内部函数，供 auto_generate_embeddings 和 generate_embeddings 共用）"""
-    import routes.ai as ai_module
-
+    """供 auto_generate_embeddings 使用的后台启动入口。"""
     def _worker():
         try:
             with flask_app.app_context():
                 db = get_db()
-                cursor = db.cursor()
-                cursor.execute(
-                    'SELECT id, title, artist, genre, year, lyrics, lang, "local" AS source '
-                    'FROM songs WHERE embedding IS NULL'
-                )
-                pending_songs = [dict(row) for row in cursor.fetchall()]
-                cursor.execute(
-                    'SELECT id, title, artist, genre, year, lyrics, lang, "cloud" AS source '
-                    'FROM cloud_songs WHERE embedding IS NULL'
-                )
-                pending_songs.extend([dict(row) for row in cursor.fetchall()])
-                cursor.close()
+                pending_songs = _pending_songs(db, audio=False)
+                audio_pending = _pending_audio(db)
                 db.close()
-
-            if not pending_songs:
+            if not pending_songs and not audio_pending:
                 return
-
-            from services.embedding import set_generation_active
-            set_generation_active(True)
-
-            # --- 并行启动两个模型下载 ---
-            def _start_e5_download():
-                from services.embedding import _get_model
-                try:
-                    _get_model()
-                except Exception as e:
-                    pass
-
-            def _start_mert_download():
-                from services.embedding import _get_audio_model
-                try:
-                    _get_audio_model()
-                except Exception as e:
-                    pass
-
-            threading.Thread(target=_start_e5_download, daemon=True).start()
-            threading.Thread(target=_start_mert_download, daemon=True).start()
-
-            def _text_worker():
-                from services.embedding import (
-                    encode_songs_batch, embedding_to_blob,
-                    set_generation_active, wait_for_e5_download
-                )
-                wait_for_e5_download(timeout=600)
-                from services.embedding import _get_model
-                if _get_model() is None:
-                    return
-                ai_module._generating_text_embeddings = True
-
-                with flask_app.app_context():
-                    db2 = get_db()
-                    cursor2 = db2.cursor()
-                    batch_size = 5
-                    try:
-                        total = len(pending_songs)
-                        for offset in range(0, total, batch_size):
-                            batch = pending_songs[offset:offset + batch_size]
-                            embeddings = encode_songs_batch(batch, progress_callback=None, use_cpu=True)
-                            for song, emb in zip(batch, embeddings):
-                                blob = embedding_to_blob(emb)
-                                table = 'cloud_songs' if song.get('source') == 'cloud' else 'songs'
-                                cursor2.execute(f'UPDATE {table} SET embedding = ? WHERE id = ?', (blob, song['id']))
-                            db2.commit()
-                    except Exception as e:
-                        db2.rollback()
-                    finally:
-                        cursor2.close()
-                        db2.close()
-                        ai_module._generating_text_embeddings = False
-                        if not ai_module._generating_audio_embeddings:
-                            set_generation_active(False)
-
-            def _audio_worker():
-                from services.embedding import wait_for_mert_download, encode_audio_batch
-                wait_for_mert_download(timeout=600)
-                ai_module._generating_audio_embeddings = True
-
-                with flask_app.app_context():
-                    db3 = get_db()
-                    cursor3 = db3.cursor()
-                    cursor3.execute('SELECT id, file_path, "local" AS source FROM songs WHERE audio_embedding IS NULL')
-                    audio_pending = [(row['id'], row['file_path'], row['source']) for row in cursor3.fetchall()]
-                    cursor3.execute('SELECT id, file_path, "cloud" AS source FROM cloud_songs WHERE audio_embedding IS NULL')
-                    audio_pending.extend([(row['id'], row['file_path'], row['source']) for row in cursor3.fetchall()])
-                    cursor3.close()
-                    db3.close()
-
-                    if not audio_pending:
-                        ai_module._generating_audio_embeddings = False
-                        return
-
-                    audio_source_map = {sid: src for sid, _, src in audio_pending}
-                    audio_pairs = [(sid, fp) for sid, fp, _ in audio_pending]
-                    results = encode_audio_batch(audio_pairs, batch_size=8)
-
-                    db4 = get_db()
-                    cursor4 = db4.cursor()
-                    for song_id, emb in results:
-                        if emb is not None:
-                            blob = emb.astype(np.float32).tobytes()
-                            table = 'cloud_songs' if audio_source_map.get(song_id) == 'cloud' else 'songs'
-                            cursor4.execute(f'UPDATE {table} SET audio_embedding = ? WHERE id = ?', (blob, song_id))
-                    db4.commit()
-                    cursor4.close()
-                    db4.close()
-
-                ai_module._generating_audio_embeddings = False
-                if not ai_module._generating_text_embeddings:
-                    from services.embedding import set_generation_active
-                    set_generation_active(False)
-
-            def _run_all():
-                t1 = threading.Thread(target=_text_worker, daemon=True)
-                t2 = threading.Thread(target=_audio_worker, daemon=True)
-                t1.start()
-                t2.start()
-                t1.join()
-                t2.join()
-
-                from services.recommender import invalidate_embedding_cache
-                invalidate_embedding_cache()
-
-                # 异步计算情绪分数
-                def _mood():
-                    try:
-                        with flask_app.app_context():
-                            from services.recommender import compute_all_mood_scores
-                            mood_db = get_db()
-                            compute_all_mood_scores(mood_db)
-                            mood_db.close()
-                    except Exception:
-                        pass
-                threading.Thread(target=_mood, daemon=True).start()
-
-            threading.Thread(target=_run_all, daemon=True).start()
-
-        except Exception as e:
+            _run_generation(flask_app, pending_songs, audio_pending)
+        except Exception:
             pass
 
     threading.Thread(target=_worker, daemon=True).start()
 
 
-# ==================== 推荐接口 ====================
-
-def _get_history_ids(db):
-    """获取用户最近播放的歌曲 ID（按播放时间倒序，最多 20 首）。"""
-    cursor = db.cursor()
-    cursor.execute('''
-        SELECT DISTINCT s.id
-        FROM play_history ph
-        JOIN songs s ON ph.song_id = s.id
-        WHERE ph.song_id IS NOT NULL
-        GROUP BY ph.fingerprint
-        ORDER BY MAX(ph.played_at) DESC
-        LIMIT 20
-    ''')
-    history_ids = [row['id'] for row in cursor.fetchall()]
-    cursor.close()
-    return history_ids
+def auto_generate_embeddings(flask_app):
+    """扫描完成后自动为未生成向量的新歌生成向量。"""
+    try:
+        from services.embedding import is_available
+        if not is_available():
+            return
+        with flask_app.app_context():
+            db = get_db()
+            pending = _count_pending(db, audio=False)
+            db.close()
+        if pending > 0:
+            _start_embedding_generation(flask_app)
+    except Exception:
+        pass
 
 
-def _fetch_recommendations(mode='comprehensive', limit=20, lang=None, mood=None, song_id=None,
-                           cache_ttl=300):
+# ==================== 推荐接口（画像驱动 + 服务端缓存） ====================
+
+def _fetch_recommendations(mode='comprehensive', limit=20, lang=None, mood=None,
+                           song_id=None, cache_ttl=RECOMMEND_CACHE_TTL, user_id=1):
     """
-    走完整推荐引擎获取结果（含缓存 + 封面 URL 处理）。
-    供 /recommend 接口与 /recommend/previews 卡片封面共用，确保卡片封面
-    与点击进入推荐页后看到的第一首歌保持一致。
+    走统一推荐引擎获取结果（含服务端缓存 + 封面 URL 处理）。
+    供 /recommend 与 /recommend/previews 共用，保证卡片封面与列表榜首一致。
 
-    Returns:
-        (results, cache_key, hit) — results 为推荐结果列表；
-        hit 为 True 表示命中缓存。失败时 results 为 []。
+    缓存 key 含：模式参数 + 用户画像版本 + 向量代次。
+    画像刷新 / 向量变更后自动失效。
     """
     from services.recommender import recommend as do_recommend
+    from services.profile import get_profile
+    from services.vectors import get_generation as get_vector_generation
 
     db = get_db()
     try:
-        history_ids = _get_history_ids(db)
-
-        # 构建缓存 key（含用户历史，确保不同用户历史得到不同推荐）
-        # weather 与 mood 共享缓存，确保天气卡片封面 = 推荐列表榜首
+        profile = get_profile(db, user_id)
         cache_mode = 'mood' if mode == 'weather' else mode
-        cache_key = f"rec:{cache_mode}:{lang or ''}:{mood or ''}:{song_id or ''}:{limit}:{hashlib.md5(str(history_ids).encode()).hexdigest()[:8]}"
+        # 每日推荐按日期轮换（当天结果稳定，次日自动换一批）
+        day_part = time.strftime('%Y-%m-%d') if cache_mode == 'comprehensive' else ''
+        cache_key = (
+            f"rec:{cache_mode}:{day_part}:{lang or ''}:{mood or ''}:{song_id or ''}:{limit}:"
+            f"u{user_id}:p{profile.get('version') or 0}:v{get_vector_generation()}"
+        )
         cached = cache.get(cache_key)
         if cached is not None:
             return cached, cache_key, True
 
-        # 使用确定性种子（基于缓存 key），同一缓存周期内结果一致
+        # 确定性种子：同一缓存周期内结果一致
         seed = int(hashlib.md5(cache_key.encode()).hexdigest()[:8], 16)
-        results = do_recommend(db, history_ids, mode=mode, limit=limit, seed=seed,
-                               lang=lang, mood=mood, song_id=song_id)
+        results = do_recommend(
+            db, user_id=user_id, mode=mode, limit=limit, seed=seed,
+            lang=lang, mood=mood, song_id=song_id,
+        )
 
-        # 处理封面 URL
         for r in results:
             cover = r.get('cover_url', '')
             if cover and not cover.startswith('http'):
@@ -611,16 +529,9 @@ def get_recommendations():
     获取 AI 推荐歌曲。
 
     查询参数:
-        mode  (str, 默认 comprehensive): 推荐模式
-              - comprehensive  : 综合推荐
-              - language       : 按语言推荐（需传 lang 参数）
-              - mood           : 按情绪推荐（需传 mood 参数）
-              - similar        : 相似歌曲（需传 song_id 参数）
-              - hidden_gem     : 冷门宝藏
-        lang  (str, 可选): ISO 639-1 语言代码，如 zh/ja/en/ko/de/ru
-        mood  (str, 可选): 情绪关键词 sad/energetic/calm/upbeat/fresh/romantic/inspire
-        song_id (int, 可选): mode=similar 时的参考歌曲 ID
-        limit (int, 默认 20, 最大 50): 返回推荐数量
+        mode  (str, 默认 comprehensive): comprehensive | language | mood |
+                                         similar | hidden_gem | weather
+        lang / mood / song_id / limit / seed
     """
     try:
         from services.embedding import is_available
@@ -635,17 +546,15 @@ def get_recommendations():
         if limit > 50:
             limit = 50
 
-        # 推荐参数
         mode = request.args.get('mode', 'comprehensive', type=str)
         lang = request.args.get('lang', type=str)
         mood = request.args.get('mood', type=str)
         song_id = request.args.get('song_id', type=int)
 
-        results, cache_key, hit = _fetch_recommendations(
-            mode=mode, limit=limit, lang=lang, mood=mood, song_id=song_id, cache_ttl=300
+        results, _key, _hit = _fetch_recommendations(
+            mode=mode, limit=limit, lang=lang, mood=mood, song_id=song_id,
         )
         return jsonify(results)
-
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -660,19 +569,16 @@ def get_recommend_previews():
     为首页推荐卡片返回每个类别的代表性歌曲封面。
 
     两道防线：
-    1. 推荐引擎优先 — 走 _fetch_recommendations 获取推荐结果，
-       取第一首带封面的歌（与推荐页榜首一致）。
-    2. DB fallback 保底 — 推荐引擎返回空 / 全部无封面 / 抛异常时，
-       直接查库取一首带封面的歌（确保不显示 emoji）。
+    1. 推荐引擎优先 — 取推荐结果第一首带封面的歌；
+    2. DB fallback 保底 — 直接查库取一首带封面的歌。
 
-    返回 { daily, hidden_gem, moods: { sad, energetic, calm, ... } }
+    返回 { daily, hidden_gem, moods: { sad, energetic, ... } }
     """
     try:
         from services.embedding import is_available
         st_available = is_available()
 
         def _first_cover(results):
-            """从推荐结果列表取第一首带封面的歌曲，返回卡片预览 dict。"""
             for r in results:
                 cover = r.get('cover_url') or ''
                 if cover:
@@ -680,19 +586,13 @@ def get_recommend_previews():
             return None
 
         def _pick_cover_fallback(db, category, mood_key=None):
-            """
-            DB 保底：直接查库取一首带封面的歌（WHERE cover_url IS NOT NULL AND != ''）。
-            确保封面 URL 一定非空。
-            """
             cursor = db.cursor()
-
             if category == 'hidden_gem':
                 order_by = 'COALESCE(ps.play_count, 0) ASC'
             else:
                 order_by = 'ps.play_count DESC'
 
             if mood_key and category == 'mood':
-                # 情绪模式：从 song_mood_scores 取最高分且带封面的歌
                 cursor.execute('''
                     SELECT s.title, s.artist, s.cover_url
                     FROM song_mood_scores sms
@@ -703,34 +603,43 @@ def get_recommend_previews():
                 ''', (mood_key,))
                 row = cursor.fetchone()
                 if not row:
-                    # 情绪表无数据，按播放量取
                     cursor.execute('''
                         SELECT s.title, s.artist, s.cover_url
                         FROM songs s
                         LEFT JOIN play_stats ps ON s.fingerprint = ps.fingerprint
                         WHERE s.cover_url IS NOT NULL AND s.cover_url != ''
-                          AND s.embedding IS NOT NULL
+                          AND EXISTS (
+                              SELECT 1 FROM song_vectors v
+                              WHERE v.song_id = s.id AND v.source = 'local'
+                                AND v.text_vec IS NOT NULL
+                          )
                         ORDER BY ps.play_count DESC LIMIT 1
                     ''')
                     row = cursor.fetchone()
             else:
-                # daily / hidden_gem：按播放量排序取带封面的歌
                 cursor.execute(f'''
                     SELECT s.title, s.artist, s.cover_url
                     FROM songs s
                     LEFT JOIN play_stats ps ON s.fingerprint = ps.fingerprint
                     WHERE s.cover_url IS NOT NULL AND s.cover_url != ''
-                      AND s.embedding IS NOT NULL
+                      AND EXISTS (
+                          SELECT 1 FROM song_vectors v
+                          WHERE v.song_id = s.id AND v.source = 'local'
+                            AND v.text_vec IS NOT NULL
+                      )
                     ORDER BY {order_by} LIMIT 1
                 ''')
                 row = cursor.fetchone()
                 if not row:
-                    # 本地无结果，尝试云端
                     cursor.execute('''
                         SELECT title, artist, cover_url
                         FROM cloud_songs
                         WHERE cover_url IS NOT NULL AND cover_url != ''
-                          AND embedding IS NOT NULL
+                          AND EXISTS (
+                              SELECT 1 FROM song_vectors v
+                              WHERE v.song_id = cloud_songs.id AND v.source = 'cloud'
+                                AND v.text_vec IS NOT NULL
+                          )
                         LIMIT 1
                     ''')
                     row = cursor.fetchone()
@@ -744,34 +653,24 @@ def get_recommend_previews():
             return None
 
         def _get_card_cover(mode, mood_key=None):
-            """
-            获取单个卡片的封面：推荐引擎优先，DB fallback 保底。
-            返回 { title, artist, cover } 或 None。
-            """
-            tag = mood_key or mode
-
-            # 第一道防线：推荐引擎
             if st_available:
                 try:
-                    res, _, _ = _fetch_recommendations(
-                        mode=mode, limit=20, mood=mood_key, cache_ttl=300
+                    res, _k, _h = _fetch_recommendations(
+                        mode=mode, limit=20, mood=mood_key,
                     )
                     pick = _first_cover(res)
                     if pick:
                         return pick
-                except Exception as e:
+                except Exception:
                     pass
-
-            # 第二道防线：DB 直接查询
             try:
                 db = get_db()
                 pick = _pick_cover_fallback(db, mode, mood_key)
                 db.close()
                 return pick
-            except Exception as e:
+            except Exception:
                 return None
 
-        # 生成各卡片封面
         result = {
             'daily': _get_card_cover('comprehensive'),
             'hidden_gem': _get_card_cover('hidden_gem'),
@@ -781,7 +680,6 @@ def get_recommend_previews():
             result['moods'][mood_key] = _get_card_cover('mood', mood_key=mood_key)
 
         return jsonify(result)
-
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -792,10 +690,7 @@ def get_recommend_previews():
 
 @ai_bp.route('/mood-scores/refresh', methods=['POST'])
 def refresh_mood_scores():
-    """
-    为已有 embedding 的歌曲刷新情绪分数。
-    异步执行，完成后情绪推荐即可免模型查询。
-    """
+    """为已有向量的歌曲刷新情绪分数（异步，完成后情绪推荐免模型查询）。"""
     from services.embedding import is_available
     if not is_available():
         return jsonify({
@@ -805,13 +700,17 @@ def refresh_mood_scores():
     try:
         db = get_db()
         cursor = db.cursor()
-        cursor.execute('SELECT COUNT(*) as cnt FROM songs WHERE embedding IS NOT NULL')
+        cursor.execute(
+            'SELECT COUNT(*) as cnt FROM song_vectors '
+            'WHERE text_vec IS NOT NULL AND text_version = ?',
+            (TEXT_VECTOR_VERSION,)
+        )
         count = cursor.fetchone()['cnt']
         cursor.close()
         db.close()
 
         if count == 0:
-            return jsonify({'success': True, 'message': '没有已生成 embedding 的歌曲'})
+            return jsonify({'success': True, 'message': '没有已生成向量的歌曲'})
 
         flask_app = current_app._get_current_object()
 
@@ -820,9 +719,9 @@ def refresh_mood_scores():
                 try:
                     from services.recommender import compute_all_mood_scores
                     mood_db = get_db()
-                    mood_count = compute_all_mood_scores(mood_db)
+                    compute_all_mood_scores(mood_db)
                     mood_db.close()
-                except Exception as e:
+                except Exception:
                     pass
 
         threading.Thread(target=_refresh_async, daemon=True).start()
@@ -830,7 +729,6 @@ def refresh_mood_scores():
             'success': True,
             'message': f'开始为 {count} 首歌曲计算情绪分数...'
         })
-
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -839,25 +737,19 @@ def refresh_mood_scores():
 
 @ai_bp.route('/model-download/progress', methods=['GET'])
 def get_model_download_progress():
-    """获取模型下载进度（前端轮询）"""
+    """获取模型下载进度（前端轮询）。"""
     from services.embedding import get_download_progress
     return jsonify(get_download_progress())
 
-# ==================== 模型路径配置 ====================
 
 @ai_bp.route('/model-dir', methods=['GET'])
 def get_model_dir():
-    """获取 AI 模型缓存目录配置"""
+    """获取 AI 模型缓存目录配置。"""
     try:
         db = get_db()
         cursor = db.cursor()
-        # 自动初始化 ai_api_config 行
-        cursor.execute(
-            'INSERT OR IGNORE INTO ai_api_config (user_id) VALUES (1)'
-        )
-        cursor.execute(
-            'SELECT model_cache_dir FROM ai_api_config WHERE user_id = 1'
-        )
+        cursor.execute('INSERT OR IGNORE INTO ai_api_config (user_id) VALUES (1)')
+        cursor.execute('SELECT model_cache_dir FROM ai_api_config WHERE user_id = 1')
         row = cursor.fetchone()
         cursor.close()
         db.close()
@@ -871,17 +763,14 @@ def get_model_dir():
 
 @ai_bp.route('/model-dir', methods=['PUT'])
 def set_model_dir():
-    """设置 AI 模型缓存目录"""
+    """设置 AI 模型缓存目录。"""
     data = request.get_json(silent=True) or {}
     path = (data.get('model_cache_dir') or '').strip()
 
     try:
         db = get_db()
         cursor = db.cursor()
-        # 确保行存在
-        cursor.execute(
-            'INSERT OR IGNORE INTO ai_api_config (user_id) VALUES (1)'
-        )
+        cursor.execute('INSERT OR IGNORE INTO ai_api_config (user_id) VALUES (1)')
         cursor.execute(
             'UPDATE ai_api_config SET model_cache_dir = ?, updated_at = datetime("now","localtime") WHERE user_id = 1',
             (path,)
@@ -890,7 +779,6 @@ def set_model_dir():
         cursor.close()
         db.close()
 
-        # 同步到 Config 和 embedding 模块（模型未加载时立即生效）
         from config.config import Config
         Config.AI_MODEL_CACHE_DIR = path or None
         from services.embedding import set_cache_dir, is_loaded

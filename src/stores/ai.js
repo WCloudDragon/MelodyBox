@@ -1,23 +1,24 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 
 const AI_BASE = 'http://127.0.0.1:5000/api/ai'
+const STATS_BASE = 'http://127.0.0.1:5000/api/stats'
 
-// 统一缓存 key
-const CACHE_KEY = 'melodybox_ai_cache'
-// 后端缓存 5 分钟，前端对齐 5 分钟
-const CACHE_TTL = 5 * 60 * 1000
+// 首页封面预览缓存（纯展示数据，5 分钟）
+const PREVIEWS_KEY = 'melodybox_ai_previews'
+const PREVIEWS_TTL = 5 * 60 * 1000
+// 封面颜色缓存
+const COLOR_CACHE_KEY = 'melodybox_cover_colors'
 
 /**
- * 统一缓存结构:
- * {
- *   expireAt: number,
- *   recommendations: { [mode_mood_lang]: Track[] },
- *   previews: { daily, hidden_gem, moods },
- *   coverColors: { [key]: { mid, shadow, highlight } },
- * }
+ * AI 推荐 store（重构版）
+ *
+ * 变化：
+ * - 推荐列表不再在前端做 localStorage 缓存，改由后端服务端缓存负责
+ *   （缓存 key 含画像版本 + 向量代次，自动失效）；
+ * - 新增 reportFeedback：播放/跳过/听完/喜欢/不喜欢 → 画像反馈闭环；
+ * - 首页封面预览保留本地缓存（展示数据），与推荐列表同源由后端保证。
  */
-
 export const useAiStore = defineStore('ai', () => {
   const recommendations = ref([])
   const isLoaded = ref(false)
@@ -25,7 +26,6 @@ export const useAiStore = defineStore('ai', () => {
 
   // 当前推荐模式
   const currentMode = ref('comprehensive')
-  // 推荐模式子选项（语言/情绪等）
   const currentSub = ref(null)
 
   // 首页封面预览数据（单一数据源）
@@ -33,42 +33,23 @@ export const useAiStore = defineStore('ai', () => {
   const coverColors = ref({})
 
   // Embedding 状态
-  const embeddingStatus = ref({ total: 0, done: 0, pending: 0, ready: false, st_available: null, mood_scores_ready: false, audio_done: 0, audio_total: 0, audio_available: false, audio_processing: false, text_processing: false, text_provider: 'idle', provider: 'cpu', e5_download: { status: 'idle', percent: 0 }, mert_download: { status: 'idle', percent: 0 } })
+  const embeddingStatus = ref({
+    total: 0, done: 0, pending: 0, ready: false, st_available: null,
+    mood_scores_ready: false, audio_done: 0, audio_total: 0,
+    audio_available: false, audio_processing: false, text_processing: false,
+    text_provider: 'idle', provider: 'cpu',
+    e5_download: { status: 'idle', percent: 0 },
+    mert_download: { status: 'idle', percent: 0 },
+  })
   const isGenerating = ref(false)
 
-  // 模型下载进度
   const downloadProgress = ref({
-    status: 'idle',       // idle | downloading | completed | error
-    percent: 0,
-    downloaded_mb: 0,
-    total_mb: 0,
-    message: ''
+    status: 'idle', percent: 0, downloaded_mb: 0, total_mb: 0, message: '',
   })
   const isDownloading = ref(false)
 
-  // ==================== 统一缓存层 ====================
+  // ==================== 推荐列表（服务端缓存） ====================
 
-  function _loadCache() {
-    try {
-      const raw = localStorage.getItem(CACHE_KEY)
-      if (!raw) return null
-      const cached = JSON.parse(raw)
-      if (cached.expireAt > Date.now()) return cached
-    } catch {}
-    return null
-  }
-
-  function _saveCache(patch) {
-    try {
-      const existing = _loadCache() || {}
-      const data = { ...existing, ...patch, expireAt: Date.now() + CACHE_TTL }
-      localStorage.setItem(CACHE_KEY, JSON.stringify(data))
-    } catch {}
-  }
-
-  // ==================== 推荐列表 ====================
-
-  /** 加载 AI 推荐 */
   async function loadRecommendations(limit = 20) {
     isLoading.value = true
     try {
@@ -78,12 +59,7 @@ export const useAiStore = defineStore('ai', () => {
       }
       const res = await fetch(url)
       if (!res.ok) {
-        const cached = _loadCache()
-        if (cached?.recommendations?.length) {
-          recommendations.value = cached.recommendations
-        } else {
-          recommendations.value = []
-        }
+        recommendations.value = []
         isLoaded.value = true
         return
       }
@@ -95,28 +71,66 @@ export const useAiStore = defineStore('ai', () => {
       }
       recommendations.value = data
       isLoaded.value = true
-      _saveCache({ recommendations: data })
     } catch {
-      const cached = _loadCache()
-      if (cached?.recommendations?.length) {
-        recommendations.value = cached.recommendations
-      }
+      recommendations.value = []
       isLoaded.value = true
     } finally {
       isLoading.value = false
     }
   }
 
-  /** 切换推荐模式 */
   async function setMode(mode, subValue = null) {
     currentMode.value = mode
     currentSub.value = subValue
     await loadRecommendations()
   }
 
+  // ==================== 反馈闭环 ====================
+
+  /**
+   * 上报播放反馈事件（skip / complete / like / dislike）。
+   * 后端写入 events 表并异步刷新画像。
+   */
+  async function reportFeedback(event, track, extra = {}) {
+    if (!track) return
+    try {
+      await fetch(`${STATS_BASE}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_path: track.path || '',
+          title: track.title || '',
+          artist: track.artist || '',
+          album: track.album || '',
+          event,
+          duration_ratio: extra.durationRatio ?? null,
+        }),
+      })
+    } catch {
+      // 静默失败，不影响播放
+    }
+  }
+
   // ==================== 首页封面预览 ====================
 
-  /** 从推荐结果更新单个卡片封面（推荐列表页调用） */
+  function _loadPreviewsCache() {
+    try {
+      const raw = localStorage.getItem(PREVIEWS_KEY)
+      if (!raw) return null
+      const cached = JSON.parse(raw)
+      if (cached.expireAt > Date.now()) return cached.data
+    } catch {}
+    return null
+  }
+
+  function _savePreviewsCache(data) {
+    try {
+      localStorage.setItem(PREVIEWS_KEY, JSON.stringify({
+        data, expireAt: Date.now() + PREVIEWS_TTL,
+      }))
+    } catch {}
+  }
+
   function updateCoverFromRecommend(mode, mood, firstTrack) {
     if (!firstTrack) return
     const cover = firstTrack.cover_url || ''
@@ -133,25 +147,22 @@ export const useAiStore = defineStore('ai', () => {
     else if (cardKey === 'hidden_gem') pv.hidden_gem = entry
     else {
       if (!pv.moods) pv.moods = {}
-      pv.moods = { ...pv.moods, [cardKey.replace('mood_', '')] : entry }
+      pv.moods = { ...pv.moods, [cardKey.replace('mood_', '')]: entry }
     }
-    // weather 模式也覆盖对应的 mood key
     if (mode === 'weather' && mood) {
       if (!pv.moods) pv.moods = {}
       pv.moods = { ...pv.moods, [mood]: entry }
     }
 
     previews.value = pv
-    _saveCache({ previews: pv })
+    _savePreviewsCache(pv)
   }
 
-  /** 加载首页封面预览数据 */
   async function loadPreviews(force = false) {
     if (!force) {
-      const cached = _loadCache()
-      if (cached?.previews && Object.keys(cached.previews).length > 0) {
-        previews.value = cached.previews
-        if (cached.coverColors) coverColors.value = cached.coverColors
+      const cached = _loadPreviewsCache()
+      if (cached && Object.keys(cached).length > 0) {
+        previews.value = cached
         return
       }
     }
@@ -160,15 +171,13 @@ export const useAiStore = defineStore('ai', () => {
       if (res.ok) {
         const data = await res.json()
         previews.value = data
-        _saveCache({ previews: data })
+        _savePreviewsCache(data)
         await extractAllColors()
       }
     } catch {}
   }
 
   // ==================== 封面颜色提取 ====================
-
-  const COLOR_CACHE_KEY = 'melodybox_cover_colors'
 
   async function extractAllColors() {
     const pv = previews.value
@@ -193,7 +202,6 @@ export const useAiStore = defineStore('ai', () => {
       inspire: { mid: '#6b5a3f', shadow: '#453625', highlight: '#bfa87f' },
     }
 
-    // 仅对封面 URL 变化的条目重新提取颜色
     let cachedColors = {}
     try { cachedColors = JSON.parse(localStorage.getItem(COLOR_CACHE_KEY) || '{}') } catch {}
 
@@ -202,7 +210,6 @@ export const useAiStore = defineStore('ai', () => {
 
     if (toExtract.length === 0) {
       coverColors.value = cachedColors
-      _saveCache({ coverColors: cachedColors })
       return
     }
 
@@ -222,15 +229,12 @@ export const useAiStore = defineStore('ai', () => {
     for (const [key, fb] of Object.entries(fallbacks)) {
       if (!newColors[key]) newColors[key] = fb
     }
-
     coverColors.value = newColors
-    _saveCache({ coverColors: newColors })
     try { localStorage.setItem(COLOR_CACHE_KEY, JSON.stringify(newColors)) } catch {}
   }
 
   // ==================== Embedding 管理 ====================
 
-  /** 获取 embedding 生成状态 */
   async function loadEmbeddingStatus() {
     try {
       const res = await fetch(`${AI_BASE}/embedding/status`)
@@ -240,10 +244,12 @@ export const useAiStore = defineStore('ai', () => {
     } catch {}
   }
 
-  /** 轮询模型下载进度 */
   function pollDownloadProgress(intervalMs = 1500) {
     isDownloading.value = true
-    downloadProgress.value = { status: 'preparing', percent: 0, downloaded_mb: 0, total_mb: 0, message: '检测 GPU 环境中...' }
+    downloadProgress.value = {
+      status: 'preparing', percent: 0, downloaded_mb: 0, total_mb: 0,
+      message: '检测 GPU 环境中...',
+    }
     const timer = setInterval(async () => {
       try {
         const res = await fetch(`${AI_BASE}/model-download/progress`)
@@ -265,10 +271,9 @@ export const useAiStore = defineStore('ai', () => {
     }
   }
 
-  /** 触发 embedding 生成（异步，完成需轮询状态） */
   async function generateEmbeddings() {
+    isGenerating.value = true
     try {
-      isGenerating.value = true
       const res = await fetch(`${AI_BASE}/embedding/generate`, { method: 'POST' })
       if (res.ok) {
         const data = await res.json()
@@ -282,12 +287,10 @@ export const useAiStore = defineStore('ai', () => {
     return null
   }
 
-  /** 轮询 embedding 生成进度 */
   function pollEmbeddingStatus(intervalMs = 2000, onDone) {
     const timer = setInterval(async () => {
       await loadEmbeddingStatus()
       const st = embeddingStatus.value
-      // 文本 embedding 和音频 embedding 都完成才算真正结束
       if (st.pending === 0 && !st.audio_processing) {
         clearInterval(timer)
         if (onDone) onDone()
@@ -297,7 +300,6 @@ export const useAiStore = defineStore('ai', () => {
     return () => clearInterval(timer)
   }
 
-  /** 刷新情绪分数（预计算，之后情绪推荐免模型） */
   async function refreshMoodScores() {
     try {
       const res = await fetch(`${AI_BASE}/mood-scores/refresh`, { method: 'POST' })
@@ -332,11 +334,12 @@ export const useAiStore = defineStore('ai', () => {
     loadPreviews,
     updateCoverFromRecommend,
     extractAllColors,
+    reportFeedback,
     loadEmbeddingStatus,
     generateEmbeddings,
     pollEmbeddingStatus,
     pollDownloadProgress,
-    refreshMoodScores
+    refreshMoodScores,
   }
 })
 

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { useAiStore } from './ai'
 
 export const usePlayerStore = defineStore('player', () => {
   // 播放队列
@@ -114,6 +115,8 @@ export const usePlayerStore = defineStore('player', () => {
         const track = currentTrack.value
         if (track) _trackPlay(track)
       }
+      // 听完反馈（画像正样本）
+      _reportComplete()
       next()
     })
     audio.value.addEventListener('error', (e) => {
@@ -159,6 +162,26 @@ export const usePlayerStore = defineStore('player', () => {
 
   // 播放追踪：记录到后端统计
   let _playTracked = false
+  let _trackStartedAt = 0
+  let _lastTrackInfo = null
+  const SKIP_THRESHOLD_MS = 15000
+
+  function _reportSkipIfNeeded() {
+    const prev = _lastTrackInfo
+    if (!prev || _playTracked) return
+    if (Date.now() - _trackStartedAt >= SKIP_THRESHOLD_MS) return
+    const ratio = duration.value > 0
+      ? Math.min(1, currentTime.value / duration.value) : 0
+    useAiStore().reportFeedback('skip', prev, { durationRatio: ratio })
+  }
+
+  function _reportComplete() {
+    const track = _lastTrackInfo || currentTrack.value
+    if (!track) return
+    const ratio = duration.value > 0
+      ? Math.min(1, currentTime.value / duration.value) : 1
+    useAiStore().reportFeedback('complete', track, { durationRatio: ratio })
+  }
 
   async function _trackPlay(track) {
     try {
@@ -169,7 +192,10 @@ export const usePlayerStore = defineStore('player', () => {
           file_path: track.path,
           title: track.title || '',
           artist: track.artist || '',
-          album: track.album || ''
+          album: track.album || '',
+          duration_played: Math.round(audio.value?.currentTime || 0),
+          duration_ratio: duration.value > 0
+            ? Math.min(1, (audio.value?.currentTime || 0) / duration.value) : 0
         })
       })
     } catch { /* 静默失败，不影响播放 */ }
@@ -180,10 +206,15 @@ export const usePlayerStore = defineStore('player', () => {
     initAudio()
     if (index < 0 || index >= queue.value.length) return
 
+    // 切换前上报"跳过"反馈（新曲未满 15 秒且未计有效播放）
+    _reportSkipIfNeeded()
+
     _seekOffset = 0
     _playTracked = false
     currentIndex.value = index
     const track = queue.value[index]
+    _trackStartedAt = Date.now()
+    _lastTrackInfo = track
     if (audio.value) {
       audio.value.src = track.url
       audio.value.play().then(() => {

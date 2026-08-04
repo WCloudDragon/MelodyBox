@@ -636,6 +636,13 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
                 song_id = row['id'] if row else None
                 updated += 1
 
+                # 重构版：清掉向量行，使其按新元数据重新生成
+                if song_id is not None:
+                    cursor.execute(
+                        "DELETE FROM song_vectors WHERE song_id = ? AND source = 'local'",
+                        (song_id,)
+                    )
+
                 # 更新时先清除旧的关联关系再重建
                 if song_id is not None:
                     cursor.execute('DELETE FROM song_artist WHERE song_id = ?', (song_id,))
@@ -686,6 +693,11 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
                            deleted_song_ids)
             cursor.execute(f'DELETE FROM song_album WHERE song_id IN ({placeholders_ids})',
                            deleted_song_ids)
+            # 清理重构版向量表（本地歌曲）
+            cursor.execute(
+                f'DELETE FROM song_vectors WHERE song_id IN ({placeholders_ids}) AND source = \'local\'',
+                deleted_song_ids
+            )
             # 将 play_stats 中的记录置为孤儿（song_id 置 NULL，保留 fingerprint 以便后续重连）
             cursor.execute(f'UPDATE play_stats SET song_id = NULL WHERE song_id IN ({placeholders_ids})',
                            deleted_song_ids)

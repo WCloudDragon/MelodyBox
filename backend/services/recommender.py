@@ -1,132 +1,583 @@
 """
-AI 推荐引擎
+MelodyBox 统一推荐引擎（重构版）
 
-支持多种推荐模式：
-- comprehensive  : 综合推荐（embedding + 流派 + 语种偏好）
-- language       : 按语言推荐
-- mood           : 按情绪推荐（embedding 语义搜索）
-- similar        : 相似歌曲
-- hidden_gem     : 冷门宝藏
+设计要点：
+1. 所有模式走同一条流水线：候选生成 → 特征打分 → 规则过滤 → 多样性重排 → 解释。
+2. 用户画像来自 profile.py（事件驱动、持久化），不再每次请求现算历史平均。
+3. 向量查询走 vectors.VectorStore（归一化矩阵 + 向量化余弦），不再逐首循环。
+4. 所有权重/阈值集中在 config/recommend_config.py，可配置、可评估。
+5. 分数做特征级 min-max 归一化 + 最终 z-score→sigmoid 校准，跨模式可比。
 """
+import logging
+import time
+
 import numpy as np
-from services.embedding import blob_to_embedding, get_model_dim, get_audio_model_dim
+
+from config.recommend_config import (
+    AUDIO_VECTOR_VERSION,
+    TEXT_VECTOR_VERSION,
+    COMPREHENSIVE_WEIGHTS,
+    COMPREHENSIVE_FALLBACK_WEIGHTS,
+    SIMILAR_WEIGHTS,
+    MOOD_WEIGHTS,
+    HIDDEN_GEM_SIM_WEIGHT,
+    HIDDEN_GEM_COLD_WEIGHT,
+    HIDDEN_GEM_MAX_PLAY_COUNT,
+    MMR_LAMBDA,
+    MMR_ARTIST_PENALTY,
+    MMR_GENRE_PENALTY,
+    EXPLORE_POOL_FACTOR,
+    EXPLORE_JITTER,
+    CANDIDATE_POOL,
+    LANG_PREF_DEFAULT,
+    LANG_NAMES,
+    COMMON_LANGS,
+    MOOD_LIST,
+    MOOD_QUERIES,
+    MOOD_LABELS,
+)
+from services.vectors import VectorStore, invalidate as _invalidate_vectors
+from services.profile import get_profile
+
+logger = logging.getLogger('melodybox.recommend')
 
 
-# ==================== 模块级 embedding 缓存 ====================
-# 避免每次推荐请求都全量反序列化 BLOB（1000 首歌 = 4MB numpy 转换）
-_embedding_cache = {}          # {song_id: numpy_array}
-_audio_embedding_cache = {}    # {song_id: numpy_array}
-_fingerprint_to_local_id = {}
-
+# ==================== 兼容旧接口 ====================
 
 def invalidate_embedding_cache():
-    """清空 embedding 缓存（歌曲变更后调用）"""
-    global _embedding_cache, _audio_embedding_cache
-    _embedding_cache.clear()
-    _audio_embedding_cache.clear()
+    """向量重新生成/迁移后调用，使向量缓存失效。"""
+    _invalidate_vectors()
 
 
-# 语言名映射（含 zh-cn/zh-tw 变体）
-LANG_NAMES = {
-    'zh': '中文', 'zh-cn': '中文', 'zh-tw': '中文',
-    'ja': '日语', 'en': '英语', 'ko': '韩语',
-    'de': '德语', 'ru': '俄语', 'fr': '法语', 'es': '西班牙语'
-}
+# ==================== 纯函数工具 ====================
 
-# 情绪关键词 → 语义搜索文本
-MOOD_QUERIES = {
-    'sad':       '悲伤抒情的歌曲，关于离别、失恋和回忆',
-    'energetic': '激昂热血的歌曲，节奏强劲充满力量',
-    'calm':      '舒缓放松的歌曲，安静温柔的氛围音乐',
-    'upbeat':    '欢快动感的歌曲，让人想跟着跳舞',
-    'fresh':     '清新自然的歌曲，民谣和轻音乐风格',
-    'romantic':  '浪漫甜蜜的情歌，关于爱情的美好',
-    'inspire':   '励志向上的歌曲，给人希望和勇气',
-}
+def _l2(v):
+    v = np.asarray(v, dtype=np.float32)
+    n = np.linalg.norm(v)
+    return v / n if n > 0 else v
 
-MOOD_LABELS = {
-    'sad': '伤感', 'energetic': '激昂', 'calm': '舒缓',
-    'upbeat': '动感', 'fresh': '清新', 'romantic': '浪漫', 'inspire': '励志',
-}
 
+def cosine_similarity(a, b):
+    """计算两个向量的余弦相似度。"""
+    a = np.asarray(a, dtype=np.float32)
+    b = np.asarray(b, dtype=np.float32)
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na == 0 or nb == 0:
+        return 0.0
+    return float(np.dot(a, b) / (na * nb))
+
+
+def genre_match_score(genre_a, genre_b):
+    """流派相似度：精确匹配 → 词级 Jaccard → 前缀兜底。"""
+    if not genre_a or not genre_b:
+        return 0.5
+    ga = genre_a.strip().lower()
+    gb = genre_b.strip().lower()
+    if ga == gb:
+        return 1.0
+    words_a = set(ga.replace('-', ' ').replace('&', ' ').split())
+    words_b = set(gb.replace('-', ' ').replace('&', ' ').split())
+    if words_a and words_b:
+        intersection = words_a & words_b
+        union = words_a | words_b
+        if intersection:
+            return 0.3 + 0.7 * (len(intersection) / len(union))
+    if len(ga) >= 4 and len(gb) >= 4 and ga[:4] == gb[:4]:
+        return 0.4
+    return 0.0
+
+
+def _minmax(values):
+    """min-max 归一化到 [0,1]；全等时给 0.5。"""
+    lo, hi = min(values), max(values)
+    if hi - lo < 1e-9:
+        return [0.5] * len(values)
+    return [(v - lo) / (hi - lo) for v in values]
+
+
+def _calibrate(scores):
+    """z-score → sigmoid，映射到 (0,1)，保持排序不变。"""
+    arr = np.asarray(scores, dtype=np.float64)
+    if arr.size == 0:
+        return []
+    std = arr.std()
+    if std < 1e-9:
+        return [0.5] * arr.size
+    z = (arr - arr.mean()) / std
+    return (1.0 / (1.0 + np.exp(-z))).tolist()
+
+
+def _softmax(x, temperature=0.1):
+    x = np.asarray(x, dtype=np.float64) / temperature
+    x = x - x.max()
+    e = np.exp(x)
+    return e / (e.sum() + 1e-12)
+
+
+def _mmr_rerank(scored, store, limit, lambda_=MMR_LAMBDA,
+                artist_penalty=MMR_ARTIST_PENALTY,
+                genre_penalty=MMR_GENRE_PENALTY):
+    """
+    MMR 多样性重排：保持相关性的同时惩罚与已选歌曲相似/同歌手/同流派的候选。
+
+    实现上先对已选歌曲做一次矩阵乘得到全库相似度（N×k），
+    再逐候选取最大值，避免旧实现"每个候选都对全库算一次"的 O(N×pool×k) 开销。
+    """
+    if len(scored) <= 1:
+        return scored[:limit]
+
+    text_mat = store.text_matrix
+    text_idx = store.text_index
+    if text_mat is None or text_idx is None:
+        return scored[:limit]
+
+    selected = [scored[0]]
+    remaining = scored[1:]
+    selected_artists = {selected[0][1].get('artist', '')}
+    selected_genres = {(selected[0][1].get('genre') or '').strip()}
+
+    while len(selected) < limit and remaining:
+        # 已选歌曲行向量矩阵 → 与全库一次矩阵乘：(N, k)
+        sel_rows = np.stack([
+            text_mat[text_idx[sel['id']]]
+            for _, sel in selected if sel['id'] in text_idx
+        ])
+        if sel_rows.shape[0] == 0:
+            break
+        sims_to_selected = text_mat @ sel_rows.T  # (N, k)
+
+        best_idx = 0
+        best_value = -float('inf')
+        for i, (score, s) in enumerate(remaining):
+            sid = s['id']
+            penalty = 0.0
+            if s.get('artist', '') in selected_artists:
+                penalty += artist_penalty
+            if (s.get('genre') or '').strip() in selected_genres:
+                penalty += genre_penalty
+            row = text_idx.get(sid)
+            max_sim = float(sims_to_selected[row].max()) if row is not None else 0.0
+            mmr = lambda_ * score - (1 - lambda_) * max_sim - penalty
+            if mmr > best_value:
+                best_value = mmr
+                best_idx = i
+        item = remaining.pop(best_idx)
+        selected.append(item)
+        selected_artists.add(item[1].get('artist', ''))
+        selected_genres.add((item[1].get('genre') or '').strip())
+
+    return selected
+
+
+def _exclude_ids(profile, exclude_recent=True, exclude_played=False):
+    ids = set(profile.get('dislike_ids') or [])
+    if exclude_recent:
+        ids.update(profile.get('recent_ids') or [])
+    if exclude_played:
+        ids.update(profile.get('played_ids') or [])
+    return ids
+
+
+def _build_result(store, song, score, reason):
+    """统一响应格式（与旧版字段保持一致，前端零改动）。"""
+    return {
+        'song_id': song['id'],
+        'title': song.get('title') or '',
+        'artist': song.get('artist') or '',
+        'album': song.get('album') or '',
+        'cover_url': song.get('cover_url') or '',
+        'file_path': song.get('file_path') or '',
+        'genre': song.get('genre') or '',
+        'year': song.get('year') or 0,
+        'duration': song.get('duration') or 0,
+        'lang': song.get('lang') or '',
+        'lyrics': song.get('lyrics') or '',
+        'reason': reason,
+        'score': round(float(score), 4),
+        'source': song.get('source', 'local'),
+        'local_id': store.local_id_for(song.get('fingerprint')),
+    }
+
+
+def _finalize(ctx, scored, use_mmr=True):
+    """
+    排序 → 探索抖动（seed）→ MMR 重排 → 截断。
+    scored: list[(score, song_dict)]，已按分数降序。
+    """
+    store, limit, seed = ctx['store'], ctx['limit'], ctx['seed']
+    pool_size = min(len(scored), limit * EXPLORE_POOL_FACTOR)
+    pool = scored[:pool_size]
+
+    if seed is not None and pool_size > 1:
+        rng = np.random.RandomState(seed)
+        jittered = [
+            (sc + rng.uniform(-EXPLORE_JITTER, EXPLORE_JITTER), s)
+            for sc, s in pool
+        ]
+        jittered.sort(key=lambda x: x[0], reverse=True)
+        pool = jittered
+
+    if use_mmr and len(pool) > 1:
+        return _mmr_rerank(pool, store, limit)
+    return pool[:limit]
+
+
+def _play_counts(db):
+    """{fingerprint: play_count}（全局热度）。"""
+    cursor = db.cursor()
+    cursor.execute('SELECT fingerprint, play_count FROM play_stats')
+    counts = {row['fingerprint']: (row['play_count'] or 0) for row in cursor.fetchall()}
+    cursor.close()
+    return counts
+
+
+def _cold_start(ctx, exclude_recent=True):
+    """无画像回退：全库热门（播放次数降序）。"""
+    store = ctx['store']
+    profile = ctx['profile']
+    exclude = _exclude_ids(profile, exclude_recent=exclude_recent)
+    counts = _play_counts(ctx['db'])
+    candidates = [
+        s for s in store.songs
+        if s['id'] in store.text_song_set and s['id'] not in exclude
+    ]
+    candidates.sort(
+        key=lambda s: counts.get((s.get('fingerprint') or '').strip(), 0),
+        reverse=True,
+    )
+    top = candidates[:ctx['limit']]
+    return [_build_result(store, s, 0.0, '热门推荐') for s in top]
+
+
+# ==================== 综合推荐 ====================
+
+def _recommend_comprehensive(ctx):
+    store, profile, db = ctx['store'], ctx['profile'], ctx['db']
+
+    if profile.get('text_vec') is None and not profile.get('genre_dist'):
+        return _cold_start(ctx)
+
+    exclude = _exclude_ids(profile, exclude_recent=True)
+    candidates = [
+        s for s in store.songs
+        if s['id'] in store.text_song_set and s['id'] not in exclude
+    ]
+    if not candidates:
+        return _cold_start(ctx)
+    candidates = candidates[:CANDIDATE_POOL]
+
+    text_sims = (store.text_similarity(profile['text_vec'])
+                 if profile.get('text_vec') is not None else {})
+    audio_sims = (store.audio_similarity(profile['audio_vec'])
+                  if profile.get('audio_vec') is not None else {})
+    have_profile_audio = profile.get('audio_vec') is not None
+    genre_dist = profile.get('genre_dist') or {}
+    lang_dist = profile.get('lang_dist') or {}
+
+    rows = []
+    for s in candidates:
+        sid = s['id']
+        feats = {
+            'text': text_sims.get(sid, 0.0),
+            'audio': audio_sims.get(sid, 0.0),
+            'genre': sum(
+                w * genre_match_score(g, s.get('genre') or '')
+                for g, w in genre_dist.items()
+            ) if genre_dist else 0.5,
+            'lang': lang_dist.get((s.get('lang') or '').strip(), LANG_PREF_DEFAULT),
+        }
+        rows.append((feats, s))
+
+    # 特征级 min-max 归一化（先整列算，再逐行取值）
+    feature_keys = ['text', 'audio', 'genre', 'lang']
+    norm_cols = {
+        k: _minmax([f[k] for f, _ in rows])
+        for k in feature_keys
+    }
+    scored = []
+    for i, (feats, s) in enumerate(rows):
+        has_song_audio = have_profile_audio and s['id'] in store.audio_song_set
+        weights = COMPREHENSIVE_WEIGHTS if has_song_audio \
+            else COMPREHENSIVE_FALLBACK_WEIGHTS
+        score = sum(weights[k] * norm_cols[k][i] for k in weights)
+        scored.append((score, s))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = _finalize(ctx, scored)
+    scores = [sc for sc, _ in top]
+    calibrated = _calibrate(scores) if scores else []
+
+    # 解释：基于画像中最突出的偏好
+    if genre_dist:
+        top_genre = max(genre_dist.items(), key=lambda kv: kv[1])[0]
+        reason = f'常听「{top_genre}」风格'
+    elif lang_dist:
+        top_lang = max(lang_dist.items(), key=lambda kv: kv[1])[0]
+        reason = f'常听{LANG_NAMES.get(top_lang, top_lang)}歌曲'
+    else:
+        reason = '根据你的听歌偏好'
+
+    return [
+        _build_result(store, s, cal or sc, reason)
+        for (sc, s), cal in zip(top, calibrated)
+    ]
+
+
+# ==================== 按语言推荐 ====================
+
+def _lang_match(song_lang, lang):
+    sl = (song_lang or '').strip().lower()
+    if not sl:
+        return False
+    if lang == 'other':
+        return sl not in COMMON_LANGS
+    return sl == lang or sl.startswith(lang + '-')
+
+
+def _recommend_language(ctx):
+    store, profile, db = ctx['store'], ctx['profile'], ctx['db']
+    lang = ctx['lang']
+    lang_label = LANG_NAMES.get(lang, '其他语言' if lang == 'other' else lang)
+
+    exclude = _exclude_ids(profile, exclude_recent=True)
+    candidates = [
+        s for s in store.songs
+        if s['id'] in store.text_song_set
+        and s['id'] not in exclude
+        and _lang_match(s.get('lang'), lang)
+    ]
+    if not candidates:
+        return []
+
+    if profile.get('text_vec') is not None:
+        text_sims = store.text_similarity(profile['text_vec'])
+        scored = [(text_sims.get(s['id'], 0.0), s) for s in candidates]
+    else:
+        counts = _play_counts(db)
+        scored = [
+            (float(counts.get((s.get('fingerprint') or '').strip(), 0)), s)
+            for s in candidates
+        ]
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = _finalize(ctx, scored, use_mmr=False)
+    return [
+        _build_result(store, s, sc, f'{lang_label}歌曲推荐')
+        for sc, s in top
+    ]
+
+
+# ==================== 按情绪推荐 ====================
+
+def _recommend_mood(ctx):
+    store, profile, db = ctx['store'], ctx['profile'], ctx['db']
+    mood = ctx['mood']
+    mood_label = MOOD_LABELS.get(mood, mood)
+    if mood not in MOOD_QUERIES:
+        return []
+
+    exclude = _exclude_ids(profile, exclude_recent=True)
+    cursor = db.cursor()
+    cursor.execute('SELECT COUNT(*) AS cnt FROM song_mood_scores WHERE mood = ?', (mood,))
+    has_scores = cursor.fetchone()['cnt'] > 0
+    cursor.close()
+
+    if has_scores:
+        scored = _mood_from_table(db, mood, exclude, ctx['limit'] * EXPLORE_POOL_FACTOR)
+        if not scored:
+            scored = _mood_fallback(ctx, mood, exclude)
+    else:
+        scored = _mood_fallback(ctx, mood, exclude)
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = _finalize(ctx, scored)
+    return [
+        _build_result(store, s, sc, f'{mood_label}歌曲推荐')
+        for sc, s in top
+    ]
+
+
+def _mood_from_table(db, mood, exclude, limit):
+    placeholders = ','.join(['?'] * len(exclude)) if exclude else '1=1'
+    params = [mood] + (list(exclude) if exclude else []) + [limit]
+    cursor = db.cursor()
+    cursor.execute(f'''
+        SELECT s.id, s.title, s.artist, s.album, s.cover_url, s.file_path,
+               s.genre, s.year, s.duration, s.lang, s.lyrics,
+               s.fingerprint, 'local' AS source, ms.score, ms.audio_score
+        FROM song_mood_scores ms
+        JOIN songs s ON ms.song_id = s.id
+        WHERE ms.mood = ? AND s.id NOT IN ({placeholders})
+        ORDER BY (CASE WHEN ms.audio_score IS NOT NULL
+                       THEN {MOOD_WEIGHTS['text']} * ms.score + {MOOD_WEIGHTS['audio']} * ms.audio_score
+                       ELSE ms.score END) DESC
+        LIMIT ?
+    ''', params)
+    rows = [dict(r) for r in cursor.fetchall()]
+    cursor.close()
+    scored = []
+    for r in rows:
+        if r.get('audio_score') is not None:
+            sc = MOOD_WEIGHTS['text'] * r['score'] + MOOD_WEIGHTS['audio'] * r['audio_score']
+        else:
+            sc = r['score']
+        scored.append((sc, r))
+    return scored
+
+
+def _mood_fallback(ctx, mood, exclude):
+    """song_mood_scores 为空时：实时编码情绪查询文本 + 余弦。"""
+    store = ctx['store']
+    try:
+        from services.embedding import encode_text
+        query_vec = encode_text(MOOD_QUERIES[mood])
+    except Exception:
+        return []
+    text_sims = store.text_similarity(query_vec)
+    return [
+        (text_sims.get(s['id'], 0.0), s)
+        for s in store.songs
+        if s['id'] in store.text_song_set and s['id'] not in exclude
+    ]
+
+
+# ==================== 相似歌曲 ====================
+
+def _recommend_similar(ctx):
+    store = ctx['store']
+    sid = ctx['song_id']
+    target = store.id_to_song.get(sid)
+    if target is None:
+        return []
+    target_title = target.get('title') or '这首歌'
+
+    if sid not in store.text_song_set and sid not in store.audio_song_set:
+        return []
+
+    text_sims = (store.text_similarity(store.text_embedding(sid))
+                 if sid in store.text_song_set else {})
+    audio_sims = (store.audio_similarity(store.audio_embedding(sid))
+                  if sid in store.audio_song_set else {})
+
+    scored = []
+    for s in store.songs:
+        if s['id'] == sid or s['id'] not in store.text_song_set:
+            continue
+        text_sim = text_sims.get(s['id'], 0.0)
+        if sid in store.audio_song_set and s['id'] in store.audio_song_set:
+            score = (SIMILAR_WEIGHTS['text'] * text_sim
+                     + SIMILAR_WEIGHTS['audio'] * audio_sims.get(s['id'], 0.0))
+        else:
+            score = text_sim
+        scored.append((score, s))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = _finalize(ctx, scored)
+    return [
+        _build_result(store, s, sc, f'与「{target_title}」相似')
+        for sc, s in top
+    ]
+
+
+# ==================== 冷门宝藏 ====================
+
+def _recommend_hidden_gems(ctx):
+    store, profile, db = ctx['store'], ctx['profile'], ctx['db']
+    if profile.get('text_vec') is None:
+        return _cold_start(ctx)
+
+    exclude = _exclude_ids(profile, exclude_recent=True, exclude_played=True)
+    counts = _play_counts(db)
+    text_sims = store.text_similarity(profile['text_vec'])
+
+    rows = []
+    for s in store.songs:
+        sid = s['id']
+        if sid not in store.text_song_set or sid in exclude:
+            continue
+        fp = (s.get('fingerprint') or '').strip()
+        play_count = counts.get(fp, 0)
+        if play_count >= HIDDEN_GEM_MAX_PLAY_COUNT:
+            continue
+        rows.append((s, text_sims.get(sid, 0.0), play_count))
+
+    if not rows:
+        return []
+
+    sims = _minmax([r[1] for r in rows])
+    colds = _minmax([1.0 / (r[2] + 1) for r in rows])
+    scored = [
+        (HIDDEN_GEM_SIM_WEIGHT * sim + HIDDEN_GEM_COLD_WEIGHT * cold, s)
+        for (s, _sim, _cnt), sim, cold in zip(rows, sims, colds)
+    ]
+    scored.sort(key=lambda x: x[0], reverse=True)
+    top = _finalize(ctx, scored)
+    return [_build_result(store, s, sc, '冷门宝藏') for sc, s in top]
+
+
+# ==================== 情绪分数预计算（软原型，重构版） ====================
 
 def compute_all_mood_scores(db):
     """
-    为所有已有 embedding 的歌曲计算与 7 种情绪的余弦相似度，存入 song_mood_scores 表。
-    同时计算音频维度的情绪分数（基于音频嵌入与情绪音频原型的相似度）。
+    为全库有向量的歌曲计算 7 种情绪分数，写入 song_mood_scores。
 
-    需要在模型已加载后调用（内部会调用 encode_text）。
-    返回写入的记录数。
+    相比旧版改进：
+    - 文本分数用全库 softmax 加权（温度 0.1），而非只看 top-5；
+    - 音频原型 = 全库音频向量按文本情绪权重加权平均（软原型），
+      不再是"top-5 文本匹配歌曲的音频均值"的自证循环。
+
+    返回写入记录数；模型不可用时返回 0（情绪推荐走实时回退）。
     """
-    from services.embedding import encode_text, blob_to_embedding
-
-    # 加载全库歌曲 embedding（文本 + 音频）
-    cursor = db.cursor()
-    cursor.execute('SELECT id, embedding, audio_embedding FROM songs WHERE embedding IS NOT NULL')
-    rows = cursor.fetchall()
-
-    if not rows:
-        cursor.close()
+    store = VectorStore.load(db)
+    if store.text_matrix is None or store.text_matrix.shape[0] == 0:
         return 0
 
-    song_embs = [(row['id'], blob_to_embedding(row['embedding'])) for row in rows]
-    # 音频 embedding（可能部分歌曲未生成）
-    song_audio_embs = {}
-    for row in rows:
-        if row['audio_embedding'] is not None:
-            song_audio_embs[row['id']] = blob_to_embedding(row['audio_embedding'])
-    has_audio = len(song_audio_embs) > 0
-    cursor.close()
+    try:
+        from services.embedding import encode_text
+        mood_vecs = {m: encode_text(MOOD_QUERIES[m]) for m in MOOD_LIST}
+    except Exception:
+        return 0
 
-    # 编码 7 种情绪查询文本
-    mood_vecs = {}
-    for mood_key, query_text in MOOD_QUERIES.items():
-        mood_vecs[mood_key] = encode_text(query_text)
+    # 文本分数矩阵 (N_text, 7)
+    text_scores = np.column_stack([
+        store.text_matrix @ _l2(mood_vecs[m]) for m in MOOD_LIST
+    ])
 
-    # 计算文本情绪分数，并按 mood 分组排序
-    mood_text_scores = {}  # {mood_key: [(song_id, score), ...]}
-    for mood_key, mood_vec in mood_vecs.items():
-        scores = []
-        for song_id, song_emb in song_embs:
-            score = float(cosine_similarity(song_emb, mood_vec))
-            scores.append((song_id, score))
-        scores.sort(key=lambda x: x[1], reverse=True)
-        mood_text_scores[mood_key] = scores
+    # 音频软原型：按文本情绪 softmax 权重对全库音频加权
+    audio_prototypes = {}
+    if store.audio_matrix is not None and store.audio_matrix.shape[0] > 0:
+        audio_row_of = {int(sid): i for i, sid in enumerate(store.audio_song_ids)}
+        text_row_of = {int(sid): i for i, sid in enumerate(store.text_song_ids)}
+        for mi, m in enumerate(MOOD_LIST):
+            weights = _softmax(text_scores[:, mi], temperature=0.1)
+            proto = np.zeros(store.audio_dim, dtype=np.float64)
+            total = 0.0
+            for sid, i in text_row_of.items():
+                j = audio_row_of.get(sid)
+                if j is not None:
+                    proto += weights[i] * store.audio_matrix[j]
+                    total += weights[i]
+            if total > 0:
+                audio_prototypes[m] = _l2(proto)
 
-    # 如果有音频 embedding，为每种情绪构建音频原型（top-5 文本匹配歌曲的音频平均向量）
-    mood_audio_prototypes = {}
-    if has_audio:
-        audio_dim = get_audio_model_dim()
-        for mood_key in MOOD_QUERIES:
-            top_songs = mood_text_scores[mood_key][:5]
-            prototype = np.zeros(audio_dim)
-            count = 0
-            for sid, _ in top_songs:
-                if sid in song_audio_embs:
-                    prototype += song_audio_embs[sid]
-                    count += 1
-            if count > 0:
-                mood_audio_prototypes[mood_key] = prototype / count
-
-    # 写入数据库
     cursor = db.cursor()
-    cursor.execute('DELETE FROM song_mood_scores')  # 全量刷新
+    cursor.execute('DELETE FROM song_mood_scores')
     count = 0
-    for mood_key in MOOD_QUERIES:
-        for song_id, text_score in mood_text_scores[mood_key]:
-            audio_score = None
-            if mood_key in mood_audio_prototypes and song_id in song_audio_embs:
-                audio_score = float(cosine_similarity(
-                    mood_audio_prototypes[mood_key], song_audio_embs[song_id]
-                ))
+    for mi, m in enumerate(MOOD_LIST):
+        proto = audio_prototypes.get(m)
+        for i, sid in enumerate(store.text_song_ids):
+            sid = int(sid)
+            text_score = float(text_scores[i, mi])
+            if proto is not None and sid in store.audio_song_set:
+                audio_score = float(cosine_similarity(proto, store.audio_embedding(sid)))
                 cursor.execute(
                     'INSERT INTO song_mood_scores (song_id, mood, score, audio_score) VALUES (?, ?, ?, ?)',
-                    (song_id, mood_key, text_score, audio_score)
+                    (sid, m, text_score, audio_score)
                 )
             else:
                 cursor.execute(
                     'INSERT INTO song_mood_scores (song_id, mood, score) VALUES (?, ?, ?)',
-                    (song_id, mood_key, text_score)
+                    (sid, m, text_score)
                 )
             count += 1
     db.commit()
@@ -134,634 +585,53 @@ def compute_all_mood_scores(db):
     return count
 
 
-def cosine_similarity(a, b):
-    """计算两个向量的余弦相似度"""
-    dot = np.dot(a, b)
-    norm_a = np.linalg.norm(a)
-    norm_b = np.linalg.norm(b)
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return float(dot / (norm_a * norm_b))
+# ==================== 统一入口 ====================
 
-
-def _load_all_songs(db):
-    """加载全库有 embedding 的歌曲（文本 + 音频），使用模块级缓存避免重复反序列化 BLOB"""
-    global _embedding_cache, _audio_embedding_cache
-
-    cursor = db.cursor()
-    cursor.execute(
-        'SELECT id, title, artist, album, cover_url, file_path, '
-        'genre, year, duration, lang, embedding, audio_embedding, lyrics, source, fingerprint '
-        'FROM all_songs WHERE embedding IS NOT NULL'
-    )
-    rows = cursor.fetchall()
-    cursor.close()
-
-    # 指纹去重：同一指纹优先保留本地版本（云端歌曲在推荐中不重复出现）
-    # 同时建立 fingerprint → local_id 映射，供推荐结果引导前端播放本地文件
-    fingerprint_to_local = {}
-    seen_fingerprints = set()
-    deduped_rows = []
-
-    for row in rows:
-        fp = (row['fingerprint'] or '').strip()
-        src = row['source'] or 'local'
-
-        # 记录指纹→本地ID映射
-        if fp and src == 'local':
-            fingerprint_to_local[fp] = row['id']
-
-        # 去重：本地优先
-        if fp:
-            if fp in seen_fingerprints:
-                continue
-            seen_fingerprints.add(fp)
-        deduped_rows.append(row)
-
-    # 存储指纹映射到全局，供 _song_to_result 使用
-    global _fingerprint_to_local_id
-    _fingerprint_to_local_id = fingerprint_to_local
-
-    all_songs = []
-    id_to_embedding = {}
-    id_to_audio_embedding = {}
-    id_to_info = {}
-
-    for row in deduped_rows:
-        sid = row['id']
-        song_dict = dict(row)
-        all_songs.append(song_dict)
-        id_to_info[sid] = song_dict
-
-        # 文本 embedding：命中缓存则跳过 BLOB 反序列化
-        if sid not in _embedding_cache:
-            _embedding_cache[sid] = blob_to_embedding(song_dict['embedding'])
-        id_to_embedding[sid] = _embedding_cache[sid]
-
-        # 音频 embedding 可能为 NULL（旧数据或生成中）
-        if song_dict['audio_embedding'] is not None:
-            if sid not in _audio_embedding_cache:
-                _audio_embedding_cache[sid] = blob_to_embedding(song_dict['audio_embedding'])
-            id_to_audio_embedding[sid] = _audio_embedding_cache[sid]
-
-    return all_songs, id_to_embedding, id_to_audio_embedding, id_to_info
-
-
-def _song_to_result(s, score, reason):
-    """将歌曲 dict 转为统一响应格式"""
-    return {
-        'song_id': s['id'],
-        'title': s['title'] or '',
-        'artist': s['artist'] or '',
-        'album': s['album'] or '',
-        'cover_url': s['cover_url'] or '',
-        'file_path': s['file_path'] or '',
-        'genre': s['genre'] or '',
-        'year': s['year'] or 0,
-        'duration': s['duration'] or 0,
-        'lang': s['lang'] or '',
-        'lyrics': s.get('lyrics') or '',
-        'reason': reason,
-        'score': round(score, 4),
-        'source': s.get('source', 'local'),
-        'local_id': _fingerprint_to_local_id.get((s.get('fingerprint') or '').strip(), None),
-    }
-
-
-def _collect_lang_preference(history):
-    lang_counts = {}
-    total = 0
-    for h in history:
-        lang = (h.get('lang') or '').strip()
-        if lang:
-            lang_counts[lang] = lang_counts.get(lang, 0) + 1
-            total += 1
-    if total == 0:
-        return {}
-    return {lang: count / total for lang, count in lang_counts.items()}
-
-
-def _genre_match_score(genre_a, genre_b):
-    if not genre_a or not genre_b:
-        return 0.5
-    ga = genre_a.strip().lower()
-    gb = genre_b.strip().lower()
-    if ga == gb:
-        return 1.0
-    # 词级 Jaccard 相似度（处理复合流派，如 "Pop Rock" vs "Rock"）
-    words_a = set(ga.replace('-', ' ').replace('&', ' ').split())
-    words_b = set(gb.replace('-', ' ').replace('&', ' ').split())
-    if words_a and words_b:
-        intersection = words_a & words_b
-        union = words_a | words_b
-        if intersection:
-            jaccard = len(intersection) / len(union)
-            return 0.3 + 0.7 * jaccard  # 归一化到 [0.3, 1.0]
-    # 4 字符前缀匹配（仅对单词流派兜底，如 "Electro" vs "Electronic"）
-    if len(ga) >= 4 and len(gb) >= 4 and ga[:4] == gb[:4]:
-        return 0.4
-    return 0.0
-
-
-def _mmr_rerank(scored_songs, id_to_embedding, limit, lambda_param=0.7):
-    """
-    MMR (Maximal Marginal Relevance) 多样性重排。
-    在保持相关性的同时，惩罚与已选歌曲相似度高的候选项，避免同一艺术家扎堆。
-    """
-    if len(scored_songs) <= limit:
-        return scored_songs
-
-    selected = [scored_songs[0]]
-    remaining = scored_songs[1:]
-    selected_artists = {selected[0][1].get('artist', '')}
-
-    while len(selected) < limit and remaining:
-        best_idx = 0
-        best_score = -float('inf')
-        for i, (score, s) in enumerate(remaining):
-            artist_penalty = 0.3 if s.get('artist', '') in selected_artists else 0.0
-            max_sim = min(
-                1.0,
-                max(
-                    cosine_similarity(id_to_embedding[s['id']], id_to_embedding[sel[1]['id']])
-                    for sel in selected
-                )
-            )
-            mmr_score = lambda_param * score - (1 - lambda_param) * max_sim - artist_penalty
-            if mmr_score > best_score:
-                best_score = mmr_score
-                best_idx = i
-
-        best_item = remaining.pop(best_idx)
-        selected.append(best_item)
-        selected_artists.add(best_item[1].get('artist', ''))
-
-    return selected
-
-
-def _build_reason(song, similar_song):
-    lang = (song.get('lang') or '').strip()
-    genre = (song.get('genre') or '').strip()
-    artist = (song.get('artist') or '').strip()
-    similar_artist = (similar_song.get('artist') or '').strip()
-    similar_genre = (similar_song.get('genre') or '').strip()
-    similar_title = (similar_song.get('title') or '').strip()
-
-    if similar_artist and artist and similar_artist == artist:
-        return f"同为 {artist} 的作品"
-    if similar_genre and genre and similar_genre == genre:
-        return f"同为 {genre} 风格"
-    if lang:
-        return f"{LANG_NAMES.get(lang, lang)}歌曲推荐"
-    return f"与你常听的 {similar_title} 风格相似"
-
-
-# ==================== 综合推荐 ====================
-
-def recommend_comprehensive(db, user_history_song_ids, limit=20, seed=None):
-    """
-    综合推荐：文本语义 + 音频特征 + 流派匹配 + 语种偏好。
-    公式: score = 0.40 * text_sim + 0.30 * audio_sim + 0.15 * genre_match + 0.15 * lang_pref
-    当音频 embedding 不可用时，回退到纯文本模式 (0.60 / 0.20 / 0.20)。
-    """
-    all_songs, id_to_embedding, id_to_audio_embedding, id_to_info = _load_all_songs(db)
-
-    if len(all_songs) < 2:
-        return []
-
-    has_audio = len(id_to_audio_embedding) > 0
-
-    # 获取用户播放历史（单次 IN 查询，避免 N+1）
-    history = []
-    valid_ids = [sid for sid in user_history_song_ids if sid in id_to_embedding]
-    if valid_ids:
-        cursor = db.cursor()
-        placeholders = ','.join(['?'] * len(valid_ids))
-        cursor.execute(
-            f'SELECT id, title, artist, genre, lang FROM songs WHERE id IN ({placeholders})',
-            valid_ids
-        )
-        for row in cursor.fetchall():
-            history.append({
-                'id': row['id'], 'title': row['title'],
-                'artist': row['artist'], 'genre': row['genre'], 'lang': row['lang']
-            })
-        cursor.close()
-
-    if not history:
-        return _cold_start(db, limit)
-
-    # 用户文本向量（加权平均）
-    dim = get_model_dim()
-    n = len(history)
-    weights = np.linspace(1.0, 0.3, n)
-    user_vector = np.zeros(dim)
-    total_weight = 0
-    for i, h in enumerate(history):
-        emb = id_to_embedding[h['id']]
-        user_vector += emb * weights[i]
-        total_weight += weights[i]
-    if total_weight > 0:
-        user_vector /= total_weight
-
-    # 用户音频向量（加权平均，仅当有历史音频 embedding 时）
-    user_audio_vector = None
-    if has_audio:
-        audio_dim = get_audio_model_dim()
-        user_audio_vector = np.zeros(audio_dim)
-        audio_total_weight = 0
-        for i, h in enumerate(history):
-            if h['id'] in id_to_audio_embedding:
-                audio_emb = id_to_audio_embedding[h['id']]
-                user_audio_vector += audio_emb * weights[i]
-                audio_total_weight += weights[i]
-        if audio_total_weight > 0:
-            user_audio_vector /= audio_total_weight
-        else:
-            user_audio_vector = None
-
-    lang_pref = _collect_lang_preference(history)
-
-    # 评分
-    history_ids = set(h['id'] for h in history)
-    scored = []
-    for s in all_songs:
-        if s['id'] in history_ids:
-            continue
-
-        emb = id_to_embedding[s['id']]
-        text_sim = float(cosine_similarity(user_vector, emb))
-
-        # 音频相似度
-        audio_sim = 0.0
-        audio_available = False
-        if has_audio and user_audio_vector is not None and s['id'] in id_to_audio_embedding:
-            audio_sim = float(cosine_similarity(user_audio_vector, id_to_audio_embedding[s['id']]))
-            audio_available = True
-
-        genre_score = max((_genre_match_score(h.get('genre', ''), s.get('genre', '')) for h in history), default=0.5)
-        lang = (s.get('lang') or '').strip()
-        lang_score = lang_pref.get(lang, 0.1)
-
-        if audio_available:
-            score = 0.40 * text_sim + 0.30 * audio_sim + 0.15 * genre_score + 0.15 * lang_score
-        else:
-            # 回退纯文本模式
-            score = 0.60 * text_sim + 0.20 * genre_score + 0.20 * lang_score
-
-        scored.append((score, s))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-
-    # 种子抖动：取 Top(limit×3) 加小幅随机扰动，增加刷新新鲜感
-    if seed is not None:
-        rng = np.random.RandomState(seed)
-        pool_size = min(len(scored), limit * 3)
-        pool = scored[:pool_size]
-        jittered = [(score + rng.uniform(-0.03, 0.03), s) for score, s in pool]
-        jittered.sort(key=lambda x: x[0], reverse=True)
-        top = _mmr_rerank(jittered, id_to_embedding, limit)
-    else:
-        top = _mmr_rerank(scored, id_to_embedding, limit)
-
-    best_history = max(history, key=lambda h: float(
-        cosine_similarity(user_vector, id_to_embedding[h['id']])
-    ))
-
-    return [_song_to_result(s, score, _build_reason(s, best_history)) for score, s in top]
-
-
-# ==================== 按语言推荐 ====================
-
-# 常见语言列表，"其他"分类排除这些
-_COMMON_LANGS = {'inst', 'zh', 'zh-cn', 'zh-tw', 'ja', 'en', 'ko', 'de', 'ru',
-                 'fr', 'es', 'pt', 'it', 'vi', 'nl', 'sv', 'no', 'da',
-                 'fi', 'tr', 'pl', 'ar', 'th', 'id', 'hi'}
-
-
-def recommend_by_language(db, lang, user_history_song_ids, limit=20, seed=None):
-    """
-    按语言推荐：SQL 过滤 lang，再用 embedding 语义相似度排序。
-    支持 lang=other 匹配所有非通用语言。
-    """
-    all_songs, id_to_embedding, _, id_to_info = _load_all_songs(db)
-
-    if lang == 'other':
-        def _lang_match(song_lang):
-            sl = (song_lang or '').strip().lower()
-            return bool(sl) and sl not in _COMMON_LANGS
-        lang_label = '其他语言'
-    else:
-        def _lang_match(song_lang):
-            sl = (song_lang or '').strip().lower()
-            if not sl:
-                return False
-            return sl == lang or sl.startswith(lang + '-')
-        lang_label = LANG_NAMES.get(lang, lang)
-
-    target_songs = [s for s in all_songs if _lang_match(s.get('lang'))]
-    if not target_songs:
-        return []
-
-    history_ids = set(user_history_song_ids)
-    history_songs = [s for s in target_songs if s['id'] in history_ids]
-    candidates = [s for s in target_songs if s['id'] not in history_ids]
-
-    if not candidates:
-        return []
-
-    # 有播放历史时，用历史歌曲向量计算相似度
-    if history_songs:
-        dim = get_model_dim()
-        seed_list = history_songs[:min(20, len(history_songs))]
-        history_vec = np.zeros(dim)
-        for h in seed_list:
-            history_vec += id_to_embedding[h['id']]
-        history_vec /= len(seed_list)
-
-        scored = []
-        for s in candidates:
-            sim = float(cosine_similarity(history_vec, id_to_embedding[s['id']]))
-            scored.append((sim, s))
-        scored.sort(key=lambda x: x[0], reverse=True)
-    else:
-        # 无历史：按播放次数排序
-        cursor = db.cursor()
-        # 批量获取候选歌曲的 fingerprint
-        candidate_ids = [s['id'] for s in candidates]
-        placeholders = ','.join(['?'] * len(candidate_ids))
-        cursor.execute(
-            f'SELECT id, fingerprint FROM songs WHERE id IN ({placeholders})',
-            candidate_ids
-        )
-        id_to_fp = {row['id']: row['fingerprint'] for row in cursor.fetchall()}
-
-        cursor.execute('SELECT fingerprint, play_count FROM play_stats')
-        fp_to_count = {row['fingerprint']: (row['play_count'] or 0) for row in cursor.fetchall()}
-        cursor.close()
-
-        scored = []
-        for s in candidates:
-            fp = id_to_fp.get(s['id'], '')
-            score = float(fp_to_count.get(fp, 0))
-            scored.append((score, s))
-        scored.sort(key=lambda x: x[0], reverse=True)
-
-    # 种子抖动
-    if seed is not None and len(scored) > limit:
-        rng = np.random.RandomState(seed)
-        pool_size = min(len(scored), limit * 3)
-        pool = scored[:pool_size]
-        jittered = [(score + rng.uniform(-0.03, 0.03), s) for score, s in pool]
-        jittered.sort(key=lambda x: x[0], reverse=True)
-        top = jittered[:limit]
-    else:
-        top = scored[:limit]
-
-    return [_song_to_result(s, score, f"{lang_label}歌曲推荐") for score, s in top]
-
-
-# ==================== 按情绪推荐 ====================
-
-def recommend_by_mood(db, mood, user_history_song_ids, limit=20, seed=None):
-    """
-    按情绪推荐：从 song_mood_scores 表直接查询预计算好的分数。
-    当 audio_score 可用时，使用文本+音频加权评分（0.5×文本 + 0.5×音频）。
-    """
-    mood_label = MOOD_LABELS.get(mood, mood)
-    mood_query_text = MOOD_QUERIES.get(mood)
-    if not mood_query_text:
-        return []
-
-    # 从预计算表中查询
-    history_ids = set(user_history_song_ids)
-    cursor = db.cursor()
-
-    # 先查总数判断是否有数据
-    cursor.execute('SELECT COUNT(*) as cnt FROM song_mood_scores WHERE mood = ?', (mood,))
-    if cursor.fetchone()['cnt'] == 0:
-        cursor.close()
-        # 回退：实时计算（首次生成 embedding 后才会存表）
-        return _recommend_by_mood_fallback(db, mood, user_history_song_ids, limit, seed, mood_label)
-
-    placeholders = ','.join(['?'] * len(history_ids)) if history_ids else '1=1'
-    history_filter = f'AND s.id NOT IN ({placeholders})' if history_ids else ''
-
-    # 音频分数可用时加权排序，否则回退纯文本分数
-    cursor.execute(f'''
-        SELECT s.id, s.title, s.artist, s.album, s.cover_url, s.file_path,
-               s.genre, s.year, s.duration, s.lang, s.lyrics,
-               ms.score, ms.audio_score
-        FROM song_mood_scores ms
-        JOIN songs s ON ms.song_id = s.id
-        WHERE ms.mood = ? {history_filter}
-        ORDER BY (CASE WHEN ms.audio_score IS NOT NULL
-                       THEN 0.5 * ms.score + 0.5 * ms.audio_score
-                       ELSE ms.score END) DESC
-        LIMIT ?
-    ''', [mood] + (list(history_ids) if history_ids else []) + [limit])
-
-    rows = cursor.fetchall()
-    cursor.close()
-
-    if not rows:
-        return []
-
-    results = []
-    for row in rows:
-        d = dict(row)
-        # 使用加权分数（如果有音频分数），否则用纯文本分数
-        if d.get('audio_score') is not None:
-            d['score'] = 0.5 * d['score'] + 0.5 * d['audio_score']
-        results.append(_song_to_result(d, d['score'], f"{mood_label}歌曲推荐"))
-
-    # 种子抖动
-    if seed is not None and len(results) > limit:
-        rng = np.random.RandomState(seed)
-        jittered = [(r['score'] + rng.uniform(-0.03, 0.03), r) for r in results]
-        jittered.sort(key=lambda x: x[0], reverse=True)
-        return [r for _, r in jittered[:limit]]
-
-    return results
-
-
-def _recommend_by_mood_fallback(db, mood, user_history_song_ids, limit, seed, mood_label):
-    """回退：实时编码情绪向量并做余弦相似度（旧逻辑，song_mood_scores 表为空时使用）"""
-    from services.embedding import encode_text
-
-    mood_text = MOOD_QUERIES.get(mood)
-    if not mood_text:
-        return []
-
-    all_songs, id_to_embedding, _, id_to_info = _load_all_songs(db)
-
-    if not all_songs:
-        return []
-
-    query_vec = encode_text(mood_text)
-    history_ids = set(user_history_song_ids)
-    scored = []
-    for s in all_songs:
-        if s['id'] in history_ids:
-            continue
-        sim = float(cosine_similarity(query_vec, id_to_embedding[s['id']]))
-        scored.append((sim, s))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-
-    if seed is not None and len(scored) > limit:
-        rng = np.random.RandomState(seed)
-        pool_size = min(len(scored), limit * 3)
-        pool = scored[:pool_size]
-        jittered = [(score + rng.uniform(-0.03, 0.03), s) for score, s in pool]
-        jittered.sort(key=lambda x: x[0], reverse=True)
-        top = jittered[:limit]
-    else:
-        top = scored[:limit]
-
-    return [_song_to_result(s, score, f"{mood_label}歌曲推荐") for score, s in top]
-
-
-# ==================== 相似歌曲 ====================
-
-def recommend_similar(db, song_id, limit=20):
-    """给定一首歌曲，找 Top-N 相似歌曲（文本语义 + 音频特征）"""
-    all_songs, id_to_embedding, id_to_audio_embedding, id_to_info = _load_all_songs(db)
-
-    if len(all_songs) < 2:
-        return []
-
-    if song_id not in id_to_embedding:
-        return []
-
-    target_emb = id_to_embedding[song_id]
-    target_audio_emb = id_to_audio_embedding.get(song_id)
-    target_info = id_to_info.get(song_id, {})
-    target_title = target_info.get('title', '这首歌')
-    has_audio = target_audio_emb is not None
-
-    scored = []
-    for s in all_songs:
-        if s['id'] == song_id:
-            continue
-        text_sim = float(cosine_similarity(target_emb, id_to_embedding[s['id']]))
-        if has_audio and s['id'] in id_to_audio_embedding:
-            audio_sim = float(cosine_similarity(target_audio_emb, id_to_audio_embedding[s['id']]))
-            score = 0.5 * text_sim + 0.5 * audio_sim
-        else:
-            score = text_sim
-        scored.append((score, s))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-    top = scored[:limit]
-
-    return [_song_to_result(s, score, f"与「{target_title}」相似") for score, s in top]
-
-
-# ==================== 冷门宝藏 ====================
-
-def recommend_hidden_gems(db, user_history_song_ids, limit=20, seed=None):
-    """
-    冷门宝藏：低播放次数 + 高语义相似度。
-    找用户可能喜欢但很少被播放的歌曲。
-    """
-    all_songs, id_to_embedding, _, id_to_info = _load_all_songs(db)
-
-    if len(all_songs) < 2:
-        return []
-
-    # 获取用户历史向量
-    history = [h for h in user_history_song_ids if h in id_to_embedding]
-    history_ids = set(history)
-
-    if not history:
-        return _cold_start(db, limit)
-
-    dim = get_model_dim()
-    history_vec = np.zeros(dim)
-    for sid in history[:20]:
-        history_vec += id_to_embedding[sid]
-    history_vec /= min(len(history), 20)
-
-    # 获取所有歌曲的播放次数
-    cursor = db.cursor()
-    play_counts = {}
-    cursor.execute('SELECT fingerprint, play_count FROM play_stats')
-    for row in cursor.fetchall():
-        play_counts[row['fingerprint']] = row['play_count'] or 0
-    cursor.close()
-
-    scored = []
-    for s in all_songs:
-        if s['id'] in history_ids:
-            continue
-        fp = s.get('fingerprint', '')
-        play_count = play_counts.get(fp, 0)
-
-        # 只考虑播放次数低（< 3）或未播放过的
-        if play_count >= 3:
-            continue
-
-        emb_sim = float(cosine_similarity(history_vec, id_to_embedding[s['id']]))
-        # 相似度为主，播放次数微调（越少越好）
-        cold_bonus = 1.0 / max(play_count + 1, 1)
-        score = 0.9 * emb_sim + 0.1 * cold_bonus
-        scored.append((score, s))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-
-    if seed is not None and len(scored) > limit:
-        rng = np.random.RandomState(seed)
-        pool_size = min(len(scored), limit * 3)
-        pool = scored[:pool_size]
-        jittered = [(score + rng.uniform(-0.03, 0.03), s) for score, s in pool]
-        jittered.sort(key=lambda x: x[0], reverse=True)
-        top = jittered[:limit]
-    else:
-        top = scored[:limit]
-
-    return [_song_to_result(s, score, '冷门宝藏') for score, s in top]
-
-
-# ==================== 冷启动 ====================
-
-def _cold_start(db, limit=20):
-    """无播放历史时的回退：全库热门"""
-    cursor = db.cursor()
-    cursor.execute('''
-        SELECT s.id, s.title, s.artist, s.album, s.cover_url, s.file_path,
-               s.genre, s.year, s.duration, s.lang, s.lyrics
-        FROM songs s
-        LEFT JOIN play_stats ps ON s.fingerprint = ps.fingerprint
-        WHERE s.embedding IS NOT NULL
-        ORDER BY ps.play_count DESC
-        LIMIT ?
-    ''', (limit,))
-    rows = cursor.fetchall()
-    cursor.close()
-    return [_song_to_result(dict(row), 0, '热门推荐') for row in rows]
-
-
-# ==================== 调度入口 ====================
-
-def recommend(db, user_history_song_ids, mode='comprehensive', limit=20, seed=None,
+def recommend(db, user_id=1, mode='comprehensive', limit=20, seed=None,
               lang=None, mood=None, song_id=None):
     """
     统一推荐入口。
 
     Args:
-        mode: comprehensive | language | mood | similar | hidden_gem
-        lang: mode=language 时指定 ISO 639-1 语言代码
-        mood: mode=mood 时指定情绪关键词
-        song_id: mode=similar 时指定参考歌曲 ID
+        db: sqlite3 连接（Row 工厂）
+        user_id: 目标用户
+        mode: comprehensive | language | mood | similar | hidden_gem | weather
+        lang/mood/song_id: 模式子参数
+        seed: 确定性探索种子（同参数下结果稳定）
     """
+    t0 = time.time()
+    store = VectorStore.load(db)
+    profile = get_profile(db, user_id)
+    ctx = {
+        'db': db,
+        'store': store,
+        'profile': profile,
+        'user_id': user_id,
+        'limit': min(max(int(limit or 20), 1), 50),
+        'seed': seed,
+        'lang': lang,
+        'mood': mood,
+        'song_id': song_id,
+    }
+
+    mode = mode or 'comprehensive'
+    if mode == 'weather':
+        mode = 'mood'
+
     if mode == 'language' and lang:
-        return recommend_by_language(db, lang, user_history_song_ids, limit, seed)
+        results = _recommend_language(ctx)
     elif mode == 'mood' and mood:
-        return recommend_by_mood(db, mood, user_history_song_ids, limit, seed)
+        results = _recommend_mood(ctx)
     elif mode == 'similar' and song_id:
-        return recommend_similar(db, song_id, limit)
+        results = _recommend_similar(ctx)
     elif mode == 'hidden_gem':
-        return recommend_hidden_gems(db, user_history_song_ids, limit, seed)
+        results = _recommend_hidden_gems(ctx)
     else:
-        return recommend_comprehensive(db, user_history_song_ids, limit, seed)
+        results = _recommend_comprehensive(ctx)
+
+    logger.info(
+        'recommend user=%s mode=%s limit=%d seed=%s elapsed=%.1fms n=%d',
+        user_id, mode, ctx['limit'], seed,
+        (time.time() - t0) * 1000, len(results),
+    )
+    return results

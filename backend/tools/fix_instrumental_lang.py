@@ -33,6 +33,11 @@ def fix():
         new_lang = detect_language(row['title'], row['lyrics'], row['artist'])
         if new_lang and new_lang != old_lang:
             db.execute('UPDATE songs SET lang = ? WHERE id = ?', (new_lang, row['id']))
+            # lang 参与向量文本，删除向量行以便重新生成
+            db.execute(
+                "DELETE FROM song_vectors WHERE song_id = ? AND source = 'local'",
+                (row['id'],)
+            )
             print(f'  修复: [{old_lang}]→[{new_lang}] {row["title"]} - {row["artist"]}')
             fixed += 1
         else:
@@ -53,6 +58,10 @@ def fix():
             new_lang = detect_language(row['title'], row['lyrics'], row['artist'])
             if new_lang and new_lang != 'ko':
                 db.execute('UPDATE songs SET lang = ? WHERE id = ?', (new_lang, row['id']))
+                db.execute(
+                    "DELETE FROM song_vectors WHERE song_id = ? AND source = 'local'",
+                    (row['id'],)
+                )
                 print(f'  修复: [ko]→[{new_lang}] {row["title"]} - {row["artist"]}')
                 fixed += 1
         db.commit()

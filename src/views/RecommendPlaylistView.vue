@@ -97,80 +97,6 @@ function ctxAction(action) {
 const tracks = ref([])
 const isLoading = ref(false)
 
-// --- 缓存 TTL（秒）---
-const CACHE_TTL = {
-  comprehensive: 'midnight', // 每日0点刷新
-  hidden_gem: 86400,    // 24h
-  mood: 21600,          // 6h
-  weather: 3600,        // 1h
-  language: 43200,       // 12h
-}
-
-function getCacheKey() {
-  const mode = route.query.mode || 'comprehensive'
-  const lang = route.query.lang || ''
-  const mood = route.query.mood || ''
-  return `rec_${mode}_${lang}_${mood}`
-}
-
-function getCacheTTL() {
-  const mode = route.query.mode || 'comprehensive'
-  const ttl = CACHE_TTL[mode] || 3600
-  if (ttl === 'midnight') {
-    // 计算距离明天 00:00:00 的秒数
-    const now = new Date()
-    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
-    return Math.ceil((tomorrow - now) / 1000)
-  }
-  return ttl
-}
-
-/**
- * 把秒数格式化为人类可读的「剩余时间」字符串。
- * 用于日志中展示推荐缓存还有多久刷新。
- */
-function formatRemaining(seconds) {
-  if (seconds <= 0) return '已过期'
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  const s = Math.floor(seconds % 60)
-  if (h > 0) return `${h}小时${m}分${s}秒`
-  if (m > 0) return `${m}分${s}秒`
-  return `${s}秒`
-}
-
-/** 返回当前模式的缓存策略描述（用于日志） */
-function getCachePolicyLabel() {
-  const mode = route.query.mode || 'comprehensive'
-  const policy = CACHE_TTL[mode]
-  if (policy === 'midnight') return '每日 00:00 刷新'
-  if (policy) return `${policy / 3600} 小时刷新`
-  return '1 小时刷新'
-}
-
-/**
- * 读取缓存，返回 { data, ts, remaining } 或 null。
- * remaining 为缓存剩余有效秒数（用于日志展示）。
- */
-function getCachedTracksWithMeta() {
-  try {
-    const raw = localStorage.getItem(getCacheKey())
-    if (!raw) return null
-    const { data, ts } = JSON.parse(raw)
-    const ttl = getCacheTTL()
-    const age = Date.now() - ts
-    if (age > ttl * 1000) return null
-    const remaining = Math.max(0, Math.ceil((ttl * 1000 - age) / 1000))
-    return { data, ts, remaining }
-  } catch { return null }
-}
-
-function setCachedTracks(data) {
-  try {
-    localStorage.setItem(getCacheKey(), JSON.stringify({ data, ts: Date.now() }))
-  } catch {}
-}
-
 /**
  * 将推荐列表第一首歌的封面写入 store（单一数据源），
  * 供首页封面卡片读取，确保卡片封面 = 推荐列表榜首。
@@ -274,14 +200,6 @@ async function fetchRecommendations() {
   const mood = route.query.mood
   const weatherMood = route.query.weatherMood
   const effectiveMood = weatherMood || mood
-  const policyLabel = getCachePolicyLabel()
-
-  // 先尝试读取缓存（带剩余时间）
-  const cachedMeta = getCachedTracksWithMeta()
-  if (cachedMeta) {
-    tracks.value = normalizeTracks(cachedMeta.data)
-  } else {
-  }
 
   let seed = ''
   if (mode === 'comprehensive') {
@@ -301,18 +219,17 @@ async function fetchRecommendations() {
   try {
     const res = await fetch(url)
     if (!res.ok) {
-      if (!cachedMeta) tracks.value = []
+      tracks.value = []
       return
     }
     const data = await res.json()
     console.debug(`[recommend-page] mode=${mode} mood=${effectiveMood || ''} 第一首:`, data[0]?.title, '-', data[0]?.artist, '| cover:', data[0]?.cover_url)
-    setCachedTracks(data)
     tracks.value = normalizeTracks(data)
 
     // 将第一首歌的封面写入共享 localStorage，供首页封面卡片使用
     _writeDerivedCover(mode, effectiveMood, data[0])
   } catch {
-    if (!cachedMeta) tracks.value = []
+    tracks.value = []
   } finally {
     isLoading.value = false
   }

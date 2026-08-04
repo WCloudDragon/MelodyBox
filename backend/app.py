@@ -26,6 +26,41 @@ _ensure_ffmpeg_path()
 
 import sqlite3
 
+from config.recommend_config import TEXT_VECTOR_VERSION, AUDIO_VECTOR_VERSION
+
+
+def _migrate_legacy_vectors(conn, cursor):
+    """
+    存量迁移：把旧版 songs / cloud_songs 表中 embedding、audio_embedding
+    BLOB 一次性复制到 song_vectors 表（幂等，已存在的行跳过）。
+    """
+    for table, source in (('songs', 'local'), ('cloud_songs', 'cloud')):
+        try:
+            cursor.execute(
+                f'SELECT id, embedding, audio_embedding FROM {table} '
+                'WHERE embedding IS NOT NULL OR audio_embedding IS NOT NULL'
+            )
+        except Exception:
+            continue
+        for row in cursor.fetchall():
+            # init_db 的连接未启用 Row 工厂，按位置取值
+            song_id, text_vec, audio_vec = row[0], row[1], row[2]
+            cursor.execute(
+                '''INSERT OR IGNORE INTO song_vectors
+                   (song_id, source, text_vec, audio_vec, text_version, audio_version)
+                   VALUES (?, ?, ?, ?, ?, ?)''',
+                (
+                    song_id,
+                    source,
+                    text_vec,
+                    audio_vec,
+                    TEXT_VECTOR_VERSION if text_vec is not None else 0,
+                    AUDIO_VECTOR_VERSION if audio_vec is not None else 0,
+                )
+            )
+    conn.commit()
+
+
 def init_db(app):
     """初始化 SQLite 数据库和全部 15 张表"""
     db_path = app.config['DB_PATH']
@@ -356,7 +391,56 @@ def init_db(app):
         pass  # 列已存在
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mood_scores ON song_mood_scores(mood, score DESC)')
 
-    # ========== 18. cloud_songs（管理员云端曲库）==========
+    # ========== 18. song_vectors（向量独立表，重构版）==========
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS song_vectors (
+            song_id INTEGER NOT NULL,
+            source TEXT NOT NULL DEFAULT 'local',
+            text_vec BLOB DEFAULT NULL,
+            audio_vec BLOB DEFAULT NULL,
+            text_version INTEGER DEFAULT 0,
+            audio_version INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT (datetime('now','localtime')),
+            PRIMARY KEY (song_id, source)
+        )
+    ''')
+
+    # ========== 19. events（行为事件表，重构版）==========
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL DEFAULT 1,
+            song_id INTEGER DEFAULT NULL,
+            fingerprint TEXT DEFAULT '',
+            event_type TEXT NOT NULL,
+            duration_ratio REAL DEFAULT NULL,
+            ts TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (song_id) REFERENCES songs(id) ON DELETE SET NULL
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_events_user_ts ON events(user_id, ts DESC)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type)')
+
+    # ========== 20. user_profiles（用户画像表，重构版）==========
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            user_id INTEGER PRIMARY KEY,
+            text_vec BLOB DEFAULT NULL,
+            audio_vec BLOB DEFAULT NULL,
+            genre_dist TEXT DEFAULT '{}',
+            lang_dist TEXT DEFAULT '{}',
+            recent_ids TEXT DEFAULT '[]',
+            played_ids TEXT DEFAULT '[]',
+            version INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    ''')
+
+    # 存量迁移：旧版 songs/cloud_songs 表中的 embedding 列 → song_vectors
+    _migrate_legacy_vectors(conn, cursor)
+
+    # ========== 21. cloud_songs（管理员云端曲库）==========
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS cloud_songs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -506,6 +590,14 @@ def create_app():
     # 静默 werkzeug 访问日志
     import logging
     logging.getLogger('werkzeug').setLevel(logging.ERROR)
+    # 推荐引擎日志（含耗时/条数，便于观察与调参）
+    rec_logger = logging.getLogger('melodybox.recommend')
+    rec_logger.setLevel(logging.INFO)
+    _rec_log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'recommend_log.txt')
+    if not rec_logger.handlers:
+        _fh = logging.FileHandler(_rec_log_path, encoding='utf-8')
+        _fh.setFormatter(logging.Formatter('%(asctime)s %(message)s'))
+        rec_logger.addHandler(_fh)
 
     os.makedirs(app.config['COVER_DIR'], exist_ok=True)
 

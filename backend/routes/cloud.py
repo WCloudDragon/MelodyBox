@@ -290,6 +290,10 @@ def remove_cloud_song(song_id):
             db.close()
             return jsonify({'error': '歌曲不存在'}), 404
 
+        cursor.execute(
+            "DELETE FROM song_vectors WHERE song_id = ? AND source = 'cloud'",
+            (song_id,)
+        )
         cursor.execute('DELETE FROM cloud_songs WHERE id = ?', (song_id,))
         db.commit()
         cursor.close()

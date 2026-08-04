@@ -56,7 +56,8 @@ def record_play():
         1. 生成 fingerprint = md5(title|artist|album)
         2. 通过 file_path 在 songs 表中查找 song_id
         3. UPSERT play_stats：匹配 fingerprint，若存在则 play_count+1，否则 INSERT
-        4. INSERT play_history 新纪录
+        4. INSERT play_history 新纪录（含 duration_played）
+        5. INSERT events(type='play')，触发异步画像刷新
     """
     try:
         data = request.get_json(force=True)
@@ -65,6 +66,8 @@ def record_play():
         artist = (data.get('artist', '') or '').strip()
         album = (data.get('album', '') or '').strip()
         file_path = (data.get('file_path', '') or '').strip()
+        duration_played = data.get('duration_played') or 0
+        duration_ratio = data.get('duration_ratio')
 
         if not title:
             return jsonify({'error': 'title 为必填字段'}), 400
@@ -107,19 +110,86 @@ def record_play():
                 (song_id, fingerprint)
             )
 
-        # 插入播放历史
+        # 插入播放历史（duration_played 列）
         cursor.execute(
-            '''INSERT INTO play_history (song_id, fingerprint, played_at)
-               VALUES (?, ?, datetime('now', 'localtime'))''',
-            (song_id, fingerprint)
+            '''INSERT INTO play_history (song_id, fingerprint, played_at, duration_played)
+               VALUES (?, ?, datetime('now', 'localtime'), ?)''',
+            (song_id, fingerprint, duration_played or 0)
+        )
+
+        # 行为事件（画像数据源）
+        from services.events import record_event
+        record_event(
+            db, user_id=1, song_id=song_id, fingerprint=fingerprint,
+            event_type='play', duration_ratio=duration_ratio,
         )
 
         db.commit()
         cursor.close()
         db.close()
 
+        # 异步刷新画像（不阻塞播放上报）
+        from services.events import refresh_profile_async
+        refresh_profile_async(current_app._get_current_object())
+
         return jsonify({'success': True, 'play_count': new_count})
 
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ==================== 反馈事件（重构版新增） ====================
+
+@stats_bp.route('/feedback', methods=['POST'])
+def record_feedback():
+    """
+    记录播放反馈事件（skip / complete / like / dislike）。
+
+    请求体 (JSON):
+        {
+            "file_path": "D:/music/song.mp3",   // 用于匹配 song_id
+            "title": "...", "artist": "...", "album": "...",
+            "event": "skip",                     // skip | complete | like | dislike
+            "duration_ratio": 0.2                // 可选：播放进度比例
+        }
+
+    只写 events 表并触发画像刷新，不修改 play_stats / play_history。
+    """
+    try:
+        data = request.get_json(force=True)
+        event = (data.get('event') or '').strip().lower()
+        if event not in ('skip', 'complete', 'like', 'dislike'):
+            return jsonify({'error': 'event 必须是 skip/complete/like/dislike'}), 400
+
+        file_path = (data.get('file_path', '') or '').strip()
+        title = (data.get('title', '') or '').strip()
+        artist = (data.get('artist', '') or '').strip()
+        album = (data.get('album', '') or '').strip()
+        duration_ratio = data.get('duration_ratio')
+
+        fingerprint = make_fingerprint(title, artist, album) if title else ''
+        song_id = None
+        db = get_db()
+        cursor = db.cursor()
+        if file_path:
+            cursor.execute('SELECT id FROM songs WHERE file_path = ?', (file_path,))
+            row = cursor.fetchone()
+            if row:
+                song_id = row['id']
+
+        from services.events import record_event
+        record_event(
+            db, user_id=1, song_id=song_id, fingerprint=fingerprint,
+            event_type=event, duration_ratio=duration_ratio,
+        )
+        db.commit()
+        cursor.close()
+        db.close()
+
+        from services.events import refresh_profile_async
+        refresh_profile_async(current_app._get_current_object())
+
+        return jsonify({'success': True, 'event': event})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
