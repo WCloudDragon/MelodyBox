@@ -18,19 +18,8 @@ def _get_thumbs_dir():
     return os.path.join(base, 'melodybox', 'thumbs')
 
 
-from mutagen import File as MutagenFile
-from mutagen.mp3 import MP3
-from mutagen.flac import FLAC
-from mutagen.id3 import ID3, APIC
-from mutagen.flac import Picture
-
-# langdetect 可选依赖，缺失时检测返回空字符串
-try:
-    from langdetect import detect, DetectorFactory
-    DetectorFactory.seed = 0
-    _LANGDETECT_OK = True
-except ImportError:
-    _LANGDETECT_OK = False
+# 重型第三方库（mutagen / langdetect）改为函数内延迟导入，
+# 避免 Flask 启动时连带加载，加快开发与打包启动速度。
 
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.aac', '.m4a', '.wma', '.ape'}
 
@@ -122,6 +111,10 @@ def scan_directory(dir_path):
 
 def extract_cover(mutagen_file, file_path):
     """提取封面图片保存到临时目录，返回路径"""
+    from mutagen.mp3 import MP3
+    from mutagen.flac import FLAC
+    from mutagen.id3 import APIC
+
     cover_dir = _get_cover_dir()
     os.makedirs(cover_dir, exist_ok=True)
     picture_data = None
@@ -222,7 +215,10 @@ def detect_language(title, lyrics, artist=''):
     带字符集启发式规则：含假名→日语，含谚文→韩语，克服 langdetect 短文本误判。
     返回 ISO 639-1 语言代码（zh/ja/en/ko/de/ru/...），失败返回 ''。
     """
-    if not _LANGDETECT_OK:
+    try:
+        from langdetect import detect as _ld_detect, DetectorFactory
+        DetectorFactory.seed = 0
+    except Exception:
         return ''
 
     lyrics = (lyrics or '').strip()
@@ -270,7 +266,7 @@ def detect_language(title, lyrics, artist=''):
             return 'zh-cn'
 
     try:
-        lang = detect(text)
+        lang = _ld_detect(text)
         # langdetect 对短/纯 CJK 文本经常误判为 ko（如纯音乐日文标题）
         # 韩语必有谚文，无谚文 + langdetect=ko → 假阳性，根据假名修正
         if lang == 'ko' and not has_hangul_any and cjk_count > 0:
@@ -327,6 +323,9 @@ def clean_lyrics(text):
 
 def extract_lyrics(mutagen_file, file_path):
     """提取歌词"""
+    from mutagen.flac import FLAC
+    from mutagen.mp3 import MP3
+
     lyrics = ''
 
     try:
@@ -376,6 +375,8 @@ def parse_number_from_tag(tag, default=0):
 
 def parse_metadata(file_path):
     """解析单个文件的元数据，返回包含 fingerprint 字段的字典"""
+    from mutagen import File as MutagenFile
+
     result = {
         'title': '',
         'artist': '',

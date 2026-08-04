@@ -2,7 +2,6 @@ from flask import Blueprint, request, jsonify, current_app, send_file
 import os
 import sqlite3
 import threading
-from PIL import Image
 
 music_bp = Blueprint('music', __name__, url_prefix='/api/music')
 
@@ -415,6 +414,7 @@ def serve_cover():
     def _generate():
         tmp = thumb_path + '.tmp'
         try:
+            from PIL import Image
             img = Image.open(path)
             img.thumbnail((thumb, thumb), Image.LANCZOS)
             fmt = img.format or 'JPEG'
@@ -428,4 +428,3 @@ def serve_cover():
     resp.cache_control.max_age = 86400
     resp.cache_control.public = True
     return resp
-

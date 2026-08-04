@@ -8,7 +8,7 @@
     "build": "vite build",
     "flask": "D:\\flask_env\\Scripts\\python.exe backend\\app.py",
     "dev:all": "concurrently --kill-others \"npm run flask\" \"npm run dev\"",
-    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:dev": "concurrently \"vite\" \"wait-on --interval 150 http://127.0.0.1:5200 && electron .\"",
     "build:flask": "build-flask.bat",
     "electron:build": "npm run build:flask && vite build && electron-builder",
     "electron:build:quick": "vite build && electron-builder"

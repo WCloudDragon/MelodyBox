@@ -73,6 +73,27 @@ function stopFlask() {
   }
 }
 
+// 开发模式下 Flask 由 start-dev.bat 并行启动，这里等待它就绪
+function waitForFlaskReady(timeoutMs = 30000, intervalMs = 250) {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + timeoutMs
+    const check = () => {
+      const req = http.get('http://127.0.0.1:5000/api/health', (res) => {
+        res.resume()
+        if (res.statusCode === 200) resolve(true)
+        else retry()
+      })
+      req.on('error', retry)
+      req.setTimeout(2000, () => { req.destroy(); retry() })
+      function retry() {
+        if (Date.now() >= deadline) resolve(false)
+        else setTimeout(check, intervalMs)
+      }
+    }
+    check()
+  })
+}
+
 // 本地数据目录：%LOCALAPPDATA%/melodybox/（封面、缩略图等不会被系统清理）
 const DATA_DIR = path.join(process.env.LOCALAPPDATA, 'melodybox')
 
@@ -317,7 +338,7 @@ let _isFullScreen = false
 function getLyricsWindowUrl() {
   const isDev = !app.isPackaged
   if (isDev) {
-    return 'http://localhost:5173/#/desktop-lyrics'
+    return 'http://127.0.0.1:5200/#/desktop-lyrics'
   }
   return `file://${path.join(__dirname, '..', 'dist', 'index.html')}#/desktop-lyrics`
 }
@@ -433,7 +454,7 @@ function createWindow() {
   const isDev = !app.isPackaged
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173')
+    mainWindow.loadURL('http://127.0.0.1:5200')
     mainWindow.webContents.openDevTools()
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
@@ -567,7 +588,7 @@ let rhythmDebugWindow = null
 function getRhythmDebugUrl() {
   const isDev = !app.isPackaged
   if (isDev) {
-    return 'http://localhost:5173/#/rhythm-debug'
+    return 'http://127.0.0.1:5200/#/rhythm-debug'
   }
   return `file://${path.join(__dirname, '..', 'dist', 'index.html')}#/rhythm-debug`
 }
@@ -722,8 +743,12 @@ app.whenReady().then(async () => {
     }
   })
 
-  // 启动 Flask 后端（生产环境自动启动，开发环境跳过）
-  await startFlask()
+  // 启动 Flask 后端（生产环境自动启动并等待；开发环境由 start-dev.bat 并行启动，这里等它就绪）
+  if (!app.isPackaged) {
+    await waitForFlaskReady()
+  } else {
+    await startFlask()
+  }
 
   // 启动本地 HTTP 音频服务器
   await startAudioServer()

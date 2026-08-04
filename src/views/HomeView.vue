@@ -62,32 +62,36 @@
           </div>
         </div>
 
-        <!-- 推荐入口卡片网格 -->
-        <div v-if="hasRecData" class="rec-entries-wrap">
+        <!-- 推荐入口卡片网格（加载中显示骨架屏，不隐藏区块） -->
+        <div class="rec-entries-wrap">
           <button
-            v-if="recPage > 0"
+            v-if="!recPreviewsLoading && recPage > 0"
             class="rec-entries__arrow rec-entries__arrow--left"
             @click="recPage--"
           >‹</button>
           <div class="rec-entries" ref="recEntriesRef">
             <div class="rec-entries__track" :style="recTrackStyle">
-              <!-- 天气推荐卡片 -->
+              <template v-if="!recPreviewsLoading">
+              <!-- 天气推荐卡片（常显：未配置/加载中/失败也有占位状态） -->
               <div
-                v-if="weatherStore.isConfigured && !weatherStore.error"
                 class="rec-entry rec-entry--cover rec-entry--weather"
                 v-ripple
-                @click="$router.push(`/recommend?mode=weather&mood=${weatherStore.mood}`)"
+                @click="onWeatherCardClick"
               >
                 <div class="rec-entry__cover-bg">
-                  <img v-if="weatherCover" :src="weatherCover" class="rec-entry__cover-img" />
+                  <img
+                    v-if="weatherCardState === 'ready' && weatherCover"
+                    :src="weatherCover"
+                    class="rec-entry__cover-img"
+                  />
                   <div v-else class="rec-entry__cover-placeholder rec-entry__cover-placeholder--weather">
-                    <span>{{ weatherStore.weatherText }}</span>
+                    <span>{{ weatherCardEmoji }}</span>
                   </div>
                   <div class="rec-entry__cover-mask"></div>
                 </div>
                 <div class="rec-entry__info" :style="getCoverStyle(weatherStore.mood)">
-                  <div class="rec-entry__title">{{ weatherStore.weatherText }} {{ weatherStore.temp }}° · {{ weatherStore.city }}</div>
-                  <div class="rec-entry__subtitle">{{ weatherStore.suggestion }}</div>
+                  <div class="rec-entry__title">{{ weatherCardTitle }}</div>
+                  <div class="rec-entry__subtitle">{{ weatherCardSubtitle }}</div>
                 </div>
               </div>
 
@@ -149,10 +153,29 @@
                   <div class="rec-entry__subtitle">{{ m.sub }}</div>
                 </div>
               </div>
+              </template>
+
+              <!-- 加载骨架屏：推荐封面未就绪时显示 -->
+              <template v-else>
+                <div
+                  v-for="i in skeletonCount"
+                  :key="'skeleton-' + i"
+                  class="rec-entry rec-entry--cover rec-entry--skeleton"
+                >
+                  <div class="rec-entry__cover-bg">
+                    <div class="rec-entry__skeleton-block rec-entry__skeleton-cover"></div>
+                    <div class="rec-entry__cover-mask"></div>
+                  </div>
+                  <div class="rec-entry__info">
+                    <div class="rec-entry__skeleton-block rec-entry__skeleton-line--title"></div>
+                    <div class="rec-entry__skeleton-block rec-entry__skeleton-line--sub"></div>
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
           <button
-            v-if="recPage < recMaxPage"
+            v-if="!recPreviewsLoading && recPage < recMaxPage"
             class="rec-entries__arrow rec-entries__arrow--right"
             @click="recPage++"
           >›</button>
@@ -256,6 +279,7 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
 import { useAiStore } from '@/stores/ai'
 import { useWeatherStore } from '@/stores/weather'
+import { useRouter } from 'vue-router'
 import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } from '@/utils/scanNotify'
 import MusicCard from '@/components/music/MusicCard.vue'
 import { useModal } from '@/composables/useModal'
@@ -265,6 +289,7 @@ const libraryStore = useLibraryStore()
 const playerStore = usePlayerStore()
 const aiStore = useAiStore()
 const weatherStore = useWeatherStore()
+const router = useRouter()
 const modal = useModal()
 
 // 资源筛选
@@ -483,6 +508,53 @@ const weatherCover = computed(() => {
   return recPreviews.value?.moods?.[mood]?.cover || null
 })
 
+/**
+ * 天气卡片状态：ready（有数据）/ loading（获取中）/ unconfigured（未配置）/ error（请求失败）
+ * 卡片常显，任何状态下都可点击进入推荐页（未配置时跳配置页）。
+ */
+const weatherCardState = computed(() => {
+  if (weatherStore.weatherData) return 'ready'
+  if (weatherStore.isLoading) return 'loading'
+  if (weatherStore.error) {
+    return weatherStore.error === '未配置天气 API Key' ? 'unconfigured' : 'error'
+  }
+  // 初始未决状态按加载中处理，避免卡片闪烁
+  return 'loading'
+})
+
+const weatherCardEmoji = computed(() => ({
+  ready: '🌤',
+  loading: '⏳',
+  unconfigured: '🌤',
+  error: '🌧',
+}[weatherCardState.value]))
+
+const weatherCardTitle = computed(() => {
+  if (weatherCardState.value === 'ready') {
+    return `${weatherStore.weatherText} ${weatherStore.temp}° · ${weatherStore.city}`
+  }
+  if (weatherCardState.value === 'loading') return '正在获取天气…'
+  return '天气推荐'
+})
+
+const weatherCardSubtitle = computed(() => {
+  switch (weatherCardState.value) {
+    case 'ready': return weatherStore.suggestion
+    case 'loading': return '获取中，先用默认推荐'
+    case 'unconfigured': return '配置后开启天气场景推荐'
+    case 'error': return '天气服务暂不可用，使用默认推荐'
+  }
+  return ''
+})
+
+function onWeatherCardClick() {
+  if (weatherCardState.value === 'unconfigured') {
+    router.push('/admin')
+    return
+  }
+  router.push(`/recommend?mode=weather&mood=${weatherStore.mood}`)
+}
+
 // 推荐卡片分页
 const recEntriesRef = ref(null)
 const recPage = ref(0)
@@ -501,9 +573,8 @@ function updateCardsPerPage() {
 }
 
 const recTotalCards = computed(() => {
-  let n = 2 + moods.length // daily + hidden_gem + moods
-  if (weatherStore.isConfigured && !weatherStore.error) n++
-  return n
+  // daily + hidden_gem + weather + moods（天气卡常显）
+  return 3 + moods.length
 })
 
 const recMaxPage = computed(() => {
@@ -533,7 +604,10 @@ onUnmounted(() => {
 // 推荐预览数据（单一数据源：ai store）
 const recPreviews = computed(() => aiStore.previews)
 const coverColors = computed(() => aiStore.coverColors)
-const hasRecData = computed(() => aiStore.embeddingStatus.pending === 0 || Object.keys(recPreviews.value).length > 0)
+
+// 推荐封面加载状态：加载中显示骨架屏，加载完成/失败后显示真实卡片
+const recPreviewsLoading = computed(() => aiStore.previewsLoading)
+const skeletonCount = computed(() => Math.max(recCardsPerPage.value, 1))
 
 // 启动时从 store 缓存恢复预览数据（store 内部处理 localStorage）
 aiStore.loadPreviews()
@@ -874,6 +948,40 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
 /* 天气卡片 placeholder 背景 */
 .rec-entry__cover-placeholder--weather {
   background: linear-gradient(135deg, #6366f1, #818cf8);
+}
+
+/* 加载骨架屏：封面与文字未就绪时的占位 */
+.rec-entry--skeleton {
+  cursor: default;
+}
+.rec-entry__skeleton-block {
+  background: linear-gradient(
+    110deg,
+    var(--bg-tertiary, #23232d) 8%,
+    var(--bg-secondary, #2a2a35) 18%,
+    var(--bg-tertiary, #23232d) 33%
+  );
+  background-size: 200% 100%;
+  animation: recSkeletonShimmer 1.4s ease-in-out infinite;
+}
+.rec-entry__skeleton-cover {
+  width: 100%;
+  height: 100%;
+}
+.rec-entry__skeleton-line--title {
+  height: 14px;
+  width: 70%;
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+.rec-entry__skeleton-line--sub {
+  height: 11px;
+  width: 45%;
+  border-radius: 5px;
+}
+@keyframes recSkeletonShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .rec-entry__title {

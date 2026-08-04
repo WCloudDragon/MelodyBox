@@ -30,6 +30,7 @@ export const useAiStore = defineStore('ai', () => {
 
   // 首页封面预览数据（单一数据源）
   const previews = ref({})
+  const previewsLoading = ref(false)
   const coverColors = ref({})
 
   // Embedding 状态
@@ -159,6 +160,7 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   async function loadPreviews(force = false) {
+    if (!force && previewsLoading.value) return
     if (!force) {
       const cached = _loadPreviewsCache()
       if (cached && Object.keys(cached).length > 0) {
@@ -166,6 +168,7 @@ export const useAiStore = defineStore('ai', () => {
         return
       }
     }
+    previewsLoading.value = true
     try {
       const res = await fetch(`${AI_BASE}/recommend/previews`)
       if (res.ok) {
@@ -174,7 +177,11 @@ export const useAiStore = defineStore('ai', () => {
         _savePreviewsCache(data)
         await extractAllColors()
       }
-    } catch {}
+    } catch {
+      // 失败时保持现有 previews，加载状态复位
+    } finally {
+      previewsLoading.value = false
+    }
   }
 
   // ==================== 封面颜色提取 ====================
@@ -324,6 +331,7 @@ export const useAiStore = defineStore('ai', () => {
     currentMode,
     currentSub,
     previews,
+    previewsLoading,
     coverColors,
     embeddingStatus,
     isGenerating,
