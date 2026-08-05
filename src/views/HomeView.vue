@@ -75,8 +75,7 @@
               :class="{ 'cards-revealed': cardsRevealed }"
               :style="recTrackStyle"
             >
-              <template v-if="!recPreviewsLoading">
-              <!-- 天气推荐卡片（常显：未配置/加载中/失败也有占位状态） -->
+              <!-- 天气推荐卡片（常显：加载中显示骨架内容，尺寸与真实卡片一致） -->
               <div
                 class="rec-entry rec-entry--cover rec-entry--weather"
                 v-ripple
@@ -84,18 +83,28 @@
               >
                 <div class="rec-entry__cover-bg">
                   <img
-                    v-if="weatherCardState === 'ready' && weatherCover"
+                    v-if="!recPreviewsLoading && weatherCardState === 'ready' && weatherCover"
                     :src="weatherCover"
                     class="rec-entry__cover-img"
                   />
+                  <div
+                    v-else-if="recPreviewsLoading"
+                    class="rec-entry__skeleton-block rec-entry__skeleton-cover"
+                  ></div>
                   <div v-else class="rec-entry__cover-placeholder rec-entry__cover-placeholder--weather">
                     <span>{{ weatherCardEmoji }}</span>
                   </div>
                   <div class="rec-entry__cover-mask"></div>
                 </div>
                 <div class="rec-entry__info" :style="getCoverStyle(weatherStore.mood)">
-                  <div class="rec-entry__title">{{ weatherCardTitle }}</div>
-                  <div class="rec-entry__subtitle">{{ weatherCardSubtitle }}</div>
+                  <template v-if="recPreviewsLoading">
+                    <div class="rec-entry__skeleton-block rec-entry__skeleton-line--title"></div>
+                    <div class="rec-entry__skeleton-block rec-entry__skeleton-line--sub"></div>
+                  </template>
+                  <template v-else>
+                    <div class="rec-entry__title">{{ weatherCardTitle }}</div>
+                    <div class="rec-entry__subtitle">{{ weatherCardSubtitle }}</div>
+                  </template>
                 </div>
               </div>
 
@@ -106,15 +115,29 @@
                 @click="$router.push('/recommend?mode=comprehensive')"
               >
                 <div class="rec-entry__cover-bg">
-                  <img v-if="getPreview('daily')?.cover" :src="getPreview('daily').cover" class="rec-entry__cover-img" />
+                  <img
+                    v-if="!recPreviewsLoading && getPreview('daily')?.cover"
+                    :src="getPreview('daily').cover"
+                    class="rec-entry__cover-img"
+                  />
+                  <div
+                    v-else-if="recPreviewsLoading"
+                    class="rec-entry__skeleton-block rec-entry__skeleton-cover"
+                  ></div>
                   <div v-else class="rec-entry__cover-placeholder">
                     <span>✨</span>
                   </div>
                   <div class="rec-entry__cover-mask"></div>
                 </div>
                 <div class="rec-entry__info" :style="getCoverStyle('daily')">
-                  <div class="rec-entry__title">每日推荐</div>
-                  <div class="rec-entry__subtitle">根据你的听歌偏好</div>
+                  <template v-if="recPreviewsLoading">
+                    <div class="rec-entry__skeleton-block rec-entry__skeleton-line--title"></div>
+                    <div class="rec-entry__skeleton-block rec-entry__skeleton-line--sub"></div>
+                  </template>
+                  <template v-else>
+                    <div class="rec-entry__title">每日推荐</div>
+                    <div class="rec-entry__subtitle">根据你的听歌偏好</div>
+                  </template>
                 </div>
               </div>
 
@@ -125,15 +148,29 @@
                 @click="$router.push('/recommend?mode=hidden_gem')"
               >
                 <div class="rec-entry__cover-bg">
-                  <img v-if="getPreview('hidden_gem')?.cover" :src="getPreview('hidden_gem').cover" class="rec-entry__cover-img" />
+                  <img
+                    v-if="!recPreviewsLoading && getPreview('hidden_gem')?.cover"
+                    :src="getPreview('hidden_gem').cover"
+                    class="rec-entry__cover-img"
+                  />
+                  <div
+                    v-else-if="recPreviewsLoading"
+                    class="rec-entry__skeleton-block rec-entry__skeleton-cover"
+                  ></div>
                   <div v-else class="rec-entry__cover-placeholder rec-entry__cover-placeholder--gem">
                     <span>💎</span>
                   </div>
                   <div class="rec-entry__cover-mask"></div>
                 </div>
                 <div class="rec-entry__info" :style="getCoverStyle('hidden_gem')">
-                  <div class="rec-entry__title">冷门宝藏</div>
-                  <div class="rec-entry__subtitle">被忽视的好歌</div>
+                  <template v-if="recPreviewsLoading">
+                    <div class="rec-entry__skeleton-block rec-entry__skeleton-line--title"></div>
+                    <div class="rec-entry__skeleton-block rec-entry__skeleton-line--sub"></div>
+                  </template>
+                  <template v-else>
+                    <div class="rec-entry__title">冷门宝藏</div>
+                    <div class="rec-entry__subtitle">被忽视的好歌</div>
+                  </template>
                 </div>
               </div>
 
@@ -146,36 +183,31 @@
                 @click="$router.push(`/recommend?mode=mood&mood=${m.key}`)"
               >
                 <div class="rec-entry__cover-bg">
-                  <img v-if="getPreview(m.key)?.cover" :src="getPreview(m.key).cover" class="rec-entry__cover-img" />
+                  <img
+                    v-if="!recPreviewsLoading && getPreview(m.key)?.cover"
+                    :src="getPreview(m.key).cover"
+                    class="rec-entry__cover-img"
+                  />
+                  <div
+                    v-else-if="recPreviewsLoading"
+                    class="rec-entry__skeleton-block rec-entry__skeleton-cover"
+                  ></div>
                   <div v-else class="rec-entry__cover-placeholder" :style="{ background: m.gradient }">
                     <span>{{ m.icon }}</span>
                   </div>
                   <div class="rec-entry__cover-mask"></div>
                 </div>
                 <div class="rec-entry__info" :style="getCoverStyle(m.key)">
-                  <div class="rec-entry__title">{{ m.label }}</div>
-                  <div class="rec-entry__subtitle">{{ m.sub }}</div>
-                </div>
-              </div>
-              </template>
-
-              <!-- 加载骨架屏：推荐封面未就绪时显示 -->
-              <template v-else>
-                <div
-                  v-for="i in skeletonCount"
-                  :key="'skeleton-' + i"
-                  class="rec-entry rec-entry--cover rec-entry--skeleton"
-                >
-                  <div class="rec-entry__cover-bg">
-                    <div class="rec-entry__skeleton-block rec-entry__skeleton-cover"></div>
-                    <div class="rec-entry__cover-mask"></div>
-                  </div>
-                  <div class="rec-entry__info">
+                  <template v-if="recPreviewsLoading">
                     <div class="rec-entry__skeleton-block rec-entry__skeleton-line--title"></div>
                     <div class="rec-entry__skeleton-block rec-entry__skeleton-line--sub"></div>
-                  </div>
+                  </template>
+                  <template v-else>
+                    <div class="rec-entry__title">{{ m.label }}</div>
+                    <div class="rec-entry__subtitle">{{ m.sub }}</div>
+                  </template>
                 </div>
-              </template>
+              </div>
             </div>
           </div>
           <button
@@ -316,7 +348,10 @@ watch(() => libraryStore.scanProgress, (p) => {
     })
   }
 })
-onBeforeUnmount(clearScanNotify)
+onBeforeUnmount(() => {
+  clearScanNotify()
+  if (revealTimer) clearTimeout(revealTimer)
+})
 
 const hasMusic = computed(() => libraryStore.tracks.length > 0 || libraryStore.cloudTracks.length > 0)
 const recentTracks = computed(() => libraryStore.allTracks.slice(0, 12))
@@ -609,15 +644,21 @@ onUnmounted(() => {
 const recPreviews = computed(() => aiStore.previews)
 const coverColors = computed(() => aiStore.coverColors)
 
-// 推荐封面加载状态：加载中显示骨架屏，加载完成/失败后显示真实卡片
+// 推荐封面加载状态：加载中卡片内部显示骨架内容，加载完成切换为真实内容
 const recPreviewsLoading = computed(() => aiStore.previewsLoading)
-const skeletonCount = computed(() => Math.max(recCardsPerPage.value, 1))
 
-// 骨架 → 真实卡片时只播放一次入场动画（返回首页不重复触发）
+// 骨架 → 真实卡片时播放一次性入场动画：动画结束后移除类，
+// 避免 keep-alive 切回首页时 DOM 重挂导致动画重播
 const cardsRevealed = ref(false)
+let revealTimer = null
 watch(recPreviewsLoading, (loading) => {
   if (!loading) {
     cardsRevealed.value = true
+    if (revealTimer) clearTimeout(revealTimer)
+    revealTimer = setTimeout(() => {
+      cardsRevealed.value = false
+      revealTimer = null
+    }, 700)
   }
 })
 
@@ -962,10 +1003,7 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
   background: linear-gradient(135deg, #6366f1, #818cf8);
 }
 
-/* 加载骨架屏：封面与文字未就绪时的占位 */
-.rec-entry--skeleton {
-  cursor: default;
-}
+/* 加载骨架内容：封面与文字未就绪时显示（行高与真实文字对齐，保证卡片尺寸一致） */
 .rec-entry__skeleton-block {
   background: linear-gradient(
     110deg,
@@ -981,13 +1019,13 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
   height: 100%;
 }
 .rec-entry__skeleton-line--title {
-  height: 14px;
+  height: 20px;
   width: 70%;
   border-radius: 6px;
-  margin-bottom: 6px;
+  margin-bottom: 3px;
 }
 .rec-entry__skeleton-line--sub {
-  height: 11px;
+  height: 17px;
   width: 45%;
   border-radius: 5px;
 }
@@ -996,27 +1034,9 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
   100% { background-position: -200% 0; }
 }
 
-/* 骨架 → 真实卡片时播放一次入场动画（返回首页不重复触发） */
-.rec-entries__track.cards-revealed .rec-entry--cover:not(.rec-entry--skeleton) {
+/* 骨架 → 真实卡片时播放一次透明度渐入（仅透明度，无位移/无高光） */
+.rec-entries__track.cards-revealed .rec-entry--cover {
   animation: recCardReveal 0.55s ease-out both;
-}
-.rec-entries__track.cards-revealed .rec-entry--cover:not(.rec-entry--skeleton) .rec-entry__cover-bg::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 60%;
-  height: 100%;
-  z-index: 6;
-  pointer-events: none;
-  background: linear-gradient(
-    105deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.28) 50%,
-    transparent 100%
-  );
-  transform: translateX(-160%) skewX(-12deg);
-  animation: recCardShine 0.9s ease-out 0.12s 1 forwards;
 }
 @keyframes recCardReveal {
   from {
@@ -1024,11 +1044,6 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
   }
   to {
     opacity: 1;
-  }
-}
-@keyframes recCardShine {
-  to {
-    transform: translateX(320%) skewX(-12deg);
   }
 }
 
