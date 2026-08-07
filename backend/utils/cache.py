@@ -31,6 +31,24 @@ class TTLCache:
                 return None
             return value
 
+    def sweep(self):
+        """
+        清理全部已过期条目。
+
+        原实现只在下一次访问同一 key 时惰性删除过期项；推荐缓存等 key 带
+        日期/版本维度，旧 key 永远不会再被访问，导致字典无界增长。
+        该方法是全量清理，由后台守护线程定期调用。
+        """
+        now = time.time()
+        with self._lock:
+            expired = [
+                key for key, (expire_at, _value) in self._store.items()
+                if expire_at <= now
+            ]
+            for key in expired:
+                del self._store[key]
+            return len(expired)
+
     def set(self, key, value, ttl):
         """设置缓存值，ttl 单位为秒"""
         with self._lock:
@@ -54,3 +72,16 @@ class TTLCache:
 
 # 全局单例
 cache = TTLCache()
+
+
+def _sweeper_loop():
+    """后台守护线程：每 60 秒清理一次过期缓存，防止 key 长期累积。"""
+    while True:
+        time.sleep(60)
+        try:
+            cache.sweep()
+        except Exception:
+            pass
+
+
+threading.Thread(target=_sweeper_loop, daemon=True).start()

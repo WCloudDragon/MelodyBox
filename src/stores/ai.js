@@ -18,6 +18,10 @@ const COLOR_CACHE_KEY = 'melodybox_cover_colors'
  * - 首页封面预览保留本地缓存（展示数据），与推荐列表同源由后端保证。
  */
 export const useAiStore = defineStore('ai', () => {
+  // 轮询定时器句柄（单实例：新轮询会先停掉旧的，避免叠加）
+  let _downloadPollTimer = null
+  let _embeddingPollTimer = null
+
   const recommendations = ref([])
   const isLoaded = ref(false)
   const isLoading = ref(false)
@@ -252,19 +256,25 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   function pollDownloadProgress(intervalMs = 1500) {
+    // 单实例去重：新轮询先停掉旧的，避免重复点击导致定时器叠加
+    if (_downloadPollTimer) {
+      clearInterval(_downloadPollTimer)
+      _downloadPollTimer = null
+    }
     isDownloading.value = true
     downloadProgress.value = {
       status: 'preparing', percent: 0, downloaded_mb: 0, total_mb: 0,
       message: '检测 GPU 环境中...',
     }
-    const timer = setInterval(async () => {
+    _downloadPollTimer = setInterval(async () => {
       try {
         const res = await fetch(apiUrl('/api/ai/model-download/progress'))
         if (res.ok) {
           downloadProgress.value = await res.json()
           const st = downloadProgress.value.status
           if (st === 'completed' || st === 'error' || st === 'restarting' || st === 'idle') {
-            clearInterval(timer)
+            clearInterval(_downloadPollTimer)
+            _downloadPollTimer = null
             isDownloading.value = false
           }
         }
@@ -273,7 +283,8 @@ export const useAiStore = defineStore('ai', () => {
       }
     }, intervalMs)
     return () => {
-      clearInterval(timer)
+      clearInterval(_downloadPollTimer)
+      _downloadPollTimer = null
       isDownloading.value = false
     }
   }
@@ -295,16 +306,38 @@ export const useAiStore = defineStore('ai', () => {
   }
 
   function pollEmbeddingStatus(intervalMs = 2000, onDone) {
-    const timer = setInterval(async () => {
+    // 单实例去重：同一时刻只有一个状态轮询在跑
+    if (_embeddingPollTimer) {
+      clearInterval(_embeddingPollTimer)
+      _embeddingPollTimer = null
+    }
+    _embeddingPollTimer = setInterval(async () => {
       await loadEmbeddingStatus()
       const st = embeddingStatus.value
       if (st.pending === 0 && !st.audio_processing) {
-        clearInterval(timer)
+        clearInterval(_embeddingPollTimer)
+        _embeddingPollTimer = null
         if (onDone) onDone()
         return
       }
     }, intervalMs)
-    return () => clearInterval(timer)
+    return () => {
+      clearInterval(_embeddingPollTimer)
+      _embeddingPollTimer = null
+    }
+  }
+
+  /** 停止全部轮询（生成流程结束/页面卸载时调用） */
+  function stopPolls() {
+    if (_downloadPollTimer) {
+      clearInterval(_downloadPollTimer)
+      _downloadPollTimer = null
+    }
+    if (_embeddingPollTimer) {
+      clearInterval(_embeddingPollTimer)
+      _embeddingPollTimer = null
+    }
+    isDownloading.value = false
   }
 
   async function refreshMoodScores() {
@@ -347,6 +380,7 @@ export const useAiStore = defineStore('ai', () => {
     generateEmbeddings,
     pollEmbeddingStatus,
     pollDownloadProgress,
+    stopPolls,
     refreshMoodScores,
   }
 })

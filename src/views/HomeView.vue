@@ -317,6 +317,7 @@ import { useAiStore } from '@/stores/ai'
 import { useWeatherStore } from '@/stores/weather'
 import { useRouter } from 'vue-router'
 import { apiUrl } from '@/config/api'
+import { ElMessage } from 'element-plus'
 import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } from '@/utils/scanNotify'
 import MusicCard from '@/components/music/MusicCard.vue'
 import { useModal } from '@/composables/useModal'
@@ -352,6 +353,7 @@ watch(() => libraryStore.scanProgress, (p) => {
 onBeforeUnmount(() => {
   clearScanNotify()
   if (revealTimer) clearTimeout(revealTimer)
+  aiStore.stopPolls()
 })
 
 const hasMusic = computed(() => libraryStore.tracks.length > 0 || libraryStore.cloudTracks.length > 0)
@@ -698,6 +700,11 @@ const topLangs = computed(() => {
 })
 
 async function handleGenerateEmbeddings() {
+  // 生成进行中：忽略重复点击，避免轮询定时器叠加
+  if (generatingEmbeddings.value) {
+    ElMessage.warning('向量生成中，请稍候...')
+    return
+  }
   // 先获取当前模型路径配置
   let modelPath = '默认路径'
   try {
@@ -719,6 +726,8 @@ async function handleGenerateEmbeddings() {
   }
 
   generatingEmbeddings.value = true
+  // 先清掉可能残留的旧轮询，再启动新的（单实例）
+  aiStore.stopPolls()
   // 启动模型下载进度轮询（generateEmbeddings 内部先下载模型再生成向量）
   aiStore.pollDownloadProgress(1500)
   await aiStore.generateEmbeddings()
