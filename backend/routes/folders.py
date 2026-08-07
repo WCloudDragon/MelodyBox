@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify, current_app
 import os
 import threading
 import traceback
+from functools import wraps
+from routes.auth import token_required
 
 folders_bp = Blueprint('folders', __name__, url_prefix='/api/folders')
 
@@ -18,6 +20,82 @@ def handle_preflight():
 
 def get_db():
     return current_app.get_db()
+
+
+def _admin_required(f):
+    """管理员权限装饰器（需配合 token_required 使用）"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if getattr(request, 'user_role', None) != 'admin':
+            return jsonify({'error': '仅管理员可操作'}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
+def _list_drive_roots():
+    """Windows 下列出盘符根目录；非 Windows 返回 ['/']"""
+    if os.name != 'nt':
+        return [os.path.abspath(os.sep)]
+    roots = []
+    for letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
+        root = f'{letter}:\\'
+        if os.path.exists(root):
+            roots.append(root)
+    return roots
+
+
+@folders_bp.route('/browse')
+@token_required
+@_admin_required
+def browse_directory():
+    """
+    服务器目录浏览（B/S 管理端选目录用，仅管理员）。
+
+    GET /api/folders/browse?path=D:\\Music
+    返回该目录下的子目录列表；path 为空时返回盘符根目录。
+    """
+    path = (request.args.get('path') or '').strip()
+
+    if not path:
+        roots = _list_drive_roots()
+        return jsonify({
+            'path': '',
+            'parent': None,
+            'exists': True,
+            'is_dir': True,
+            'subdirs': roots,
+            'error': None,
+        })
+
+    if not os.path.isabs(path):
+        return jsonify({'error': '必须是绝对路径'}), 400
+    if not os.path.exists(path):
+        return jsonify({'error': '路径不存在'}), 404
+    if not os.path.isdir(path):
+        return jsonify({'error': '不是文件夹'}), 400
+
+    try:
+        subdirs = sorted([
+            os.path.join(path, name)
+            for name in os.listdir(path)
+            if os.path.isdir(os.path.join(path, name))
+        ], key=lambda p: p.lower())
+    except (PermissionError, OSError):
+        subdirs = []
+
+    parent = os.path.dirname(os.path.abspath(path))
+    # 盘符根目录的上级仍是自己
+    if parent == path:
+        parent = None
+
+    return jsonify({
+        'path': path,
+        'parent': parent,
+        'exists': True,
+        'is_dir': True,
+        'subdirs': subdirs,
+        'error': None,
+    })
 
 
 def _dir_stats(db, dir_path):

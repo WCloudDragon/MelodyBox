@@ -316,6 +316,7 @@ import { usePlayerStore } from '@/stores/player'
 import { useAiStore } from '@/stores/ai'
 import { useWeatherStore } from '@/stores/weather'
 import { useRouter } from 'vue-router'
+import { apiUrl } from '@/config/api'
 import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } from '@/utils/scanNotify'
 import MusicCard from '@/components/music/MusicCard.vue'
 import { useModal } from '@/composables/useModal'
@@ -700,7 +701,7 @@ async function handleGenerateEmbeddings() {
   // 先获取当前模型路径配置
   let modelPath = '默认路径'
   try {
-    const res = await fetch('http://127.0.0.1:5000/api/ai/model-dir')
+    const res = await fetch(apiUrl('/api/ai/model-dir'))
     if (res.ok) {
       const data = await res.json()
       modelPath = data.model_cache_dir || 'C:\\Users\\用户名\\.cache\\huggingface'

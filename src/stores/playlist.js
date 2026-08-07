@@ -1,13 +1,11 @@
 import { defineStore } from 'pinia'
 import { shallowRef, triggerRef, ref, computed, markRaw } from 'vue'
-
-const API_BASE = 'http://127.0.0.1:5000/api/playlists'
-const COVER_API = 'http://127.0.0.1:5000/api/music/cover'
+import { apiUrl, coverUrl } from '@/config/api'
 
 function fixCoverUrl(coverPath) {
   if (!coverPath) return null
   if (coverPath.startsWith('http://') || coverPath.startsWith('https://')) return coverPath
-  return `${COVER_API}?path=${encodeURIComponent(coverPath)}`
+  return coverUrl(coverPath)
 }
 
 export const usePlaylistStore = defineStore('playlist', () => {
@@ -20,7 +18,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
   // 从后端加载歌单列表
   async function loadPlaylists() {
     try {
-      const res = await fetch(API_BASE)
+      const res = await fetch(apiUrl('/api/playlists'))
       if (!res.ok) { isLoaded.value = true; return }
       const data = await res.json()
       playlists.value = data.map(pl => {
@@ -38,7 +36,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
     loadedPlaylists.add(playlistId)
 
     try {
-      const res = await fetch(`${API_BASE}/${playlistId}/songs`)
+      const res = await fetch(apiUrl(`/api/playlists/${playlistId}/songs`))
       if (!res.ok) return
       const songs = await res.json()
       songs.forEach(s => {
@@ -62,7 +60,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
   // 创建歌单
   async function createPlaylist(name, description = '') {
     try {
-      const res = await fetch(API_BASE, {
+      const res = await fetch(apiUrl('/api/playlists'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, description })
@@ -79,7 +77,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
   // 删除歌单
   async function deletePlaylist(id) {
     try {
-      const res = await fetch(`${API_BASE}/${id}`, { method: 'DELETE' })
+      const res = await fetch(apiUrl(`/api/playlists/${id}`), { method: 'DELETE' })
       if (!res.ok) return
       const idx = playlists.value.findIndex(p => p.id === id)
       if (idx !== -1) {
@@ -94,7 +92,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
   // 重命名歌单
   async function renamePlaylist(id, name) {
     try {
-      await fetch(`${API_BASE}/${id}`, {
+      await fetch(apiUrl(`/api/playlists/${id}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name })
@@ -111,13 +109,13 @@ export const usePlaylistStore = defineStore('playlist', () => {
   async function addToPlaylist(playlistId, track) {
     try {
       // 需要在 songs 表中查找这首歌的 id
-      const byPathRes = await fetch(`http://127.0.0.1:5000/api/music/songs/by-path?path=${encodeURIComponent(track.path)}`)
+      const byPathRes = await fetch(apiUrl(`/api/music/songs/by-path?path=${encodeURIComponent(track.path)}`))
       if (!byPathRes.ok) return
       const songData = await byPathRes.json()
       if (!songData.path) return
 
       // 用 file_path 反查 song_id（后端表结构支持）
-      const res = await fetch(`${API_BASE}/${playlistId}/songs`, {
+      const res = await fetch(apiUrl(`/api/playlists/${playlistId}/songs`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ song_path: track.path })
@@ -140,7 +138,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
   async function removeFromPlaylist(playlistId, trackPath) {
     try {
       // 需要找 song_id: 先查
-      const byPathRes = await fetch(`http://127.0.0.1:5000/api/music/songs/by-path?path=${encodeURIComponent(trackPath)}`)
+      const byPathRes = await fetch(apiUrl(`/api/music/songs/by-path?path=${encodeURIComponent(trackPath)}`))
       if (!byPathRes.ok) return
       const songData = await byPathRes.json()
       // 直接在本地 tracks 中找
@@ -148,7 +146,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
       if (!pl) return
 
       // 用 DELETE 端点
-      const res = await fetch(`${API_BASE}/${playlistId}/songs/by-path?path=${encodeURIComponent(trackPath)}`, {
+      const res = await fetch(apiUrl(`/api/playlists/${playlistId}/songs/by-path?path=${encodeURIComponent(trackPath)}`), {
         method: 'DELETE'
       })
       loadedPlaylists.delete(playlistId)

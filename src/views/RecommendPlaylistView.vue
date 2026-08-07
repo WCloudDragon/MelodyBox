@@ -74,6 +74,7 @@ import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 import { useAiStore } from '@/stores/ai'
 import { pathToUrlSync } from '@/stores/library'
+import { apiUrl, coverUrl } from '@/config/api'
 import { useTrackList } from '@/composables/useTrackList'
 import TrackTable from '@/components/music/TrackTable.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
@@ -188,7 +189,7 @@ function normalizeTracks(data) {
     return {
       ...t,
       path,
-      cover: t.cover_url ? (t.cover_url.startsWith('http') ? t.cover_url : `http://127.0.0.1:5000/api/music/cover?path=${encodeURIComponent(t.cover_url)}`) : null,
+      cover: t.cover_url ? coverUrl(t.cover_url) : null,
       url: pathToUrlSync(path),
     }
   })
@@ -211,7 +212,7 @@ async function fetchRecommendations() {
     seed = `&seed=${Math.abs(hash)}`
   }
 
-  let url = `http://127.0.0.1:5000/api/ai/recommend?limit=20&mode=${mode}${seed}`
+  let url = `${apiUrl('/api/ai/recommend')}?limit=20&mode=${mode}${seed}`
   if (lang) url += `&lang=${encodeURIComponent(lang)}`
   if (effectiveMood) url += `&mood=${encodeURIComponent(effectiveMood)}`
 

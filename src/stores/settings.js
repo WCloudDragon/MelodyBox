@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-
-const API_BASE = 'http://127.0.0.1:5000/api/settings'
+import { apiUrl } from '@/config/api'
 
 // 后端 snake_case ↔ 前端 camelCase 映射
 const SNAKE_TO_CAMEL = {
@@ -74,7 +73,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function loadSettings() {
     try {
-      const res = await fetch(API_BASE)
+      const res = await fetch(apiUrl('/api/settings'))
       if (!res.ok) return
       const data = await res.json()
       theme.value = data.theme ?? 'dark'
@@ -136,7 +135,7 @@ export const useSettingsStore = defineStore('settings', () => {
         body.weatherCredentialId = weatherCredentialId.value || ''
         body.weatherProjectId = weatherProjectId.value || ''
         body.weatherApiHost = weatherApiHost.value || 'api.qweather.com'
-        await fetch(API_BASE, {
+        await fetch(apiUrl('/api/settings'), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body)

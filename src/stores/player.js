@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useAiStore } from './ai'
+import { apiUrl } from '@/config/api'
 
 export const usePlayerStore = defineStore('player', () => {
   // 播放队列
@@ -185,7 +186,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   async function _trackPlay(track) {
     try {
-      await fetch('http://127.0.0.1:5000/api/stats/play', {
+      await fetch(apiUrl('/api/stats/play'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

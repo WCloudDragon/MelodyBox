@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-
-const API_BASE = 'http://127.0.0.1:5000/api/auth'
+import { apiUrl, authHeaders as makeAuthHeaders } from '@/config/api'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
@@ -31,7 +30,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function login(username, password) {
-    const res = await fetch(`${API_BASE}/login`, {
+    const res = await fetch(apiUrl('/api/auth/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
@@ -45,7 +44,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function register(username, password, email = '') {
-    const res = await fetch(`${API_BASE}/register`, {
+    const res = await fetch(apiUrl('/api/auth/register'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password, email })
@@ -58,8 +57,8 @@ export const useAuthStore = defineStore('auth', () => {
   async function fetchProfile() {
     if (!token.value) return
     try {
-      const res = await fetch(`${API_BASE}/profile`, {
-        headers: { Authorization: `Bearer ${token.value}` }
+      const res = await fetch(apiUrl('/api/auth/profile'), {
+        headers: makeAuthHeaders(token.value)
       })
       if (!res.ok) throw new Error('登录已过期')
       user.value = await res.json()
@@ -76,11 +75,11 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function changePassword(oldPassword, newPassword) {
-    const res = await fetch(`${API_BASE}/password`, {
+    const res = await fetch(apiUrl('/api/auth/password'), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token.value}`
+        ...makeAuthHeaders(token.value)
       },
       body: JSON.stringify({ oldPassword, newPassword })
     })
@@ -90,11 +89,11 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function deleteAccount(password) {
-    const res = await fetch(`${API_BASE}/account`, {
+    const res = await fetch(apiUrl('/api/auth/account'), {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${token.value}`
+        ...makeAuthHeaders(token.value)
       },
       body: JSON.stringify({ password })
     })
@@ -105,7 +104,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function authHeaders() {
-    return token.value ? { Authorization: `Bearer ${token.value}` } : {}
+    return makeAuthHeaders(token.value)
   }
 
   loadFromStorage()

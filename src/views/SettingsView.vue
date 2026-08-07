@@ -471,7 +471,7 @@ const settingsStore = useSettingsStore()
 const page = ref('menu')
 
 // ==================== AI 模型路径 ====================
-const AI_BASE = 'http://127.0.0.1:5000/api/ai'
+import { apiUrl } from '@/config/api'
 
 const modelDirInput = ref('')
 const modelDefaultPath = ref('')
@@ -481,7 +481,7 @@ const needRestart = ref(false)
 
 async function loadModelDir() {
   try {
-    const res = await fetch(`${AI_BASE}/model-dir`)
+    const res = await fetch(apiUrl('/api/ai/model-dir'))
     if (res.ok) {
       const data = await res.json()
       modelDirInput.value = data.model_cache_dir || ''
@@ -510,7 +510,7 @@ async function saveModelDir() {
   savingModelDir.value = true
   modelDirSaved.value = false
   try {
-    const res = await fetch(`${AI_BASE}/model-dir`, {
+    const res = await fetch(apiUrl('/api/ai/model-dir'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model_cache_dir: modelDirInput.value })

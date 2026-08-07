@@ -1,40 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import {
+  apiUrl,
+  audioUrl,
+  cloudStreamUrl,
+  coverUrl,
+  initAudioPort,
+} from '@/config/api'
 
-const API_BASE = 'http://127.0.0.1:5000/api/music'
-const CLOUD_API = 'http://127.0.0.1:5000/api/cloud'
-
-// 音频服务器端口（通过 IPC 从主进程获取）
-let audioPort = 51234
-let portInitialized = false
-
-async function initAudioPort() {
-  if (portInitialized) return
-  portInitialized = true
-  if (window.electronAPI) {
-    try {
-      const port = await window.electronAPI.getAudioServerPort()
-      if (port) audioPort = port
-    } catch {}
-  }
-}
-
-// 本地文件路径 → HTTP 音频流 URL
+// 本地文件路径 → HTTP 音频流 URL（保留原导出名，内部也使用）
 export function pathToUrlSync(filePath) {
-  return `http://127.0.0.1:${audioPort}/audio?path=${encodeURIComponent(filePath)}`
-}
-
-// 云端歌曲 → Flask 延迟模拟音频流
-function cloudUrlSync(filePath) {
-  return `http://127.0.0.1:5000/api/cloud/stream?path=${encodeURIComponent(filePath)}`
-}
-
-function coverUrl(coverPath) {
-  if (!coverPath) return null
-  // 如果已经是 HTTP URL 则直接返回
-  if (coverPath.startsWith('http://') || coverPath.startsWith('https://')) return coverPath
-  // 本地文件路径 → Flask 封面端点
-  return `${API_BASE}/cover?path=${encodeURIComponent(coverPath)}`
+  return audioUrl(filePath)
 }
 
 export const useLibraryStore = defineStore('library', () => {
@@ -68,7 +44,7 @@ export const useLibraryStore = defineStore('library', () => {
   // 从后端加载扫描目录列表
   async function loadScanDirs() {
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/folders')
+      const res = await fetch(apiUrl('/api/folders'))
       if (res.ok) {
         const folders = await res.json()
         scanDirs.value = folders.map(f => f.path)
@@ -102,7 +78,7 @@ export const useLibraryStore = defineStore('library', () => {
         return
       }
       song.url = song.source === 'cloud'
-        ? cloudUrlSync(song.path)
+        ? cloudStreamUrl(song.path)
         : pathToUrlSync(song.path)
     }
   }
@@ -111,7 +87,7 @@ export const useLibraryStore = defineStore('library', () => {
   async function loadFromApi() {
     try {
       await initAudioPort()
-      const res = await fetch(`${API_BASE}/songs?page=1&page_size=100000&source=local`)
+      const res = await fetch(apiUrl('/api/music/songs?page=1&page_size=100000&source=local'))
       if (!res.ok) return false
       const data = await res.json()
       if (data.songs) {
@@ -138,7 +114,7 @@ export const useLibraryStore = defineStore('library', () => {
     try {
       const token = localStorage.getItem('auth-token')
       if (!token) return false
-      const res = await fetch(`${API_BASE}/songs?page=1&page_size=100000&source=cloud`, {
+      const res = await fetch(apiUrl('/api/music/songs?page=1&page_size=100000&source=cloud'), {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       })
       if (!res.ok) return false
@@ -166,7 +142,7 @@ export const useLibraryStore = defineStore('library', () => {
     isLoading.value = true
     try {
       // 调用 Flask 扫描（同步，等待完成）
-      const res = await fetch(`${API_BASE}/scan`, {
+      const res = await fetch(apiUrl('/api/music/scan'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ directories: dirs })
@@ -201,7 +177,7 @@ export const useLibraryStore = defineStore('library', () => {
     const dirs = await window.electronAPI.selectFolder()
     if (!dirs || dirs.length === 0) return
 
-    const FOLDERS_API = 'http://127.0.0.1:5000/api/folders'
+    const FOLDERS_API = apiUrl('/api/folders')
     isScanning.value = true
 
     for (const d of dirs) {
@@ -234,7 +210,7 @@ export const useLibraryStore = defineStore('library', () => {
 
   async function loadFoldersList() {
     try {
-      const res = await fetch('http://127.0.0.1:5000/api/folders')
+      const res = await fetch(apiUrl('/api/folders'))
       if (res.ok) {
         const folders = await res.json()
         scanDirs.value = folders.map(f => f.path)

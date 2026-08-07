@@ -18,6 +18,8 @@ class Config:
     DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'melodybox.db')
     COVER_DIR = os.path.join(_local_app_data(), 'covers')
     THUMBS_DIR = os.path.join(_local_app_data(), 'thumbs')
+    # 云端曲库上传文件存储目录（B/S 管理端上传落盘位置）
+    CLOUD_MUSIC_DIR = os.path.join(_local_app_data(), 'cloud-music')
     MAX_PAGE_SIZE = 10000
     # AI 模型缓存目录（优先级：环境变量 > settings.json > 默认路径）
     AI_MODEL_CACHE_DIR = os.environ.get('MELODYBOX_AI_MODEL_DIR', '').strip() or None

@@ -121,26 +121,7 @@ import { ElMessage } from '@/utils/toast'
 import LazyCover from '@/components/LazyCover.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
 
-const API_BASE = 'http://127.0.0.1:5000/api/music'
-
-let _audioPort = 51234
-async function _initAudioPort() {
-  try {
-    if (window.electronAPI) {
-      const port = await window.electronAPI.getAudioServerPort()
-      if (port) _audioPort = port
-    }
-  } catch {}
-}
-function coverUrl(coverPath) {
-  if (!coverPath) return ''
-  if (coverPath.startsWith('http://') || coverPath.startsWith('https://')) return coverPath
-  return `${API_BASE}/cover?path=${encodeURIComponent(coverPath)}`
-}
-function pathToUrl(filePath) {
-  if (!filePath) return ''
-  return `http://127.0.0.1:${_audioPort}/audio?path=${encodeURIComponent(filePath)}`
-}
+import { apiUrl, audioUrl, coverUrl, initAudioPort } from '@/config/api'
 
 const playerStore = usePlayerStore()
 const libraryStore = useLibraryStore()
@@ -224,8 +205,8 @@ watch(() => filtered.value.length, () => { scrollTo(0) })
 async function refresh() {
   loading.value = true
   try {
-    await _initAudioPort()
-    const res = await fetch('http://127.0.0.1:5000/api/stats/recent?limit=100')
+    await initAudioPort()
+    const res = await fetch(apiUrl('/api/stats/recent?limit=100'))
     const data = await res.json()
     const libMap = new Map(libraryStore.tracks.map(t => [t.path, t]))
     list.value = Array.isArray(data) ? data.map(item => {
@@ -236,7 +217,7 @@ async function refresh() {
         artist: item.artist || lib?.artist || '未知歌手',
         album: item.album || lib?.album || '',
         cover: coverUrl(item.cover_url || lib?.cover || ''),
-        url: pathToUrl(item.file_path || ''),
+        url: audioUrl(item.file_path || ''),
         lyrics: lib?.lyrics || '',
         duration: lib?.duration || 0,
         quality: lib?.quality || '',

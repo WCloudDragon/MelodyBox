@@ -11,6 +11,9 @@ from routes.auth import token_required
 
 cloud_bp = Blueprint('cloud', __name__, url_prefix='/api/cloud')
 
+# 支持入库的音频扩展名（模块级，供路径添加与上传共用）
+AUDIO_EXTS = {'.mp3', '.flac', '.wav', '.ogg', '.aac', '.m4a', '.wma', '.opus'}
+
 
 # OPTIONS preflight 由 Flask-CORS 全局处理，不需要 blueprint 级别拦截
 
@@ -154,26 +157,17 @@ def get_cloud_songs():
         return jsonify({'error': str(e)}), 500
 
 
-@cloud_bp.route('/songs', methods=['POST'])
-@token_required
-@_admin_required
-def add_cloud_songs():
-    """管理员添加云端歌曲（支持批量文件路径）"""
-    data = request.get_json(force=True, silent=True)
-    if not data:
-        return jsonify({'error': '请求体不能为空'}), 400
-
-    file_paths = data.get('file_paths', [])
-    if not file_paths:
-        return jsonify({'error': '请提供 file_paths 列表'}), 400
-
+def _add_cloud_paths(db, file_paths):
+    """
+    解析音频文件并写入云端曲库（本地路径）。
+    返回 (added, skipped, errors)；调用方负责关闭连接。
+    """
     import mutagen
     import hashlib
 
     # 封面提取（复用 scanner 逻辑）
     from services.scanner import extract_cover, extract_lyrics, pre_generate_thumbs_batch
 
-    db = get_db()
     cursor = db.cursor()
     added = 0
     skipped = 0
@@ -181,7 +175,6 @@ def add_cloud_songs():
     cover_paths_to_thumb = []  # 收集需要生成缩略图的封面路径
 
     # 展开文件夹路径——将目录中的音频文件提取为文件列表
-    AUDIO_EXTS = {'.mp3', '.flac', '.wav', '.ogg', '.aac', '.m4a', '.wma', '.opus'}
     expanded_paths = []
     for fp in file_paths:
         if os.path.isdir(fp):
@@ -265,6 +258,24 @@ def add_cloud_songs():
 
     db.commit()
     cursor.close()
+    return added, skipped, errors
+
+
+@cloud_bp.route('/songs', methods=['POST'])
+@token_required
+@_admin_required
+def add_cloud_songs():
+    """管理员添加云端歌曲（支持批量本地文件/文件夹路径）"""
+    data = request.get_json(force=True, silent=True)
+    if not data:
+        return jsonify({'error': '请求体不能为空'}), 400
+
+    file_paths = data.get('file_paths', [])
+    if not file_paths:
+        return jsonify({'error': '请提供 file_paths 列表'}), 400
+
+    db = get_db()
+    added, skipped, errors = _add_cloud_paths(db, file_paths)
     db.close()
 
     return jsonify({
@@ -273,6 +284,66 @@ def add_cloud_songs():
         'skipped': skipped,
         'errors': errors,
         'message': f'成功添加 {added} 首歌曲' + (f'，{skipped} 首已存在' if skipped else '')
+    })
+
+
+@cloud_bp.route('/upload', methods=['POST'])
+@token_required
+@_admin_required
+def upload_cloud_songs():
+    """
+    浏览器端上传音频文件到云端曲库（B/S 管理端）。
+
+    请求: multipart/form-data，字段名 files（可多个）
+    保存到 %LOCALAPPDATA%/melodybox/cloud-music/ 后复用入库逻辑。
+    """
+    files = request.files.getlist('files')
+    if not files:
+        return jsonify({'error': '请选择要上传的音频文件'}), 400
+
+    upload_dir = current_app.config.get('CLOUD_MUSIC_DIR') or ''
+    if not upload_dir:
+        from config.config import Config
+        upload_dir = Config.CLOUD_MUSIC_DIR
+    os.makedirs(upload_dir, exist_ok=True)
+
+    import uuid
+    saved_paths = []
+    errors = []
+    for f in files:
+        filename = (f.filename or '').strip()
+        if not filename:
+            continue
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in AUDIO_EXTS:
+            errors.append(f'{filename}: 不支持的音频格式')
+            continue
+        # 唯一文件名（前缀 + 原始名），避免覆盖与路径穿越
+        safe_name = f'{uuid.uuid4().hex[:8]}_{os.path.basename(filename)}'
+        dest = os.path.join(upload_dir, safe_name)
+        try:
+            f.save(dest)
+            saved_paths.append(dest)
+        except Exception as e:
+            errors.append(f'{filename}: 保存失败 ({str(e)})')
+
+    if not saved_paths:
+        return jsonify({
+            'success': False, 'added': 0, 'skipped': 0, 'errors': errors,
+            'message': '没有可入库的文件',
+        }), 400
+
+    db = get_db()
+    added, skipped, add_errors = _add_cloud_paths(db, saved_paths)
+    db.close()
+    errors.extend(add_errors)
+
+    return jsonify({
+        'success': True,
+        'added': added,
+        'skipped': skipped,
+        'errors': errors,
+        'message': f'成功上传并添加 {added} 首歌曲' + (f'，{skipped} 首已存在' if skipped else ''),
     })
 
 

@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 const routes = [
   {
@@ -50,12 +51,6 @@ const routes = [
     meta: { title: '设置' }
   },
   {
-    path: '/admin',
-    name: 'admin',
-    component: () => import('@/views/AdminView.vue'),
-    meta: { title: '管理后台' }
-  },
-  {
     path: '/login',
     name: 'login',
     component: () => import('@/views/LoginView.vue'),
@@ -65,7 +60,7 @@ const routes = [
     path: '/user',
     name: 'user',
     component: () => import('@/views/UserView.vue'),
-    meta: { title: '用户中心' }
+    meta: { title: '用户中心', requiresAuth: true }
   },
   {
     path: '/folders',
@@ -117,7 +112,21 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
+  const auth = useAuthStore()
   document.title = to.meta.title ? `${to.meta.title} - MelodyBox` : 'MelodyBox'
+
+  // 需要登录的页面：未登录跳转登录页，并记录来源
+  if (to.meta.requiresAuth && !auth.isLoggedIn) {
+    return { path: '/login', query: { redirect: to.fullPath } }
+  }
+  // 需要管理员权限的页面：非管理员回到首页
+  if (to.meta.requiresAdmin && !auth.isAdmin) {
+    return { path: '/', replace: true }
+  }
+  // 已登录用户访问登录页：回到首页
+  if (to.path === '/login' && auth.isLoggedIn) {
+    return { path: '/', replace: true }
+  }
 })
 
 export default router

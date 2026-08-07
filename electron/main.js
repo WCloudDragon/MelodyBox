@@ -6,6 +6,9 @@ const os = require('os')
 const { spawn } = require('child_process')
 const http = require('http')
 
+// 本地 Flask 后端健康检查地址（开发与打包均为本机服务）
+const FLASK_HEALTH_URL = 'http://127.0.0.1:5000/api/health'
+
 // ==================== Flask 后端管理 ====================
 
 let flaskProcess = null
@@ -48,7 +51,7 @@ function startFlask() {
   // 等待 Flask 就绪
   return new Promise((resolve) => {
     const check = () => {
-      const req = http.get('http://127.0.0.1:5000/api/health', (res) => {
+      const req = http.get(FLASK_HEALTH_URL, (res) => {
         if (res.statusCode === 200) {
           resolve()
         } else {
@@ -78,7 +81,7 @@ function waitForFlaskReady(timeoutMs = 30000, intervalMs = 250) {
   return new Promise((resolve) => {
     const deadline = Date.now() + timeoutMs
     const check = () => {
-      const req = http.get('http://127.0.0.1:5000/api/health', (res) => {
+      const req = http.get(FLASK_HEALTH_URL, (res) => {
         res.resume()
         if (res.statusCode === 200) resolve(true)
         else retry()

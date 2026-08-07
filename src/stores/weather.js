@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-
-const WEATHER_BASE = 'http://127.0.0.1:5000/api/weather'
+import { apiUrl } from '@/config/api'
 const CACHE_KEY = 'melodybox_weather_cache'
 const CACHE_TTL = 30 * 60 * 1000 // 30 分钟
 
@@ -67,7 +66,7 @@ export const useWeatherStore = defineStore('weather', () => {
 
     try {
       const geo = await _getGeoPosition()
-      let url = `${WEATHER_BASE}/current`
+      let url = `${apiUrl('/api/weather/current')}`
       if (geo) {
         url += `?lat=${geo.lat}&lon=${geo.lon}`
       }

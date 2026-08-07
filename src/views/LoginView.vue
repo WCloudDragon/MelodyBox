@@ -6,8 +6,8 @@
           <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
         </svg>
       </div>
-      <h2 class="login-card__title">{{ isLogin ? '欢迎回来' : '创建账户' }}</h2>
-      <p class="login-card__desc">{{ isLogin ? '登录你的 MelodyBox 账户' : '注册一个新账户以使用全部功能' }}</p>
+      <h2 class="login-card__title">{{ minimal ? '管理员登录' : (isLogin ? '欢迎回来' : '创建账户') }}</h2>
+      <p class="login-card__desc">{{ minimal ? '请使用管理员账户登录管理后台' : (isLogin ? '登录你的 MelodyBox 账户' : '注册一个新账户以使用全部功能') }}</p>
 
       <form class="login-form" @submit.prevent="handleSubmit">
         <div class="form-field">
@@ -30,11 +30,11 @@
         </button>
       </form>
 
-      <p class="login-card__switch">
+      <p class="login-card__switch" v-if="!minimal">
         {{ isLogin ? '还没有账户？' : '已有账户？' }}
         <a href="#" @click.prevent="toggleMode">{{ isLogin ? '立即注册' : '去登录' }}</a>
       </p>
-      <p class="login-card__skip">
+      <p class="login-card__skip" v-if="!minimal">
         <a href="#" @click.prevent="$router.push('/')">跳过登录，离线使用</a>
       </p>
     </div>
@@ -43,11 +43,16 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const route = useRoute()
 const auth = useAuthStore()
+
+const props = defineProps({
+  minimal: { type: Boolean, default: false },
+})
 
 const isLogin = ref(true)
 const username = ref('')
@@ -72,7 +77,7 @@ async function handleSubmit() {
       // 注册成功后自动登录
       await auth.login(username.value, password.value)
     }
-    router.push('/')
+    router.push(route.query.redirect || '/')
   } catch (e) {
     errorMsg.value = e.message || '操作失败'
   } finally {

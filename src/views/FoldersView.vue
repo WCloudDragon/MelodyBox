@@ -69,7 +69,7 @@ import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } fr
 import { Plus, Refresh, Delete, FolderOpened, Loading } from '@element-plus/icons-vue'
 import { useScrollMemory } from '@/composables/useScrollMemory'
 
-const API_BASE = 'http://127.0.0.1:5000/api/folders'
+import { apiUrl } from '@/config/api'
 const libraryStore = useLibraryStore()
 const modal = useModal()
 const isElectron = computed(() => !!window.electronAPI)
@@ -97,7 +97,7 @@ function startPolling() {
 
   _pollTimer = setInterval(async () => {
     try {
-      const res = await fetch(`${API_BASE}/scan-progress`)
+      const res = await fetch(apiUrl('/api/folders/scan-progress'))
       const p = await res.json()
       scanCurrent.value = p.current
       scanTotal.value = p.total
@@ -139,7 +139,7 @@ function formatDuration(sec) {
 async function loadFolders() {
   loading.value = true
   try {
-    const res = await fetch(API_BASE)
+    const res = await fetch(apiUrl('/api/folders'))
     if (res.ok) folders.value = await res.json()
   } catch { /* 无后端时静默 */ }
   loading.value = false
@@ -157,7 +157,7 @@ async function handleAddFolder() {
     adding.value = true
     let anyAdded = false
     for (const d of dirs) {
-      const res = await fetch(API_BASE, {
+      const res = await fetch(apiUrl('/api/folders'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: d })
@@ -191,7 +191,7 @@ async function handleRescan(folder) {
       confirmText: '确认',
     })
     rescanning.value = folder.id
-    const res = await fetch(`${API_BASE}/${folder.id}/rescan`, { method: 'POST' })
+    const res = await fetch(apiUrl(`/api/folders/${folder.id}/rescan`), { method: 'POST' })
     const data = await res.json()
     if (!res.ok) { ElMessage.error(data.error); return }
     startPolling()
@@ -210,7 +210,7 @@ async function handleRemove(folder) {
       confirmText: '确认移除',
       danger: true
     })
-    const res = await fetch(`${API_BASE}/${folder.id}`, { method: 'DELETE' })
+    const res = await fetch(apiUrl(`/api/folders/${folder.id}`), { method: 'DELETE' })
     const data = await res.json()
     if (!res.ok) { ElMessage.error(data.error); return }
     ElMessage.success(data.message)

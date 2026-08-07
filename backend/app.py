@@ -1,4 +1,4 @@
-from flask import Flask, g
+from flask import Flask, g, send_from_directory
 from flask_cors import CORS
 from config.config import Config
 import os
@@ -624,6 +624,29 @@ def create_app():
     app.register_blueprint(ai_bp)
     app.register_blueprint(cloud_bp)
     app.register_blueprint(weather_bp)
+
+    # ==================== B/S 管理端静态托管 ====================
+    # 管理端前端构建产物位于项目根目录 dist/（npm run build 生成 admin.html）
+    dist_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'dist'
+    )
+
+    @app.route('/admin')
+    @app.route('/admin/')
+    def serve_admin_console():
+        """浏览器访问的管理端入口（B/S）：http://<host>:5000/admin"""
+        admin_path = os.path.join(dist_dir, 'admin.html')
+        if not os.path.isfile(admin_path):
+            return jsonify({
+                'error': '管理端未构建，请先在 Code 目录执行 npm run build'
+            }), 404
+        return send_from_directory(dist_dir, 'admin.html')
+
+    @app.route('/assets/<path:filename>')
+    def serve_admin_assets(filename):
+        """管理端静态资源（JS/CSS/字体）"""
+        assets_dir = os.path.join(dist_dir, 'assets')
+        return send_from_directory(assets_dir, filename)
 
     @app.route('/api/health')
     def health():

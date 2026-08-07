@@ -165,7 +165,7 @@ const libraryStore = useLibraryStore()
 const track = ref(null)
 const loading = ref(true)
 
-const API_BASE = 'http://127.0.0.1:5000/api/music'
+import { apiUrl, coverUrl } from '@/config/api'
 
 const fileName = computed(() => {
   if (!track.value?.path) return ''
@@ -227,14 +227,14 @@ async function fetchTrack(path) {
       track.value = { ...libTrack }
     }
     // 从后端获取完整数据（补全所有字段）
-    const res = await fetch(`${API_BASE}/songs/by-path?path=${encodeURIComponent(path)}`)
+    const res = await fetch(apiUrl(`/api/music/songs/by-path?path=${encodeURIComponent(path)}`))
     const data = await res.json()
     if (data && !data.error) {
       // 合并后端完整数据 + 前端已有的 cover url 等
       track.value = {
         ...data,
         cover: data.cover
-          ? (data.cover.startsWith('http') ? data.cover : `${API_BASE}/cover?path=${encodeURIComponent(data.cover)}`)
+          ? coverUrl(data.cover)
           : libTrack?.cover || '',
       }
     } else if (libTrack) {

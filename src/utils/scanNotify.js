@@ -4,7 +4,9 @@
  */
 import { addProgress, updateProgress, completeProgress, removeProgress, addToast } from '@/stores/progress'
 
-const FOLDERS_API = 'http://127.0.0.1:5000/api/folders'
+import { apiUrl } from '@/config/api'
+
+const FOLDERS_API = apiUrl('/api/folders')
 
 let _scanId = null
 let _thumbId = null

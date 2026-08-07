@@ -1,8 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-
-const AI_BASE = 'http://127.0.0.1:5000/api/ai'
-const STATS_BASE = 'http://127.0.0.1:5000/api/stats'
+import { apiUrl, audioUrl } from '@/config/api'
 
 // 首页封面预览缓存（纯展示数据，5 分钟）
 const PREVIEWS_KEY = 'melodybox_ai_previews'
@@ -54,7 +52,7 @@ export const useAiStore = defineStore('ai', () => {
   async function loadRecommendations(limit = 20) {
     isLoading.value = true
     try {
-      let url = `${AI_BASE}/recommend?limit=${limit}&mode=${currentMode.value}`
+      let url = `${apiUrl('/api/ai/recommend')}?limit=${limit}&mode=${currentMode.value}`
       if (currentSub.value != null) {
         url += `&${currentSub.value}`
       }
@@ -68,7 +66,7 @@ export const useAiStore = defineStore('ai', () => {
       for (const s of data) {
         s.path = s.file_path
         s.cover = s.cover_url
-        s.url = `http://127.0.0.1:51234/audio?path=${encodeURIComponent(s.file_path)}`
+        s.url = audioUrl(s.file_path)
       }
       recommendations.value = data
       isLoaded.value = true
@@ -95,7 +93,7 @@ export const useAiStore = defineStore('ai', () => {
   async function reportFeedback(event, track, extra = {}) {
     if (!track) return
     try {
-      await fetch(`${STATS_BASE}/feedback`, {
+      await fetch(apiUrl('/api/stats/feedback'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -172,7 +170,7 @@ export const useAiStore = defineStore('ai', () => {
     }
     previewsLoading.value = true
     try {
-      const res = await fetch(`${AI_BASE}/recommend/previews`)
+      const res = await fetch(apiUrl('/api/ai/recommend/previews'))
       if (res.ok) {
         const data = await res.json()
         previews.value = data
@@ -246,7 +244,7 @@ export const useAiStore = defineStore('ai', () => {
 
   async function loadEmbeddingStatus() {
     try {
-      const res = await fetch(`${AI_BASE}/embedding/status`)
+      const res = await fetch(apiUrl('/api/ai/embedding/status'))
       if (res.ok) {
         embeddingStatus.value = await res.json()
       }
@@ -261,7 +259,7 @@ export const useAiStore = defineStore('ai', () => {
     }
     const timer = setInterval(async () => {
       try {
-        const res = await fetch(`${AI_BASE}/model-download/progress`)
+        const res = await fetch(apiUrl('/api/ai/model-download/progress'))
         if (res.ok) {
           downloadProgress.value = await res.json()
           const st = downloadProgress.value.status
@@ -283,7 +281,7 @@ export const useAiStore = defineStore('ai', () => {
   async function generateEmbeddings() {
     isGenerating.value = true
     try {
-      const res = await fetch(`${AI_BASE}/embedding/generate`, { method: 'POST' })
+      const res = await fetch(apiUrl('/api/ai/embedding/generate'), { method: 'POST' })
       if (res.ok) {
         const data = await res.json()
         return data
@@ -311,7 +309,7 @@ export const useAiStore = defineStore('ai', () => {
 
   async function refreshMoodScores() {
     try {
-      const res = await fetch(`${AI_BASE}/mood-scores/refresh`, { method: 'POST' })
+      const res = await fetch(apiUrl('/api/ai/mood-scores/refresh'), { method: 'POST' })
       if (res.ok) {
         const data = await res.json()
         return data

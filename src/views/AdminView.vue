@@ -23,43 +23,90 @@
           <!-- 添加歌曲区域 -->
           <div class="add-section">
             <h4>添加歌曲</h4>
-            <p class="hint">选择音频文件（支持多选）或选择整个文件夹</p>
+            <p class="hint">{{ hasNativePicker ? '选择音频文件（支持多选）或选择整个文件夹' : '浏览器模式：选择音频文件上传到云端曲库（支持多选）' }}</p>
 
-            <div v-if="pendingFiles.length > 0" class="pending-files">
-              <div class="pending-files__header">
-                <span>待添加 ({{ pendingFiles.length }})</span>
-                <el-button text size="small" type="danger" @click="pendingFiles = []">清空</el-button>
-              </div>
-              <div class="pending-files__list">
-                <div v-for="(f, i) in pendingFiles" :key="i" class="pending-file-item">
-                  <el-icon size="14"><Document /></el-icon>
-                  <span class="truncate">{{ f }}</span>
-                  <el-button text size="small" @click="pendingFiles.splice(i, 1)">
-                    <el-icon size="12"><Close /></el-icon>
-                  </el-button>
+            <!-- 桌面端（C/S）：本地路径选择 -->
+            <template v-if="hasNativePicker">
+              <div v-if="pendingFiles.length > 0" class="pending-files">
+                <div class="pending-files__header">
+                  <span>待添加 ({{ pendingFiles.length }})</span>
+                  <el-button text size="small" type="danger" @click="pendingFiles = []">清空</el-button>
+                </div>
+                <div class="pending-files__list">
+                  <div v-for="(f, i) in pendingFiles" :key="i" class="pending-file-item">
+                    <el-icon size="14"><Document /></el-icon>
+                    <span class="truncate">{{ f }}</span>
+                    <el-button text size="small" @click="pendingFiles.splice(i, 1)">
+                      <el-icon size="12"><Close /></el-icon>
+                    </el-button>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div class="add-row">
-              <el-button @click="pickFiles">
-                <el-icon size="14"><Document /></el-icon>
-                选择音频文件
-              </el-button>
-              <el-button @click="pickFolder">
-                <el-icon size="14"><FolderAdd /></el-icon>
-                选择文件夹
-              </el-button>
-              <el-button
-                type="primary"
-                :loading="cloudLoading"
-                :disabled="pendingFiles.length === 0"
-                @click="addCloudSongs"
-              >
-                <el-icon size="14"><Plus /></el-icon>
-                确认添加
-              </el-button>
-            </div>
+              <div class="add-row">
+                <el-button @click="pickFiles">
+                  <el-icon size="14"><Document /></el-icon>
+                  选择音频文件
+                </el-button>
+                <el-button @click="pickFolder">
+                  <el-icon size="14"><FolderAdd /></el-icon>
+                  选择文件夹
+                </el-button>
+                <el-button
+                  type="primary"
+                  :loading="cloudLoading"
+                  :disabled="pendingFiles.length === 0"
+                  @click="addCloudSongs"
+                >
+                  <el-icon size="14"><Plus /></el-icon>
+                  确认添加
+                </el-button>
+              </div>
+            </template>
+
+            <!-- 浏览器端（B/S）：文件上传 -->
+            <template v-else>
+              <input
+                ref="uploadInputRef"
+                type="file"
+                multiple
+                accept=".mp3,.flac,.wav,.ogg,.aac,.m4a,.wma,.opus,audio/*"
+                style="display: none"
+                @change="onUploadSelect"
+              />
+              <div v-if="pendingUploads.length > 0" class="pending-files">
+                <div class="pending-files__header">
+                  <span>待上传 ({{ pendingUploads.length }})</span>
+                  <el-button text size="small" type="danger" @click="pendingUploads = []">清空</el-button>
+                </div>
+                <div class="pending-files__list">
+                  <div v-for="(f, i) in pendingUploads" :key="i" class="pending-file-item">
+                    <el-icon size="14"><Document /></el-icon>
+                    <span class="truncate">{{ f.name }}</span>
+                    <span class="pending-file-size">{{ formatFileSize(f.size) }}</span>
+                    <el-button text size="small" @click="removeUpload(i)">
+                      <el-icon size="12"><Close /></el-icon>
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="add-row">
+                <el-button @click="uploadInputRef?.click()">
+                  <el-icon size="14"><Document /></el-icon>
+                  选择音频文件
+                </el-button>
+                <el-button
+                  type="primary"
+                  :loading="cloudLoading"
+                  :disabled="pendingUploads.length === 0"
+                  @click="uploadCloudSongs"
+                >
+                  <el-icon size="14"><Plus /></el-icon>
+                  确认上传
+                </el-button>
+              </div>
+            </template>
             <p v-if="addResult" class="add-result" :class="addResultType">{{ addResult }}</p>
           </div>
 
@@ -318,6 +365,7 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaylistStore } from '@/stores/playlist'
 import { Monitor, Cloudy, Connection, InfoFilled, Plus, Delete, Check, FolderAdd, Document, Close, Edit } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { apiUrl, authHeaders } from '@/config/api'
 
 const libraryStore = useLibraryStore()
 const playlistStore = usePlaylistStore()
@@ -353,9 +401,9 @@ async function batchSetStatus(status) {
   let done = 0
   for (const s of selectedSongs.value) {
     try {
-      await fetch(`http://127.0.0.1:5000/api/cloud/songs/${s.id}/status`, {
+      await fetch(apiUrl(`/api/cloud/songs/${s.id}/status`), {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
         body: JSON.stringify({ status })
       })
       done++
@@ -380,9 +428,9 @@ async function confirmBatchGenre() {
   let done = 0
   for (const s of selectedSongs.value) {
     try {
-      await fetch(`http://127.0.0.1:5000/api/cloud/songs/${s.id}/metadata`, {
+      await fetch(apiUrl(`/api/cloud/songs/${s.id}/metadata`), {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
         body: JSON.stringify(body)
       })
       done++
@@ -400,9 +448,9 @@ async function batchRemove() {
   let done = 0
   for (const s of selectedSongs.value) {
     try {
-      await fetch(`http://127.0.0.1:5000/api/cloud/songs/${s.id}`, {
+      await fetch(apiUrl(`/api/cloud/songs/${s.id}`), {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: authHeaders(token)
       })
       done++
     } catch {}
@@ -462,12 +510,9 @@ async function saveMetadata() {
     for (const [k, v] of Object.entries(editForm)) {
       body[k] = (v && v.trim()) ? v.trim() : null
     }
-    const res = await fetch(`http://127.0.0.1:5000/api/cloud/songs/${editingSong.value.id}/metadata`, {
+    const res = await fetch(apiUrl(`/api/cloud/songs/${editingSong.value.id}/metadata`), {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
       body: JSON.stringify(body)
     })
     if (res.ok) {
@@ -489,12 +534,9 @@ async function toggleStatus(song) {
   const token = localStorage.getItem('auth-token')
   const newStatus = song.status === 'online' ? 'offline' : 'online'
   try {
-    const res = await fetch(`http://127.0.0.1:5000/api/cloud/songs/${song.id}/status`, {
+    const res = await fetch(apiUrl(`/api/cloud/songs/${song.id}/status`), {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
       body: JSON.stringify({ status: newStatus })
     })
     if (res.ok) {
@@ -512,11 +554,11 @@ async function loadCloudData() {
   cloudLoading.value = true
   try {
     const [songsRes, modeRes] = await Promise.all([
-      fetch('http://127.0.0.1:5000/api/cloud/songs', {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      fetch(apiUrl('/api/cloud/songs'), {
+        headers: authHeaders(token)
       }),
-      fetch('http://127.0.0.1:5000/api/cloud/network-mode', {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      fetch(apiUrl('/api/cloud/network-mode'), {
+        headers: authHeaders(token)
       })
     ])
     if (songsRes.ok) {
@@ -548,6 +590,74 @@ const modeDescriptions = {
 }
 
 // ===== 文件选择 =====
+
+// 桌面端具备原生文件对话框；浏览器端（B/S）走文件上传
+const hasNativePicker = !!window.electronAPI?.selectAudioFiles
+const uploadInputRef = ref(null)
+const pendingUploads = ref([])
+
+function onUploadSelect(e) {
+  const files = Array.from(e.target.files || [])
+  if (files.length === 0) return
+  const existing = new Set(pendingUploads.value.map(f => f.name))
+  files.forEach(f => {
+    if (!existing.has(f.name)) {
+      pendingUploads.value.push(f)
+      existing.add(f.name)
+    }
+  })
+  e.target.value = ''
+}
+
+function removeUpload(index) {
+  pendingUploads.value.splice(index, 1)
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+async function uploadCloudSongs() {
+  const files = [...pendingUploads.value]
+  if (files.length === 0) {
+    ElMessage.warning('请先选择音频文件')
+    return
+  }
+  const token = localStorage.getItem('auth-token')
+  cloudLoading.value = true
+  addResult.value = ''
+  try {
+    const fd = new FormData()
+    files.forEach(f => fd.append('files', f))
+    const res = await fetch(apiUrl('/api/cloud/upload'), {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: fd,
+    })
+    const data = await res.json()
+    if (res.ok) {
+      addResult.value = data.message
+      addResultType.value = 'success'
+      pendingUploads.value = []
+      await loadCloudData()
+      await libraryStore.loadCloudSongs()
+      ElMessage.success(data.message)
+    } else {
+      addResult.value = data.error || data.message || '上传失败'
+      addResultType.value = 'error'
+      ElMessage.error(addResult.value)
+    }
+  } catch (e) {
+    addResult.value = '请求失败'
+    addResultType.value = 'error'
+    ElMessage.error('请求失败')
+  } finally {
+    cloudLoading.value = false
+  }
+}
 
 async function pickFiles() {
   try {
@@ -593,12 +703,9 @@ async function addCloudSongs() {
   cloudLoading.value = true
   addResult.value = ''
   try {
-    const res = await fetch('http://127.0.0.1:5000/api/cloud/songs', {
+    const res = await fetch(apiUrl('/api/cloud/songs'), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
       body: JSON.stringify({ file_paths: paths })
     })
     const data = await res.json()
@@ -626,9 +733,9 @@ async function addCloudSongs() {
 async function removeCloudSong(id) {
   const token = localStorage.getItem('auth-token')
   try {
-    const res = await fetch(`http://127.0.0.1:5000/api/cloud/songs/${id}`, {
+    const res = await fetch(apiUrl(`/api/cloud/songs/${id}`), {
       method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: authHeaders(token)
     })
     if (res.ok) {
       await loadCloudData()
@@ -643,12 +750,9 @@ async function removeCloudSong(id) {
 async function setCloudNetworkMode(mode) {
   const token = localStorage.getItem('auth-token')
   try {
-    const res = await fetch('http://127.0.0.1:5000/api/cloud/network-mode', {
+    const res = await fetch(apiUrl('/api/cloud/network-mode'), {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
       body: JSON.stringify({ mode })
     })
     if (res.ok) {
@@ -661,13 +765,20 @@ async function setCloudNetworkMode(mode) {
 }
 
 async function loadStats() {
+  const token = localStorage.getItem('auth-token')
   try {
-    const songsRes = await fetch('http://127.0.0.1:5000/api/music/songs?page=1&page_size=1&source=cloud')
-    const usersRes = await fetch('http://127.0.0.1:5000/api/auth/users')
+    const songsRes = await fetch(apiUrl('/api/music/songs?page=1&page_size=1&source=cloud'), {
+      headers: authHeaders(token)
+    })
+    const usersRes = await fetch(apiUrl('/api/auth/users'), {
+      headers: authHeaders(token)
+    })
 
     // 本地计数
     try {
-      const lr = await fetch('http://127.0.0.1:5000/api/music/songs?page=1&page_size=1&source=local')
+      const lr = await fetch(apiUrl('/api/music/songs?page=1&page_size=1&source=local'), {
+        headers: authHeaders(token)
+      })
       if (lr.ok) { const d = await lr.json(); stats.localCount = d.total || 0 }
     } catch {}
     if (songsRes.ok) { const d = await songsRes.json(); stats.cloudCount = d.total || 0 }
@@ -678,8 +789,9 @@ async function loadStats() {
 
 // 天气 API Key 管理
 async function loadWeatherApiKey() {
+  const token = localStorage.getItem('auth-token')
   try {
-    const res = await fetch('http://127.0.0.1:5000/api/settings')
+    const res = await fetch(apiUrl('/api/settings'), { headers: authHeaders(token) })
     if (res.ok) {
       const data = await res.json()
       weatherPrivateKey.value = data.weatherPrivateKey || ''
@@ -691,12 +803,13 @@ async function loadWeatherApiKey() {
 }
 
 async function saveWeatherApiKey() {
+  const token = localStorage.getItem('auth-token')
   weatherSaving.value = true
   weatherSaved.value = false
   try {
-    const res = await fetch('http://127.0.0.1:5000/api/settings', {
+    const res = await fetch(apiUrl('/api/settings'), {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
       body: JSON.stringify({ weatherPrivateKey: weatherPrivateKey.value || '', weatherCredentialId: weatherCredentialId.value || '', weatherProjectId: weatherProjectId.value || '', weatherApiHost: weatherApiHost.value || 'api.qweather.com' })
     })
     if (res.ok) {
@@ -852,6 +965,12 @@ watch(() => playlistStore.playlists, () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pending-file-size {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
 }
 
 /* 添加区域 */
