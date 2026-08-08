@@ -112,6 +112,12 @@ export const useLibraryStore = defineStore('library', () => {
   // 加载云端歌曲
   async function loadCloudSongs() {
     try {
+      // 云端曲库为会员功能：非会员直接置空
+      const { useAuthStore } = await import('@/stores/auth')
+      if (!useAuthStore().isVip) {
+        cloudTracks.value = []
+        return false
+      }
       const token = localStorage.getItem('auth-token')
       if (!token) return false
       const res = await fetch(apiUrl('/api/music/songs?page=1&page_size=100000&source=cloud'), {

@@ -9,6 +9,14 @@ export const useAuthStore = defineStore('auth', () => {
   const isAdmin = computed(() => user.value?.role === 'admin')
   const membershipType = computed(() => user.value?.membership_type || 'free')
 
+  // 会员体系（1.1：客户端模拟购买 + 管理端调价上下架）
+  const membershipStatus = ref({
+    membership_type: 'free', membership_expire: null, is_vip: false, is_svip: false,
+  })
+  const membershipPlans = ref([])
+  const isVip = computed(() => user.value?.role === 'admin' || membershipStatus.value.is_vip)
+  const membershipExpire = computed(() => membershipStatus.value.membership_expire)
+
   // 从 localStorage 恢复登录态
   function loadFromStorage() {
     try {
@@ -40,6 +48,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = data.token
     user.value = data.user
     saveToStorage()
+    fetchMembership()
     return data
   }
 
@@ -63,6 +72,7 @@ export const useAuthStore = defineStore('auth', () => {
       if (!res.ok) throw new Error('登录已过期')
       user.value = await res.json()
       saveToStorage()
+      fetchMembership()
     } catch {
       logout()
     }
@@ -71,7 +81,50 @@ export const useAuthStore = defineStore('auth', () => {
   function logout() {
     token.value = ''
     user.value = null
+    membershipStatus.value = { membership_type: 'free', membership_expire: null, is_vip: false, is_svip: false }
+    membershipPlans.value = []
     saveToStorage()
+  }
+
+  /** 拉取当前会员状态（过期自动降级由后端处理） */
+  async function fetchMembership() {
+    if (!token.value) return
+    try {
+      const res = await fetch(apiUrl('/api/auth/membership/status'), {
+        headers: makeAuthHeaders(token.value),
+      })
+      if (res.ok) {
+        membershipStatus.value = await res.json()
+        if (user.value && !user.value.membership_type) {
+          user.value = { ...user.value, membership_type: membershipStatus.value.membership_type }
+        }
+      }
+    } catch {}
+  }
+
+  /** 拉取在售会员方案 */
+  async function loadPlans() {
+    try {
+      const res = await fetch(apiUrl('/api/auth/membership/plans'))
+      if (res.ok) {
+        const data = await res.json()
+        membershipPlans.value = data.plans || []
+      }
+    } catch {}
+  }
+
+  /** 模拟购买会员（后端模拟支付成功） */
+  async function purchasePlan(planId) {
+    const res = await fetch(apiUrl('/api/auth/membership/purchase'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...makeAuthHeaders(token.value) },
+      body: JSON.stringify({ plan_id: planId }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || '购买失败')
+    await fetchMembership()
+    await fetchProfile()
+    return data
   }
 
   async function changePassword(oldPassword, newPassword) {
@@ -108,10 +161,14 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   loadFromStorage()
+  loadPlans()
+  fetchMembership()
 
   return {
     user, token, isLoggedIn, isAdmin, membershipType,
+    membershipStatus, membershipPlans, isVip, membershipExpire,
     login, register, fetchProfile, logout,
-    changePassword, deleteAccount, authHeaders
+    changePassword, deleteAccount, authHeaders,
+    fetchMembership, loadPlans, purchasePlan,
   }
 })

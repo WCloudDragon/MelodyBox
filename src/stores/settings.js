@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { apiUrl } from '@/config/api'
 
 // 后端 snake_case ↔ 前端 camelCase 映射
@@ -44,6 +44,11 @@ export const useSettingsStore = defineStore('settings', () => {
   const enableDominoScroll = ref(true)
   const enableWordLift = ref(true)
   const wordAnimFps = ref(60)
+  const showVisualizer = ref(true)
+  // 律动响应帧率（30/60）；逐字动画帧率自适应（用满屏幕刷新率）
+  const rhythmFps = ref(Number(localStorage.getItem('melodybox_rhythm_fps')) || 30)
+  const fpsAdaptive = ref(localStorage.getItem('melodybox_fps_adaptive') === '1')
+  const measuredRefresh = ref(Number(localStorage.getItem('melodybox_refresh_hz')) || 60)
 
   // 系统设置
   const autoScan = ref(false)
@@ -68,6 +73,96 @@ export const useSettingsStore = defineStore('settings', () => {
   // 调试模式（前端 only，不持久化到后端）
   const debugMode = ref(false)
 
+  // 画质档位（2.13：自动/低/中/高/自定义）
+  const qualityPreset = ref('custom')
+
+  /** 有效逐字动画帧率：自适应模式用实测刷新率（夹在 24–240），否则用设定值 */
+  const effectiveWordAnimFps = computed(() => {
+    if (fpsAdaptive.value) {
+      return Math.min(Math.max(measuredRefresh.value, 24), 240)
+    }
+    return wordAnimFps.value
+  })
+
+  function _persistPerfPrefs() {
+    try {
+      localStorage.setItem('melodybox_rhythm_fps', String(rhythmFps.value))
+      localStorage.setItem('melodybox_fps_adaptive', fpsAdaptive.value ? '1' : '0')
+      localStorage.setItem('melodybox_refresh_hz', String(measuredRefresh.value))
+    } catch {}
+  }
+
+  /**
+   * 用 rAF 采样实测屏幕刷新率（60 帧时间戳中位数）。
+   * 自适应帧率模式下自动调用；显示器变更时可手动重测。
+   */
+  function detectRefreshRate() {
+    return new Promise((resolve) => {
+      // 1) Electron 主进程 screen API：准确刷新率
+      if (window.electronAPI?.getRefreshRate) {
+        window.electronAPI.getRefreshRate().then((hz) => {
+          if (hz && hz >= 24) {
+            measuredRefresh.value = Math.min(1000, Math.max(24, hz))
+            _persistPerfPrefs()
+            resolve(measuredRefresh.value)
+            return
+          }
+          _probeWithRaf(resolve)
+        }).catch(() => _probeWithRaf(resolve))
+        return
+      }
+      // 2) 浏览器兜底：rAF 采样
+      _probeWithRaf(resolve)
+    })
+  }
+
+  /** 浏览器兜底：rAF 采样实测刷新率（等窗口可见，最多 3 次取最大，规避启动期限流） */
+  function _probeWithRaf(resolve) {
+    let attempts = 0
+    let best = 0
+    const run = () => {
+      if (document.hidden) {
+        window.addEventListener('visibilitychange', function once() {
+          window.removeEventListener('visibilitychange', once)
+          run()
+        }, { once: true })
+        return
+      }
+      const deltas = []
+      let last = null
+      let raf = 0
+      const tick = (now) => {
+        if (last !== null) deltas.push(now - last)
+        last = now
+        if (deltas.length < 120) {
+          raf = requestAnimationFrame(tick)
+        } else {
+          cancelAnimationFrame(raf)
+          deltas.sort((a, b) => a - b)
+          const median = deltas[Math.floor(deltas.length / 2)]
+          const hz = Math.min(1000, Math.max(1, Math.round(1000 / Math.max(median, 1))))
+          best = Math.max(best, hz)
+          attempts += 1
+          if (attempts < 3 && hz <= 60) {
+            setTimeout(run, 400)
+          } else {
+            measuredRefresh.value = best
+            _persistPerfPrefs()
+            resolve(best)
+          }
+        }
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    run()
+  }
+
+  function ensureRefreshDetected() {
+    if (fpsAdaptive.value && (!measuredRefresh.value || measuredRefresh.value <= 0)) {
+      detectRefreshRate()
+    }
+  }
+
   let _loaded = false
   let _saveTimer = null
 
@@ -88,6 +183,7 @@ export const useSettingsStore = defineStore('settings', () => {
       enableDominoScroll.value = !!data.enableDominoScroll
       enableWordLift.value = !!data.enableWordLift
       wordAnimFps.value = data.wordAnimFps ?? 60
+      showVisualizer.value = data.showVisualizer ?? true
       autoScan.value = !!data.autoScan
       language.value = data.language ?? 'zh-CN'
       desktopLyricsFontSize.value = data.desktopLyricsFontSize ?? 24
@@ -123,6 +219,7 @@ export const useSettingsStore = defineStore('settings', () => {
         body.enableDominoScroll = enableDominoScroll.value ? 1 : 0
         body.enableWordLift = enableWordLift.value ? 1 : 0
         body.wordAnimFps = wordAnimFps.value
+        body.showVisualizer = showVisualizer.value ? 1 : 0
         body.autoScan = autoScan.value ? 1 : 0
         body.language = language.value
         body.desktopLyricsFontSize = desktopLyricsFontSize.value
@@ -158,23 +255,69 @@ export const useSettingsStore = defineStore('settings', () => {
     saveSettingsImmediate()
   }
 
+  // 手动改任意效果开关 → 档位自动切为"自定义"
+  let _applyingPreset = false
+  watch(
+    [enableLyricsBlur, enableDominoScroll, enableWordLift, wordAnimFps,
+     enableDynamicBg, enableAudioRhythm, showVisualizer,
+     rhythmFps, fpsAdaptive],
+    () => {
+      if (_applyingPreset) return
+      if (qualityPreset.value !== 'custom') qualityPreset.value = 'custom'
+    }
+  )
+
+  // 律动/自适应偏好持久化到 localStorage（前端 only）
+  watch([rhythmFps, fpsAdaptive, measuredRefresh], _persistPerfPrefs)
+
+  /** 应用画质预设档位（low / medium / high） */
+  function applyQualityPreset(preset) {
+    const map = {
+      high: { enableLyricsBlur: true, enableDominoScroll: true, enableWordLift: true, wordAnimFps: 60, fpsAdaptive: true, rhythmFps: 60, enableDynamicBg: true, enableAudioRhythm: true, showVisualizer: true },
+      medium: { enableLyricsBlur: true, enableDominoScroll: true, enableWordLift: true, wordAnimFps: 60, fpsAdaptive: false, rhythmFps: 30, enableDynamicBg: true, enableAudioRhythm: false, showVisualizer: true },
+      low: { enableLyricsBlur: false, enableDominoScroll: false, enableWordLift: false, wordAnimFps: 30, fpsAdaptive: false, rhythmFps: 30, enableDynamicBg: false, enableAudioRhythm: false, showVisualizer: false },
+    }
+    const cfg = map[preset]
+    if (!cfg) return
+    _applyingPreset = true
+    enableLyricsBlur.value = cfg.enableLyricsBlur
+    enableDominoScroll.value = cfg.enableDominoScroll
+    enableWordLift.value = cfg.enableWordLift
+    wordAnimFps.value = cfg.wordAnimFps
+    fpsAdaptive.value = cfg.fpsAdaptive
+    rhythmFps.value = cfg.rhythmFps
+    enableDynamicBg.value = cfg.enableDynamicBg
+    enableAudioRhythm.value = cfg.enableAudioRhythm
+    showVisualizer.value = cfg.showVisualizer
+    qualityPreset.value = preset
+    _applyingPreset = false
+    ensureRefreshDetected()
+    saveSettingsImmediate()
+  }
+
   // 先尝试 localStorage 迁移到后端
   loadSettings()
+  ensureRefreshDetected()
 
   return {
     theme, accentColor, blurStrength, followSystemTheme,
     lyricsFontSize, lyricsFontWeight,
     lyricsTransScale, lyricsActiveScale,
     enableLyricsBlur, enableDominoScroll, enableWordLift, wordAnimFps,
+    showVisualizer,
+    rhythmFps, fpsAdaptive, measuredRefresh, effectiveWordAnimFps,
     autoScan, language,
     desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale, desktopLyricsViewLines,
     enableDynamicBg,
     enableAudioRhythm,
+    qualityPreset,
     weatherPrivateKey,
     weatherCredentialId,
     weatherProjectId,
     weatherApiHost,
     debugMode,
-    loadSettings, saveSettings, saveSettingsImmediate, resetLyricsDefaults
+    loadSettings, saveSettings, saveSettingsImmediate, resetLyricsDefaults,
+    applyQualityPreset,
+    detectRefreshRate, ensureRefreshDetected,
   }
 })

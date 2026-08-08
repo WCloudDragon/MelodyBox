@@ -27,7 +27,7 @@
             </span>
             <div class="menu-item__text">
               <span class="menu-item__title">播放界面</span>
-              <span class="menu-item__desc">歌词显示、动画效果开关</span>
+              <span class="menu-item__desc">歌词显示、动画效果、画质档位与性能测试</span>
             </div>
           </div>
           <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
@@ -191,15 +191,81 @@
         <div class="setting-row setting-row--slider">
           <div class="setting-label">
             <span class="setting-title">逐字动画帧率</span>
-            <span class="setting-desc">控制卡拉OK扫过与上浮动画的刷新率（当前：<b>{{ settingsStore.wordAnimFps === 0 ? '关闭' : settingsStore.wordAnimFps + ' fps' }}</b>）</span>
+            <span class="setting-desc" v-if="settingsStore.fpsAdaptive">
+              自适应：屏幕 {{ settingsStore.measuredRefresh }}Hz，实际按 <b>{{ settingsStore.effectiveWordAnimFps }}fps</b>（上限 240）
+            </span>
+            <span class="setting-desc" v-else>控制卡拉OK扫过的刷新率（当前：<b>{{ settingsStore.wordAnimFps }} fps</b>）</span>
           </div>
-          <el-slider
-            v-model="settingsStore.wordAnimFps"
-            :min="0" :max="240" :step="5"
-            class="setting-slider"
-            :marks="{ 0:'关', 30:'30', 60:'60', 120:'120', 144:'144', 240:'240' }"
-            @change="settingsStore.saveSettings()"
-          />
+          <div class="setting-fps">
+            <el-switch v-model="settingsStore.fpsAdaptive" active-text="自适应" inactive-text="固定" />
+            <el-slider
+              :model-value="settingsStore.wordAnimFps"
+              :min="24" :max="240" :step="1"
+              :disabled="settingsStore.fpsAdaptive"
+              class="setting-slider"
+              :marks="FPS_MARKS"
+              @input="onFpsInput"
+              @change="onFpsChange"
+            />
+          </div>
+        </div>
+        <div class="setting-row" v-if="settingsStore.fpsAdaptive">
+          <div class="setting-label">
+            <span class="setting-title">刷新率检测</span>
+            <span class="setting-desc">实测当前屏幕刷新率（更换显示器后可重新检测）</span>
+          </div>
+          <el-button size="small" @click="redetectRefresh">重新检测</el-button>
+        </div>
+        <div class="setting-row">
+          <div class="setting-label">
+            <span class="setting-title">律动响应帧率</span>
+            <span class="setting-desc">全屏歌词页光球随音频的更新频率（低帧更省电，视觉差异小）</span>
+          </div>
+          <el-radio-group v-model="settingsStore.rhythmFps" @change="settingsStore.saveSettings()">
+            <el-radio-button :value="30">30</el-radio-button>
+            <el-radio-button :value="60">60</el-radio-button>
+          </el-radio-group>
+        </div>
+      </section>
+
+      <!-- 画质档位与性能参考（与播放界面合并） -->
+      <section class="settings-section">
+        <h3>画质档位</h3>
+        <el-radio-group v-model="settingsStore.qualityPreset" @change="onPresetChange">
+          <el-radio-button value="auto">自动</el-radio-button>
+          <el-radio-button value="low">低</el-radio-button>
+          <el-radio-button value="medium">中</el-radio-button>
+          <el-radio-button value="high">高</el-radio-button>
+          <el-radio-button value="custom">自定义</el-radio-button>
+        </el-radio-group>
+        <p class="hint">
+          自动：依据性能测试推荐档位；低/中/高：套用对应效果组合；自定义：手动调整上方任意开关后自动切换。
+        </p>
+      </section>
+
+      <section class="settings-section">
+        <h3>性能参考</h3>
+        <p class="hint">
+          基准测试会叠加一版全屏歌词页同款动态流光，采样 5 秒真实帧率与长任务，给出推荐档位（不影响当前播放）。
+        </p>
+        <el-button type="primary" :loading="perf.status === 'running'" @click="startBenchmark">
+          {{ perf.status === 'running' ? '测试中...' : (perf.result || cachedBench ? '重新测试' : '运行性能测试') }}
+        </el-button>
+
+        <div v-if="perf.status === 'running'" class="perf-run">
+          <el-progress :percentage="perf.progress" />
+          <p class="hint">正在测量帧率... 实时 FPS：<strong>{{ perf.liveFps }}</strong></p>
+        </div>
+
+        <div v-else-if="perf.result" class="perf-result">
+          <p>平均帧率 <strong>{{ perf.result.fps }}</strong> FPS · 长任务 <strong>{{ perf.result.longMs }}</strong> ms · 性能分 <strong>{{ perf.result.score }}</strong></p>
+          <p>推荐档位：<el-tag type="success">{{ tierLabel(perf.result.tier) }}</el-tag></p>
+          <el-button type="primary" size="small" @click="applyBenchmarkTier">应用推荐档位</el-button>
+        </div>
+
+        <div v-else-if="cachedBench" class="perf-result">
+          <p class="hint">上次测试：{{ cachedBench.fps }} FPS · 推荐 {{ tierLabel(cachedBench.tier) }}</p>
+          <el-button size="small" @click="startBenchmark">重新测试</el-button>
         </div>
       </section>
     </template>
@@ -458,6 +524,7 @@
         </div>
       </section>
     </template>
+
   </div>
 </template>
 
@@ -465,10 +532,70 @@
 defineOptions({ name: 'SettingsView' })
 import { ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import { usePerformanceStore } from '@/stores/performance'
 import { useScrollMemory } from '@/composables/useScrollMemory'
 
 const settingsStore = useSettingsStore()
+const perf = usePerformanceStore()
 const page = ref('menu')
+
+// ==================== 性能与画质 ====================
+
+const cachedBench = ref(perf.cachedResult())
+
+function tierLabel(tier) {
+  return ({ high: '高画质', medium: '中画质', low: '低画质' }[tier] || tier)
+}
+
+async function startBenchmark() {
+  const res = await perf.runBenchmark()
+  if (res) cachedBench.value = res
+}
+
+function applyBenchmarkTier() {
+  const tier = perf.result?.tier || cachedBench.value?.tier
+  if (!tier) return
+  perf.applyTier(tier)
+  settingsStore.qualityPreset = tier
+}
+
+function onPresetChange(preset) {
+  if (preset === 'auto') {
+    const cached = cachedBench.value || perf.cachedResult()
+    if (cached?.tier) {
+      perf.applyTier(cached.tier)
+      settingsStore.qualityPreset = cached.tier
+    } else {
+      startBenchmark()
+    }
+  } else if (preset !== 'custom') {
+    perf.applyTier(preset)
+  }
+}
+
+// 逐字动画帧率固定档位（24 以下移除，固定档位吸附）
+const FPS_OPTIONS = [24, 30, 60, 75, 90, 100, 120, 144, 165, 240]
+const FPS_MARKS = Object.fromEntries(FPS_OPTIONS.map((v) => [v, String(v)]))
+
+function snapFps(v) {
+  return FPS_OPTIONS.reduce(
+    (a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a)
+  )
+}
+
+// 拖动过程中即时吸附到最近档位（一档一档，不显示中间值）
+function onFpsInput(v) {
+  settingsStore.wordAnimFps = snapFps(v)
+}
+
+function onFpsChange(v) {
+  settingsStore.wordAnimFps = snapFps(v)
+  settingsStore.saveSettings()
+}
+
+async function redetectRefresh() {
+  await settingsStore.detectRefreshRate()
+}
 
 // ==================== AI 模型路径 ====================
 import { apiUrl } from '@/config/api'
@@ -620,6 +747,17 @@ useScrollMemory('settings', () => document.querySelector('.main-content'))
 
 .setting-slider {
   width: 100%;
+}
+
+.setting-fps {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.setting-fps .setting-slider {
+  flex: 1;
 }
 
 /* Element Plus slider 覆盖：与开关按钮大小统一 */

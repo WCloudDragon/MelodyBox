@@ -59,6 +59,16 @@ def get_songs():
     artist = request.args.get('artist', '').strip()
     source = request.args.get('source', 'all').strip()  # all / local / cloud
 
+    # 云端曲库为会员功能：非管理员且非会员不可访问（免费用户只能看本地）
+    if source in ('all', 'cloud'):
+        from routes.auth import _membership_ok, get_user_id_from_token
+        uid = get_user_id_from_token()
+        db_check = get_db()
+        ok = uid is not None and _membership_ok(db_check, uid, 'vip', 'svip')
+        db_check.close()
+        if not ok:
+            return jsonify({'error': '云端曲库为会员专享，请先升级会员'}), 403
+
     if page_size > current_app.config['MAX_PAGE_SIZE']:
         page_size = current_app.config['MAX_PAGE_SIZE']
     offset = (page - 1) * page_size

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, systemPreferences } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, systemPreferences, screen } = require('electron')
 const { execSync, exec } = require('child_process')
 const path = require('path')
 const fs = require('fs')
@@ -579,6 +579,13 @@ ipcMain.handle('music:pathToUrl', async (_event, filePath) => {
 
 // 暴露音频服务器端口给渲染进程
 ipcMain.handle('audio:getPort', () => audioServerPort)
+ipcMain.handle('system:getRefreshRate', () => {
+  try {
+    return screen.getPrimaryDisplay().refreshRate
+  } catch {
+    return null
+  }
+})
 
 // 桌面歌词窗口 IPC
 ipcMain.on('lyrics:open', () => createLyricsWindow())

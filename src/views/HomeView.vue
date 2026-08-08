@@ -315,6 +315,7 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
 import { useAiStore } from '@/stores/ai'
 import { useWeatherStore } from '@/stores/weather'
+import { useAuthStore } from '@/stores/auth'
 import { useRouter } from 'vue-router'
 import { apiUrl } from '@/config/api'
 import { ElMessage } from 'element-plus'
@@ -327,15 +328,19 @@ const libraryStore = useLibraryStore()
 const playerStore = usePlayerStore()
 const aiStore = useAiStore()
 const weatherStore = useWeatherStore()
+const auth = useAuthStore()
 const router = useRouter()
 const modal = useModal()
 
-// 资源筛选
-const sourceFilters = [
-  { key: 'all', label: '全部' },
-  { key: 'local', label: '本地' },
-  { key: 'cloud', label: '云端' },
-]
+// 资源筛选（云端为会员功能，非会员不显示）
+const sourceFilters = computed(() => {
+  const base = [
+    { key: 'all', label: '全部' },
+    { key: 'local', label: '本地' },
+  ]
+  if (auth.isVip) base.push({ key: 'cloud', label: '云端' })
+  return base
+})
 
 // 扫描进度通知
 watch(() => libraryStore.isScanning, (scanning) => {

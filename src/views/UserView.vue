@@ -53,6 +53,36 @@
         </div>
       </section>
 
+      <!-- 会员中心（模拟购买 + 权益展示） -->
+      <section class="card">
+        <h3 class="card__title">会员中心</h3>
+        <div class="info-grid">
+          <div class="info-row">
+            <span class="info-row__label">当前等级</span>
+            <span class="info-row__value">
+              <span class="member-tag" :class="`member-tag--${auth.membershipStatus.membership_type}`">
+                {{ membershipLabel }}
+              </span>
+              <span v-if="auth.membershipExpire" class="info-row__hint" style="margin-left: 8px">
+                有效期至 {{ formatDate(auth.membershipExpire) }}
+              </span>
+            </span>
+          </div>
+        </div>
+
+        <div class="plan-grid">
+          <div v-for="p in auth.membershipPlans" :key="p.id" class="plan-card">
+            <div class="plan-card__name">{{ planLabel(p.name) }}</div>
+            <div class="plan-card__price">¥{{ p.price }}</div>
+            <div class="plan-card__duration">{{ p.duration_days }} 天</div>
+            <button class="action-btn action-btn--primary" v-ripple @click="handlePurchase(p)">
+              模拟购买
+            </button>
+          </div>
+        </div>
+        <p class="card__hint">购买为模拟支付，用于演示会员权益与到期降级流程</p>
+      </section>
+
       <!-- 账户安全 -->
       <section class="card">
         <h3 class="card__title">账户安全</h3>
@@ -122,6 +152,26 @@ const membershipLabel = computed(() => {
   const map = { free: '免费用户', vip: 'VIP 会员', svip: 'SVIP 会员' }
   return map[auth.membershipType] || '免费用户'
 })
+
+function planLabel(name) {
+  return ({ vip: 'VIP 会员', svip: 'SVIP 会员' }[name] || name)
+}
+
+async function handlePurchase(plan) {
+  try {
+    await modal.confirm({
+      title: '模拟支付',
+      message: `确认支付 ¥${plan.price} 购买「${planLabel(plan.name)}」${plan.duration_days} 天？`,
+      confirmText: '确认支付',
+    })
+  } catch { return }
+  try {
+    const data = await auth.purchasePlan(plan.id)
+    ElMessage.success(data.message || '购买成功')
+  } catch (e) {
+    ElMessage.error(e.message || '购买失败')
+  }
+}
 
 function formatDate(dateStr) {
   if (!dateStr) return '未知'
@@ -303,4 +353,26 @@ async function handleDeleteAccount() {
   background: rgba(239,68,68,0.1); color: #ef4444;
 }
 .action-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.plan-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+}
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px;
+  min-width: 140px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+.plan-card__name { font-size: 14px; font-weight: 700; }
+.plan-card__price { font-size: 22px; font-weight: 700; color: var(--accent-color); }
+.plan-card__duration { font-size: 12px; color: var(--text-tertiary); }
+.card__hint { font-size: 12px; color: var(--text-tertiary); margin: 10px 0 0; }
 </style>

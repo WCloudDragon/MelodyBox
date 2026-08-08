@@ -282,7 +282,14 @@ function startRhythmLoop() {
   const freqData = new Uint8Array(analyser.frequencyBinCount) // 64
   const binCount = freqData.length
 
-  function step() {
+  let lastWork = 0
+  function step(now = performance.now()) {
+    // 律动响应帧率节流：间隔内跳过分析与样式写入，rAF 保持调度
+    if (now - lastWork < 1000 / Math.max(settings.rhythmFps.value, 1)) {
+      _rhythmRaf = requestAnimationFrame(step)
+      return
+    }
+    lastWork = now
     analyser.getByteFrequencyData(freqData)
 
     // for 循环累加，避免 slice+reduce 每帧分配临时数组（GC 压力）
@@ -720,7 +727,7 @@ function startWordAnimLoop() {
   const loop = () => {
     const idx = currentLineIndex.value
     const line = parsedLyrics.value[idx]
-    const fpz = wordAnimFps.value
+    const fpz = settings.effectiveWordAnimFps.value
     if (!props.visible || idx < 0 || !line?.wordLevel || fpz <= 0) {
       wordAnimRaf = null
       return

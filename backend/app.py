@@ -62,7 +62,7 @@ def _migrate_legacy_vectors(conn, cursor):
 
 
 def init_db(app):
-    """初始化 SQLite 数据库和全部 15 张表"""
+    """初始化 SQLite 数据库和全部 23 张表"""
     db_path = app.config['DB_PATH']
     db_dir = os.path.dirname(db_path)
     if db_dir and not os.path.exists(db_dir):
@@ -437,10 +437,51 @@ def init_db(app):
         )
     ''')
 
+    # ========== 21. membership_plans（会员方案，管理端可调价/上下架）==========
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS membership_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            price REAL NOT NULL DEFAULT 0,
+            duration_days INTEGER NOT NULL DEFAULT 30,
+            is_active INTEGER DEFAULT 1,
+            sort_order INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            updated_at TEXT DEFAULT (datetime('now','localtime'))
+        )
+    ''')
+
+    # ========== 22. membership_orders（模拟购买订单记录）==========
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS membership_orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            plan_id INTEGER NOT NULL,
+            amount REAL NOT NULL DEFAULT 0,
+            status TEXT DEFAULT 'paid',
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (plan_id) REFERENCES membership_plans(id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_orders_user ON membership_orders(user_id, created_at DESC)')
+
+    # 默认会员方案（首次初始化时写入）
+    cursor.execute('SELECT COUNT(*) FROM membership_plans')
+    if cursor.fetchone()[0] == 0:
+        cursor.execute(
+            "INSERT INTO membership_plans (name, price, duration_days, is_active, sort_order) "
+            "VALUES ('vip', 15, 30, 1, 1)"
+        )
+        cursor.execute(
+            "INSERT INTO membership_plans (name, price, duration_days, is_active, sort_order) "
+            "VALUES ('svip', 30, 90, 1, 2)"
+        )
+
     # 存量迁移：旧版 songs/cloud_songs 表中的 embedding 列 → song_vectors
     _migrate_legacy_vectors(conn, cursor)
 
-    # ========== 21. cloud_songs（管理员云端曲库）==========
+    # ========== 23. cloud_songs（管理员云端曲库）==========
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS cloud_songs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -31,9 +31,9 @@
 | 后端 | Python Flask（PyInstaller 打包为独立 exe） |
 | 数据库 | SQLite 3（WAL 模式，18 张表 + all_songs VIEW + 增量扫描 + MD5 指纹重连） |
 | **AI 文本 Embedding** | **fastembed + multilingual-e5-large（ONNX Runtime，1024 维，100+ 语言）** |
-| **AI 音频 Embedding** | **MERT-v1-330M（PyTorch + ONNX，768 维，GPU/CPU 自适应）** |
+| **AI 音频 Embedding** | **MERT-v1-95M（PyTorch + ONNX，768 维，GPU/CPU 自适应）** |
 | **AI 推荐引擎** | **余弦相似度 + 流派/语种加权融合 + MMR 多样性重排** |
-| **LLM 集成** | **OpenAI 兼容 SDK（DeepSeek / 智谱 GLM）+ SSE 流式响应** |
+| **LLM 集成** | **OpenAI 兼容 SDK（DeepSeek / 智谱 GLM）+ SSE 流式响应（规划中）** |
 | 音频引擎 | FFmpeg 子进程 stdout pipe 实时 PCM 转码 |
 | 律动可视化 | Web Audio API AnalyserNode（fftSize=128，64 频段） |
 | 动画 | 自研 CSS 硬件加速 + GSAP + Web Animation API |
@@ -48,17 +48,20 @@ melodybox/
 ├── electron/                          # Electron 主进程
 │   ├── main.js                        # 主进程（窗口管理、thumb:// 协议、HTTP 音频服务器）
 │   └── preload.js                     # 预加载脚本（IPC 桥接）
+├── admin.html                         # B/S 管理端入口（浏览器访问 /admin）
 ├── src/                               # Vue 前端
 │   ├── main.js                        # Vue 入口
 │   ├── App.vue                        # 根组件
+│   ├── config/api.js                  # 全局 API 配置（服务器地址/音频/封面 URL 统一管理）
+│   ├── admin/                         # B/S 管理端独立应用（登录 + 云端曲库/文件夹管理）
 │   ├── router/index.js                # 17 个路由页面
 │   ├── stores/                        # Pinia 状态管理
 │   │   ├── player.js                  # 播放器引擎（4 种播放模式、Fisher-Yates 洗牌、Seek）
 │   │   ├── library.js                 # 音乐库（虚拟滚动、搜索/排序/筛选）
 │   │   ├── playlist.js                # 歌单管理
 │   │   ├── settings.js                # 用户设置
-│   │   ├── auth.js                    # 会员体系（free/vip/svip + admin）
-│   │   ├── ai.js                      # AI 推荐（7 种模式、Embedding 状态、30 分钟缓存）
+│   │   ├── auth.js                    # 用户认证与角色（token 本地持久化）
+│   │   ├── ai.js                      # AI 推荐（服务端缓存 + 画像驱动、Embedding 状态）
 │   │   ├── weather.js                 # 天气感知（和风天气 API、情绪映射、30 分钟缓存）
 │   │   └── progress.js                # 缩略图生成进度
 │   ├── components/
@@ -80,7 +83,7 @@ melodybox/
 │   │   ├── TopPlaysView.vue           # 播放次数排行
 │   │   ├── TrackInfoView.vue          # 音轨元数据详情
 │   │   ├── SettingsView.vue           # 设置页（含 AI Embedding 生成管理）
-│   │   ├── AdminView.vue              # 管理员面板（云端曲库管理）
+│   │   ├── AdminView.vue              # 管理员面板（B/S 管理端使用）
 │   │   ├── LoginView.vue / UserView.vue
 │   │   ├── DesktopLyricsView.vue      # 桌面歌词独立窗口
 │   │   └── RhythmDebugView.vue        # 律动调试窗口
@@ -93,18 +96,19 @@ melodybox/
 │       ├── scanNotify.js              # 扫描进度提示
 │       └── toast.js                   # 轻量 Toast 通知
 ├── backend/                           # Flask API
-│   ├── app.py                         # Flask 入口（自动建 18 张表 + all_songs VIEW）
-│   ├── config/config.py               # 配置（数据库路径、AI 模型设置）
+│   ├── app.py                         # Flask 入口（自动建 21 张表 + all_songs VIEW + B/S 静态托管）
+│   ├── config/config.py               # 配置（数据库路径、AI 模型设置、云端上传目录）
+│   ├── config/recommend_config.py     # 推荐引擎权重/版本号统一配置
 │   ├── models/__init__.py
 │   ├── routes/
 │   │   ├── ai.py                      # AI 推荐 API（7 种模式、Embedding 生成/状态查询）
 │   │   ├── auth.py                    # 用户认证
-│   │   ├── cloud.py                   # 云端曲库管理（管理员 CRUD）
-│   │   ├── folders.py                 # 文件夹管理
+│   │   ├── cloud.py                   # 云端曲库管理（管理员 CRUD + 浏览器上传）
+│   │   ├── folders.py                 # 文件夹管理（含服务器目录浏览）
 │   │   ├── playlist.py                # 歌单 CRUD
 │   │   ├── settings.py               # 用户设置 API
 │   │   ├── stats.py                   # 播放统计 + 指纹重连
-│   │   └── weather.py                 # 天气 API（和风天气 + LLM 情绪语义映射）
+│   │   └── weather.py                 # 天气 API（和风天气 + 场景情绪映射）
 │   ├── services/
 │   │   ├── embedding.py               # AI Embedding 服务（E5 文本 + MERT 音频，GPU/CPU 自适应）
 │   │   ├── vectors.py                 # 向量存储（song_vectors 表 + 归一化矩阵 + 版本化缓存）
@@ -112,15 +116,29 @@ melodybox/
 │   │   ├── profile.py                 # 用户画像（事件聚合 + 时间衰减 + 正负样本）
 │   │   ├── recommender.py             # 统一推荐流水线（候选→打分→过滤→MMR→解释，配置化权重）
 │   │   └── scanner.py                 # mutagen 元数据解析 + 增量扫描 + 缩略图生成
+│   ├── utils/
+│   │   └── cache.py                   # TTL 缓存工具（定期清理过期项）
+│   └── tools/
+│       ├── fix_instrumental_lang.py   # 纯音乐语言标记修复
+│       ├── refresh_instrumental_embeddings.py
+│       ├── evaluate_recommendations.py # 推荐离线评估（precision@k / recall@k）
+│       ├── test_recommender.py        # 推荐引擎冒烟测试
+│       └── test_admin_bs.py           # B/S 管理端冒烟测试
+├── database/schema.sql                # SQLite 建表脚本（与 backend/app.py 对齐）
+├── bin/                               # 内嵌 ffmpeg.exe
+├── start-dev.bat                      # 一键开发启动
+├── build-flask.bat                    # Flask → PyInstaller 打包
+└── vite.config.js
+```
 
-### 6. AI 推荐架构（v2 重构）
+### AI 推荐架构（v2 重构）
 
 推荐功能重构为**事件驱动的统一流水线**，核心变化：
 
 - **向量独立表**：`song_vectors`（song_id + source 复合主键），带 `text_version` / `audio_version`，
   模型升级只重算版本不符的歌曲；旧 `songs.embedding` 列自动迁移后只读。
 - **用户画像持久化**：`events` 表记录播放/跳过/听完/喜欢/不喜欢，
-  `user_profiles` 表存储加权平均向量、流派/语种分布、最近听过列表，每次行为异步刷新。
+  `user_profiles` 表存储加权平均向量、流派/语种分布、最近听过列表，行为事件节流刷新。
 - **统一流水线**：五种模式（综合/语言/情绪/相似/冷门宝藏）收敛为同一套
   "候选生成 → 特征打分 → 规则过滤 → MMR 多样性重排 → 解释"，权重集中在
   `config/recommend_config.py`，可配置可评估。
@@ -131,17 +149,17 @@ melodybox/
   替代旧版"top-5 文本匹配歌曲音频均值"的自证循环。
 - **评估工具**：`tools/evaluate_recommendations.py` 离线切分播放历史，
   输出 precision@k / recall@k / 多样性 / 覆盖率；`recommend_log.txt` 记录每次请求耗时。
-│   ├── utils/
-│   │   └── cache.py                   # LRU 缓存工具
-│   └── tools/
-│       ├── fix_instrumental_lang.py   # 纯音乐语言标记修复
-│       └── refresh_instrumental_embeddings.py
-├── database/schema.sql                # MySQL 参考建表脚本
-├── bin/                               # 内嵌 ffmpeg.exe
-├── start-dev.bat                      # 一键开发启动
-├── build-flask.bat                    # Flask → PyInstaller 打包
-└── vite.config.js
-```
+
+### 混合架构（用户端 C/S + 管理端 B/S）
+
+系统采用双端混合架构，共享同一 Flask 服务端与 SQLite 数据层：
+
+- **用户端（C/S）**：Electron 桌面应用，负责沉浸式播放体验（FFmpeg 音频引擎、
+  全屏/桌面歌词、律动可视化、本地音乐导入），前端地址统一走 `src/config/api.js`。
+- **管理端（B/S）**：浏览器访问 `http://<host>:5000/admin`（Flask 托管 `dist/admin.html`），
+  独立管理应用（`src/admin/`），提供云端曲库管理（含文件上传）、文件夹管理
+  （服务器目录浏览）、天气配置与统计；接口均带管理员鉴权。
+- **职责边界**：客户端零管理职责，管理统一走浏览器后台。
 
 ---
 

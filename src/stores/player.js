@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useAiStore } from './ai'
 import { apiUrl } from '@/config/api'
+import { useAuthStore } from './auth'
+import { ElMessage } from '@/utils/toast'
 
 export const usePlayerStore = defineStore('player', () => {
   // 播放队列
@@ -403,6 +405,11 @@ export const usePlayerStore = defineStore('player', () => {
 
   // 切换桌面歌词
   function toggleDesktopLyrics() {
+    // 桌面歌词为会员功能
+    if (!useAuthStore().isVip) {
+      ElMessage.warning('桌面歌词为会员专享，请先在用户中心升级')
+      return
+    }
     showDesktopLyrics.value = !showDesktopLyrics.value
   }
 

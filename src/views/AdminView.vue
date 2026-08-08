@@ -226,6 +226,65 @@
         </div>
       </section>
 
+      <!-- 会员方案管理 -->
+      <section class="admin-card">
+        <div class="admin-card__header">
+          <div class="admin-card__title">
+            <el-icon size="18"><Coin /></el-icon>
+            <span>会员方案管理</span>
+          </div>
+        </div>
+        <div class="admin-card__body">
+          <div class="add-row">
+            <el-select v-model="planForm.name" style="width: 110px">
+              <el-option label="VIP" value="vip" />
+              <el-option label="SVIP" value="svip" />
+            </el-select>
+            <el-input-number v-model="planForm.price" :min="0" :precision="1" :step="5" />
+            <el-input-number v-model="planForm.durationDays" :min="1" :step="30" />
+            <el-switch v-model="planForm.isActive" active-text="上架" />
+            <el-button type="primary" size="small" :loading="planSaving" @click="savePlan">
+              {{ planForm.id ? '保存修改' : '新增方案' }}
+            </el-button>
+            <el-button v-if="planForm.id" size="small" text @click="resetPlanForm">取消编辑</el-button>
+          </div>
+
+          <el-table :data="plans" size="small" style="margin-top: 12px">
+            <el-table-column prop="name" label="方案" width="90">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.name === 'svip' ? 'danger' : 'primary'">
+                  {{ row.name.toUpperCase() }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="price" label="价格(¥)" width="90" />
+            <el-table-column prop="duration_days" label="时长(天)" width="90" />
+            <el-table-column label="上架" width="80">
+              <template #default="{ row }">
+                <el-switch
+                  :model-value="!!row.is_active"
+                  @change="(v) => updatePlan(row, { is_active: v })"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="150">
+              <template #default="{ row }">
+                <el-button size="small" text @click="editPlan(row)">编辑</el-button>
+                <el-button size="small" text type="danger" @click="deletePlan(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <h4 style="margin: 18px 0 8px">最近订单（模拟支付）</h4>
+          <el-table :data="orders" size="small" max-height="240">
+            <el-table-column prop="username" label="用户" width="110" />
+            <el-table-column prop="plan_name" label="方案" width="90" />
+            <el-table-column prop="amount" label="金额(¥)" width="90" />
+            <el-table-column prop="created_at" label="时间" />
+          </el-table>
+        </div>
+      </section>
+
       <!-- 右侧下：系统信息 -->
       <section class="admin-card">
         <div class="admin-card__header">
@@ -364,7 +423,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaylistStore } from '@/stores/playlist'
 import { Monitor, Cloudy, Connection, InfoFilled, Plus, Delete, Check, FolderAdd, Document, Close, Edit } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiUrl, authHeaders } from '@/config/api'
 
 const libraryStore = useLibraryStore()
@@ -833,10 +892,135 @@ async function saveWeatherApiKey() {
   }
 }
 
+// ==================== 会员方案管理 ====================
+
+const plans = ref([])
+const orders = ref([])
+const planSaving = ref(false)
+const planForm = reactive({ id: null, name: 'vip', price: 15, durationDays: 30, isActive: true })
+
+function resetPlanForm() {
+  planForm.id = null
+  planForm.name = 'vip'
+  planForm.price = 15
+  planForm.durationDays = 30
+  planForm.isActive = true
+}
+
+async function loadMembershipAdmin() {
+  const token = localStorage.getItem('auth-token')
+  try {
+    const [plansRes, ordersRes] = await Promise.all([
+      fetch(apiUrl('/api/auth/membership/admin/plans'), { headers: authHeaders(token) }),
+      fetch(apiUrl('/api/auth/membership/admin/orders'), { headers: authHeaders(token) }),
+    ])
+    if (plansRes.ok) {
+      const data = await plansRes.json()
+      plans.value = data.plans || []
+    }
+    if (ordersRes.ok) {
+      const data = await ordersRes.json()
+      orders.value = data.orders || []
+    }
+  } catch {}
+}
+
+async function savePlan() {
+  const token = localStorage.getItem('auth-token')
+  planSaving.value = true
+  try {
+    const body = {
+      name: planForm.name,
+      price: planForm.price,
+      duration_days: planForm.durationDays,
+      is_active: planForm.isActive,
+    }
+    const url = planForm.id
+      ? apiUrl(`/api/auth/membership/admin/plans/${planForm.id}`)
+      : apiUrl('/api/auth/membership/admin/plans')
+    const res = await fetch(url, {
+      method: planForm.id ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+    if (res.ok) {
+      ElMessage.success(data.message || '已保存')
+      resetPlanForm()
+      loadMembershipAdmin()
+    } else {
+      ElMessage.error(data.error || '保存失败')
+    }
+  } catch {
+    ElMessage.error('请求失败')
+  } finally {
+    planSaving.value = false
+  }
+}
+
+function editPlan(row) {
+  planForm.id = row.id
+  planForm.name = row.name
+  planForm.price = row.price
+  planForm.durationDays = row.duration_days
+  planForm.isActive = !!row.is_active
+}
+
+async function updatePlan(row, patch) {
+  const token = localStorage.getItem('auth-token')
+  try {
+    const res = await fetch(apiUrl(`/api/auth/membership/admin/plans/${row.id}`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+      body: JSON.stringify(patch),
+    })
+    const data = await res.json()
+    if (res.ok) {
+      ElMessage.success(data.message || '已更新')
+      loadMembershipAdmin()
+    } else {
+      ElMessage.error(data.error || '更新失败')
+      loadMembershipAdmin()
+    }
+  } catch {
+    ElMessage.error('请求失败')
+    loadMembershipAdmin()
+  }
+}
+
+async function deletePlan(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除「${row.name.toUpperCase()}」方案？已有订单记录不受影响。`,
+      '删除方案',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  const token = localStorage.getItem('auth-token')
+  try {
+    const res = await fetch(apiUrl(`/api/auth/membership/admin/plans/${row.id}`), {
+      method: 'DELETE',
+      headers: authHeaders(token),
+    })
+    if (res.ok) {
+      ElMessage.success('方案已删除')
+      if (planForm.id === row.id) resetPlanForm()
+      loadMembershipAdmin()
+    } else {
+      ElMessage.error('删除失败')
+    }
+  } catch {
+    ElMessage.error('请求失败')
+  }
+}
+
 onMounted(() => {
   loadCloudData()
   loadStats()
   loadWeatherApiKey()
+  loadMembershipAdmin()
 })
 
 watch(() => playlistStore.playlists, () => {

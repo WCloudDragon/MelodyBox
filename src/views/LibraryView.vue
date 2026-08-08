@@ -64,7 +64,7 @@
       <el-radio-group v-model="sourceFilter" size="small">
         <el-radio-button value="all">全部</el-radio-button>
         <el-radio-button value="local">本地</el-radio-button>
-        <el-radio-button value="cloud">云端</el-radio-button>
+        <el-radio-button v-if="auth.isVip" value="cloud">云端</el-radio-button>
       </el-radio-group>
       <el-radio-group v-model="libraryStore.viewMode" size="small">
         <el-radio-button value="list">
@@ -203,6 +203,7 @@ import { storeToRefs } from 'pinia'
 import { Search } from '@element-plus/icons-vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
+import { useAuthStore } from '@/stores/auth'
 import { usePlaylistStore } from '@/stores/playlist'
 import { formatDuration, formatBitrate, formatSampleRate, qualityClass } from '@/utils/format'
 import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } from '@/utils/scanNotify'
@@ -235,6 +236,7 @@ const { currentTrack } = storeToRefs(playerStore)
 const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems, showAddPlaylistDialog } = useTrackList()
 
 const ctxHandler = createCtxHandler(playerStore, router)
+const auth = useAuthStore()
 const sourceFilter = ref('all')
 
 const menuItems = computed(() => buildMenuItems('library'))

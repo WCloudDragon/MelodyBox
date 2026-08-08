@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 获取音频服务器端口
   getAudioServerPort: () => ipcRenderer.invoke('audio:getPort'),
 
+  // 获取主显示器刷新率（主进程 screen API，准确值）
+  getRefreshRate: () => ipcRenderer.invoke('system:getRefreshRate'),
+
   // Windows 主题色
   getAccentColor: () => ipcRenderer.invoke('system:getAccentColor'),
   onAccentColorChanged: (callback) => {
