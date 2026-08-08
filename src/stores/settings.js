@@ -81,7 +81,7 @@ export const useSettingsStore = defineStore('settings', () => {
     if (fpsAdaptive.value) {
       return Math.min(Math.max(measuredRefresh.value, 24), 240)
     }
-    return wordAnimFps.value
+    return Math.min(240, Math.max(24, wordAnimFps.value))
   })
 
   function _persistPerfPrefs() {

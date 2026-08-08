@@ -727,7 +727,7 @@ function startWordAnimLoop() {
   const loop = () => {
     const idx = currentLineIndex.value
     const line = parsedLyrics.value[idx]
-    const fpz = settings.effectiveWordAnimFps.value
+    const fpz = Number(settings.effectiveWordAnimFps.value) || 60
     if (!props.visible || idx < 0 || !line?.wordLevel || fpz <= 0) {
       wordAnimRaf = null
       return
