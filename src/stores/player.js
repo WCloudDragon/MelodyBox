@@ -21,6 +21,32 @@ export const usePlayerStore = defineStore('player', () => {
   const audioCtx = ref(null)
   const analyserNode = ref(null)
 
+  // ==================== 音频分析管线预热 ====================
+  // AudioContext 创建较慢（约 300ms），若放在首次播放事件里会阻塞播放启动。
+  // 策略：启动后空闲时提前创建（挂起状态），首次播放时只需廉价"接线"；
+  // 若预热未完成，播放事件内同步兜底创建，行为与旧版完全一致。
+  let _warmCtx = null
+  let _warmAnalyser = null
+
+  function _warmupAudioPipeline() {
+    if (_warmCtx) return
+    try {
+      const ctx = new AudioContext()
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 128           // 64 频段，性能优先
+      analyser.smoothingTimeConstant = 0.6
+      _warmCtx = ctx
+      _warmAnalyser = analyser
+    } catch {}
+  }
+
+  // 应用启动后空闲时预热（不影响首屏渲染与交互）
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(() => _warmupAudioPipeline(), { timeout: 3000 })
+  } else {
+    setTimeout(_warmupAudioPipeline, 1500)
+  }
+
   // 播放模式: 'sequential' | 'repeat' | 'repeat-one' | 'shuffle'
   const playMode = ref('sequential')
 
@@ -75,14 +101,25 @@ export const usePlayerStore = defineStore('player', () => {
     audio.value.volume = volume.value
 
     // 创建 Web Audio 频谱分析管线（只在首次播放时初始化一次）
-    audio.value.addEventListener('play', () => {
+    audio.value.addEventListener('play', async () => {
       if (audioCtx.value) return
       try {
-        const ctx = new AudioContext()
+        let ctx = _warmCtx
+        let analyser = _warmAnalyser
+
+        // 预热创建的是挂起状态：先在用户手势内恢复，再接线（避免静音窗口）
+        if (ctx && ctx.state === 'suspended') {
+          try { await ctx.resume() } catch {}
+        }
+        // 预热未完成或 resume 失败：手势内同步兜底创建（与旧行为一致）
+        if (!ctx || !analyser || ctx.state !== 'running') {
+          ctx = new AudioContext()
+          analyser = ctx.createAnalyser()
+          analyser.fftSize = 128           // 64 频段，性能优先
+          analyser.smoothingTimeConstant = 0.6
+        }
+
         const src = ctx.createMediaElementSource(audio.value)
-        const analyser = ctx.createAnalyser()
-        analyser.fftSize = 128           // 64 频段，性能优先
-        analyser.smoothingTimeConstant = 0.6
         src.connect(analyser)
         analyser.connect(ctx.destination) // 手动路由到扬声器，否则无声
         audioCtx.value = ctx

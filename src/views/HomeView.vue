@@ -83,7 +83,7 @@
               >
                 <div class="rec-entry__cover-bg">
                   <img
-                    v-if="!recPreviewsLoading && weatherCardState === 'ready' && weatherCover"
+                    v-if="!recPreviewsLoading && (weatherCardState === 'ready' || (weatherCardState === 'retrying' && weatherStore.weatherData)) && weatherCover"
                     :src="weatherCover"
                     class="rec-entry__cover-img"
                   />
@@ -551,10 +551,12 @@ const weatherCover = computed(() => {
 })
 
 /**
- * 天气卡片状态：ready（有数据）/ loading（获取中）/ unconfigured（未配置）/ error（请求失败）
- * 卡片常显，任何状态下都可点击进入推荐页（未配置时跳配置页）。
+ * 天气卡片状态：ready（有数据）/ retrying（静默重试中）/ loading（获取中）/
+ *              unconfigured（未配置）/ error（重试全部失败，可手动重试）
+ * 卡片常显；未配置跳配置页，重试失败点击卡片立即重试，其余进入推荐页。
  */
 const weatherCardState = computed(() => {
+  if (weatherStore.retrying) return 'retrying'
   if (weatherStore.weatherData) return 'ready'
   if (weatherStore.isLoading) return 'loading'
   if (weatherStore.error) {
@@ -566,13 +568,15 @@ const weatherCardState = computed(() => {
 
 const weatherCardEmoji = computed(() => ({
   ready: '🌤',
+  retrying: '⏳',
   loading: '⏳',
   unconfigured: '🌤',
   error: '🌧',
 }[weatherCardState.value]))
 
 const weatherCardTitle = computed(() => {
-  if (weatherCardState.value === 'ready') {
+  if (weatherCardState.value === 'ready'
+      || (weatherCardState.value === 'retrying' && weatherStore.weatherData)) {
     return `${weatherStore.weatherText} ${weatherStore.temp}° · ${weatherStore.city}`
   }
   if (weatherCardState.value === 'loading') return '正在获取天气…'
@@ -582,9 +586,10 @@ const weatherCardTitle = computed(() => {
 const weatherCardSubtitle = computed(() => {
   switch (weatherCardState.value) {
     case 'ready': return weatherStore.suggestion
+    case 'retrying': return `自动重试中（${weatherStore.retryCount}/${weatherStore.retryTotal}）`
     case 'loading': return '获取中，先用默认推荐'
     case 'unconfigured': return '配置后开启天气场景推荐'
-    case 'error': return '天气服务暂不可用，使用默认推荐'
+    case 'error': return '天气暂不可用，点击重试'
   }
   return ''
 })
@@ -592,6 +597,10 @@ const weatherCardSubtitle = computed(() => {
 function onWeatherCardClick() {
   if (weatherCardState.value === 'unconfigured') {
     router.push('/admin')
+    return
+  }
+  if (weatherCardState.value === 'error') {
+    weatherStore.refreshWeather()
     return
   }
   router.push(`/recommend?mode=weather&mood=${weatherStore.mood}`)
