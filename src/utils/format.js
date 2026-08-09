@@ -172,18 +172,28 @@ export function computeActiveSet(lyrics, currentTime) {
 
 function effectiveEnd(lyrics, i) {
   const L = lyrics[i]
-  const baseEnd = L.end != null ? L.end : (i + 1 < lyrics.length ? lyrics[i + 1].time : Infinity)
+  // 无结束时间戳（标准逐句歌词）：持续到下一行开始
+  if (L.end == null) {
+    return i + 1 < lyrics.length ? lyrics[i + 1].time : Infinity
+  }
+  const baseEnd = L.end
+  let nextAfter = Infinity
   for (let j = 0; j < lyrics.length; j++) {
     if (j === i) continue
     const M = lyrics[j]
     const otherStart = M.time
     const otherBaseEnd = M.end != null ? M.end : (j + 1 < lyrics.length ? lyrics[j + 1].time : Infinity)
-    if (otherStart >= baseEnd || L.time >= otherBaseEnd) continue
-    // 基础窗口重叠 → 多句并存，使用较早结束
-    return baseEnd
+    // 手递手：另一行在原词结束时刻仍在播放 → 本行到此为止（原词结束即走）
+    if (otherStart < baseEnd && baseEnd < otherBaseEnd) {
+      return baseEnd
+    }
+    // 收集原词结束后才开始的第一行，作为无手递手时翻译尾巴的终点
+    if (otherStart > baseEnd && otherStart < nextAfter) {
+      nextAfter = otherStart
+    }
   }
-  // 无重叠 → 单句，持续到下一行开始
-  return i + 1 < lyrics.length ? lyrics[i + 1].time : Infinity
+  // 无手递手：翻译尾巴延伸到下一行开始，填补句间空隙
+  return nextAfter
 }
 
 // 合并相同时戳的条目为双语歌词对

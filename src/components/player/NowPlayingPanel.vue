@@ -840,12 +840,10 @@ function onLyricsWheel(e) {
 
 function lineStyle(index) {
   // 远距离跳转缓冲期内以旧行索引为参考，避免 opacity 抢先过渡
-  const refs = jumpPending.value >= 0 ? [jumpPending.value] : activeIndexes.value
+  let refs = jumpPending.value >= 0 ? [jumpPending.value] : activeIndexes.value
 
-  // 无活跃行（歌词间隙/首句之前）：整体弱化留白，不做任何强调
-  if (refs.length === 0) {
-    return { opacity: 0.3, filter: 'none' }
-  }
+  // 无活跃行（首句之前）：以虚拟位置 -1 为基准，保留距离模糊与渐隐
+  if (refs.length === 0) refs = [-1]
 
   // 正在播放的行（公平模型：所有活跃行一律高亮，不区分主/副）
   if (refs.includes(index)) {
