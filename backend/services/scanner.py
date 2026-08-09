@@ -661,6 +661,10 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
         except Exception as e:
             errors += 1
 
+        # 每完成一首有变更的歌曲立即提交，避免整个扫描期间长期占用数据库写锁
+        # （否则扫描过程中播放/跳过等统计上报会因写锁等待超时返回 500）
+        db_conn.commit()
+
     db_conn.commit()
 
     # ---- 更新艺术家封面：取该艺术家下第一张有封面的歌曲封面 ----
