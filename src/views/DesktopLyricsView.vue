@@ -33,6 +33,13 @@
                 <!-- 普通行 / 活跃但无逐字数据 -->
                 <p v-else class="dl-line__original"><span class="dl-line__text">{{ line.original }}</span></p>
                 <p v-if="line.translation" class="dl-line__translation"><span class="dl-line__text">{{ line.translation }}</span></p>
+                <!-- 常驻注释槽：活跃块内预留，有对白/注释时淡入 -->
+                <p v-if="index === currentLineIndex" class="dl-line__annotation">
+                  <template v-for="(ol, oi) in overlap" :key="oi">
+                    <span v-if="oi > 0" class="dl-line__annotation-sep"> / </span>
+                    <span class="dl-line__annotation-text">{{ ol.original }}<template v-if="ol.translation"> {{ ol.translation }}</template></span>
+                  </template>
+                </p>
               </div>
             </div>
           </template>
@@ -49,6 +56,7 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 // ===== 状态 =====
 const parsedLyrics = ref([])
 const currentLineIndex = ref(-1)
+const overlap = ref([])
 const desktopSettings = ref({ fontSize: 24, activeScale: 120, transScale: 60, viewLines: 2 })
 const hasData = ref(false)
 
@@ -107,13 +115,14 @@ function computeWindowHeight() {
 
   const activeOriginalLH = Math.round(base * activeScale * 1.2)
   const activeTransLH = Math.round(transBase * activeScale * 1.2)
+  const annLH = Math.round(base * 0.58 * 1.2)
   const normalOriginalLH = Math.round(base * 1.2)
   const normalTransLH = Math.round(transBase * 1.2)
   const lineOverhead = 14  // padding(6*2) + gap(2)
   const gap = 2
 
-  // 每行预留原文+翻译高度，避免翻译文本被裁切
-  let contentH = activeOriginalLH + activeTransLH + gap + lineOverhead
+  // 每行预留原文+翻译+常驻注释槽高度，避免文本被裁切或窗口抖动
+  let contentH = activeOriginalLH + activeTransLH + annLH + gap * 2 + lineOverhead
   if (viewLines >= 2) {
     contentH += normalOriginalLH + normalTransLH + gap + lineOverhead
   }
@@ -325,9 +334,9 @@ function startKaraokeLoop(activeIndex) {
   if (!line || !line.wordLevel || !line.segments || line.segments.length < 2) return
 
   const segs = line.segments
-  const nextLineTime = activeIndex + 1 < parsedLyrics.value.length
-    ? parsedLyrics.value[activeIndex + 1].time
-    : line.time + 5
+  // 末字卡拉OK的结束基准：本行自己的结束时间（缺失时回退到下一行开始）
+  const nextLineTime = line.end != null ? line.end
+    : (activeIndex + 1 < parsedLyrics.value.length ? parsedLyrics.value[activeIndex + 1].time : line.time + 5)
 
   // 一次性查询 DOM，构建预计算数组（避免每帧 querySelectorAll + parseInt）
   _karaEntries = []
@@ -382,8 +391,13 @@ if (window.electronAPI) {
 
     const newLyrics = data?.parsedLyrics || []
     const newIndex = data?.currentLineIndex ?? -1
+    const newOverlap = data?.overlap || []
 
     const lyricsChanged = JSON.stringify(newLyrics) !== JSON.stringify(parsedLyrics.value)
+    const indexChanged = newIndex !== currentLineIndex.value
+
+    // 重叠附加行（对白/注释）始终同步
+    overlap.value = newOverlap
 
     if (lyricsChanged) {
       // 切歌：重置滚动
@@ -402,6 +416,13 @@ if (window.electronAPI) {
         stopKaraokeLoop()
         nextTick(() => resetScroll())
       }
+      return
+    }
+
+    if (!indexChanged) {
+      // 仅附加注释变化：更新即可，不重新滚动/重启动画
+      parsedLyrics.value = newLyrics
+      hasData.value = true
       return
     }
 
@@ -466,7 +487,6 @@ html, body {
   padding: 16px 24px;
   -webkit-app-region: drag;
   user-select: none;
-  background: rgba(255, 0, 0, 0.3); /* DEBUG: 临时红色半透明背景 */
   overflow: hidden;
 }
 
@@ -548,6 +568,25 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 常驻注释槽：始终预留高度，有对白/注释时淡入内容 */
+.dl-line__annotation {
+  margin: 0;
+  min-height: calc(var(--dl-base-original, 24px) * 0.7);
+  font-size: calc(var(--dl-base-original, 24px) * 0.58);
+  line-height: calc(var(--dl-base-original, 24px) * 0.7);
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.55);
+  text-shadow:
+    -1px -1px 0 rgba(0, 0, 0, 0.25),
+     1px -1px 0 rgba(0, 0, 0, 0.25),
+    -1px  1px 0 rgba(0, 0, 0, 0.25),
+     1px  1px 0 rgba(0, 0, 0, 0.25);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: opacity 0.35s ease;
 }
 
 .dl-line.active .dl-line__original {

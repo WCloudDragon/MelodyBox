@@ -80,17 +80,21 @@ export function parseLRC(lrcText) {
       const time = minutes * 60 + seconds + ms / 1000
       const text = line.slice(m.index + m[0].length).trim()
       if (text) {
-        sentenceEntries.push({ time, text })
+        // 无结束时间戳：视为一直持续到下一句开始
+        sentenceEntries.push({ time, text, end: null })
       }
     } else {
       // 逐字歌词（格式三/四）：提取每个词的时间戳+文本 segment
-      const segments = []
-      for (let i = 0; i < matches.length; i++) {
-        const m = matches[i]
+      const times = matches.map(m => {
         const minutes = parseInt(m[1])
         const seconds = parseInt(m[2])
         const ms = parseInt(m[3].padEnd(3, '0'))
-        const segTime = minutes * 60 + seconds + ms / 1000
+        return minutes * 60 + seconds + ms / 1000
+      })
+      const segments = []
+      for (let i = 0; i < matches.length; i++) {
+        const m = matches[i]
+        const segTime = times[i]
         // 文本范围：当前时间戳之后 → 下一个时间戳之前（或行尾）
         const textStart = m.index + m[0].length
         const textEnd = i + 1 < matches.length ? matches[i + 1].index : line.length
@@ -101,17 +105,21 @@ export function parseLRC(lrcText) {
       }
       if (segments.length > 0) {
         const fullText = segments.map(s => s.text).join('')
+        // 行末时间戳即本行的结束时间（逐字行/整句行的尾部 [mm:ss.xxx]）
+        const endTime = times[times.length - 1]
         if (segments.length >= 2) {
           sentenceEntries.push({
             time: segments[0].time,
             text: fullText,
             segments,
-            wordLevel: true
+            wordLevel: true,
+            end: endTime
           })
         } else {
           sentenceEntries.push({
             time: segments[0].time,
-            text: fullText
+            text: fullText,
+            end: endTime
           })
         }
       }
@@ -145,6 +153,39 @@ export function getCurrentLyricIndex(lyrics, currentTime) {
   return 0
 }
 
+// 计算当前时刻全部正在播放的歌词行（公平模型：不区分主/副行，每行一律平等）。
+// 每行的有效结束时间：
+// - 若其基础窗口 [start, 较早结束) 与其他行的基础窗口重叠 → 较早结束（多句并存时唱完即走）；
+// - 否则 → 下一行开始（单句播放时持续显示，填补句间空隙，避免熄灭/跳动）。
+// 无结束时间戳的行，基础窗口视为持续到下一行开始。
+export function computeActiveSet(lyrics, currentTime) {
+  if (!lyrics || lyrics.length === 0) return { activeIndexes: [] }
+  const activeIndexes = []
+  for (let i = 0; i < lyrics.length; i++) {
+    const L = lyrics[i]
+    if (L.time > currentTime) break
+    if (currentTime >= effectiveEnd(lyrics, i)) continue
+    activeIndexes.push(i)
+  }
+  return { activeIndexes }
+}
+
+function effectiveEnd(lyrics, i) {
+  const L = lyrics[i]
+  const baseEnd = L.end != null ? L.end : (i + 1 < lyrics.length ? lyrics[i + 1].time : Infinity)
+  for (let j = 0; j < lyrics.length; j++) {
+    if (j === i) continue
+    const M = lyrics[j]
+    const otherStart = M.time
+    const otherBaseEnd = M.end != null ? M.end : (j + 1 < lyrics.length ? lyrics[j + 1].time : Infinity)
+    if (otherStart >= baseEnd || L.time >= otherBaseEnd) continue
+    // 基础窗口重叠 → 多句并存，使用较早结束
+    return baseEnd
+  }
+  // 无重叠 → 单句，持续到下一行开始
+  return i + 1 < lyrics.length ? lyrics[i + 1].time : Infinity
+}
+
 // 合并相同时戳的条目为双语歌词对
 function mergeBilingual(entries) {
   const merged = []
@@ -157,7 +198,8 @@ function mergeBilingual(entries) {
         original: cur.text,
         translation: next.text,
         segments: cur.segments || null,
-        wordLevel: cur.wordLevel || next.wordLevel || false
+        wordLevel: cur.wordLevel || next.wordLevel || false,
+        end: mergeEnd(cur.end, next.end)
       })
       i++
     } else {
@@ -166,9 +208,16 @@ function mergeBilingual(entries) {
         original: cur.text,
         translation: null,
         segments: cur.segments || null,
-        wordLevel: cur.wordLevel || false
+        wordLevel: cur.wordLevel || false,
+        end: cur.end ?? null
       })
     }
   }
   return merged
+}
+
+function mergeEnd(a, b) {
+  const has = [a, b].filter(v => v != null)
+  // 原词与翻译都有结束时间戳时，以较早者为整句的结束基准
+  return has.length ? Math.min(...has) : null
 }

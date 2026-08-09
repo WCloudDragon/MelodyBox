@@ -63,9 +63,9 @@
                 :key="index"
                 class="lyric-line"
                 :class="{
-                  active: index === currentLineIndex && jumpPending < 0,
-                  sung: currentLineIndex >= 0 && index < currentLineIndex,
-                  upcoming: index > currentLineIndex,
+                  active: activeIndexes.includes(index) && jumpPending < 0,
+                  sung: activeFirst >= 0 && index < activeFirst,
+                  upcoming: activeLast >= 0 && index > activeLast,
                   'has-translation': line.translation,
                   'is-word-level': line.wordLevel
                 }"
@@ -75,7 +75,7 @@
                 @click="seekToLine(line.time)"
               >
                 <div class="lyric-line__inner">
-                  <p v-if="line.wordLevel && line.segments && (Math.abs(index - currentLineIndex) <= 1 || index === fadingLineIndex)" class="lyric-line__original word-level">
+                  <p v-if="line.wordLevel && line.segments && (activeIndexes.some(a => Math.abs(index - a) <= 1) || index === fadingLineIndex)" class="lyric-line__original word-level">
                     <span
                       v-for="(seg, si) in line.segments"
                       :key="si"
@@ -102,7 +102,7 @@ import { ref, computed, watch, nextTick, inject, onMounted, onBeforeUnmount } fr
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
-import { parseLRC, getCurrentLyricIndex } from '@/utils/format'
+import { parseLRC, computeActiveSet } from '@/utils/format'
 import { extractCoverColors } from '@/utils/coverColorExtractor'
 
 const props = defineProps({ visible: { type: Boolean, default: false } })
@@ -119,7 +119,17 @@ const coverOriginRect = inject('coverOriginRect', ref(null))
 const mainRef = ref(null)
 const scrollRef = ref(null)
 const lineRefs = ref({})
-const currentLineIndex = ref(-1)
+// 当前时刻全部正在播放的歌词行（公平模型，不区分主/副行）
+const activeIndexes = ref([])
+const activeFirst = computed(() => activeIndexes.value.length ? activeIndexes.value[0] : -1)
+const activeLast = computed(() => activeIndexes.value.length ? activeIndexes.value[activeIndexes.value.length - 1] : -1)
+function _lastWordIndex(indexes) {
+  for (let i = indexes.length - 1; i >= 0; i--) {
+    const line = parsedLyrics.value[indexes[i]]
+    if (line?.wordLevel) return indexes[i]
+  }
+  return -1
+}
 // 远距离跳转缓冲：存旧行索引，-1 表示无跳转。延迟一帧让 v-if 词级 span 先以非活跃态渲染，
 // 然后 lineStyle(opacity) 和 .active(font-size) 在同一帧同步开始过渡，避免视觉脱节
 const jumpPending = ref(-1)
@@ -406,9 +416,9 @@ function onResize() {
     }
     // 布局重算后重新居中当前行，避免偏移出视口
     nextTick(() => {
-      if (!props.visible || currentLineIndex.value < 0) return
+      if (!props.visible || activeIndexes.value.length === 0) return
       if (isUserScrolling.value) exitUserScrollMode()
-      scrollToLine(currentLineIndex.value, false)
+      scrollToActiveGroup(false)
     })
   })
 }
@@ -672,7 +682,8 @@ function updateWordSegStyles(lineIndex, time) {
   if (!line?.segments) return
 
   const nextLine = parsedLyrics.value[lineIndex + 1]
-  const nextLineTime = nextLine ? nextLine.time : 0
+  // 末字卡拉OK的结束基准：本行自己的结束时间（缺失时回退到下一行开始）
+  const nextLineTime = line.end != null ? line.end : (nextLine ? nextLine.time : line.time + 5)
 
   for (let i = 0; i < line.segments.length; i++) {
     const el = line._wordSegEls?.[i]
@@ -705,7 +716,8 @@ function updateWordSegTransforms(lineIndex, time) {
   if (!line?.segments || !line._wordSegEls) return
 
   const nextLine = parsedLyrics.value[lineIndex + 1]
-  const nextLineTime = nextLine ? nextLine.time : 0
+  // 末字上浮结束基准同样以本行结束时间为准
+  const nextLineTime = line.end != null ? line.end : (nextLine ? nextLine.time : line.time + 5)
 
   for (let i = 0; i < line.segments.length; i++) {
     const el = line._wordSegEls[i]
@@ -725,7 +737,7 @@ function startWordAnimLoop() {
   if (wordAnimRaf) return
   let lastStyleTime = 0
   const loop = () => {
-    const idx = currentLineIndex.value
+    const idx = _lastWordIndex(activeIndexes.value)
     const line = parsedLyrics.value[idx]
     const fpz = Number(settings.effectiveWordAnimFps.value) || 60
     if (!props.visible || idx < 0 || !line?.wordLevel || fpz <= 0) {
@@ -791,7 +803,7 @@ function resetUserScroll() {
   exitUserScrollMode()
   // 同步用户滚动到的实际位置，使 scrollToLine 感知真实距离从而走平滑动画分支
   targetScrollPos = -currentScrollY
-  scrollToLine(currentLineIndex.value, true)
+  scrollToActiveGroup(true)
 }
 
 function onLyricsWheel(e) {
@@ -827,14 +839,31 @@ function onLyricsWheel(e) {
 }
 
 function lineStyle(index) {
-  // 远距离跳转缓冲期内以旧行索引计算距离，避免 opacity 抢先过渡
-  const refIdx = jumpPending.value >= 0 ? jumpPending.value : currentLineIndex.value
-  const dist = index - refIdx
-  const absDist = Math.abs(dist)
+  // 远距离跳转缓冲期内以旧行索引为参考，避免 opacity 抢先过渡
+  const refs = jumpPending.value >= 0 ? [jumpPending.value] : activeIndexes.value
+
+  // 无活跃行（歌词间隙/首句之前）：整体弱化留白，不做任何强调
+  if (refs.length === 0) {
+    return { opacity: 0.3, filter: 'none' }
+  }
+
+  // 正在播放的行（公平模型：所有活跃行一律高亮，不区分主/副）
+  if (refs.includes(index)) {
+    return { opacity: 1, filter: 'none' }
+  }
+
+  // 非活跃行：按与最近活跃行的距离渐变
+  let minDist = Infinity
+  for (const r of refs) {
+    const d = Math.abs(index - r)
+    if (d < minDist) minDist = d
+  }
+  if (minDist === Infinity) minDist = 1
+  const absDist = minDist
   const t = Math.min(absDist / 6, 1)
   const opacity = isUserScrolling.value ? 1 : Math.max(0.12, 1 - t * 0.88)
 
-  // Apple Music 风格模糊：越远离当前行越模糊，用户滚动时取消模糊
+  // Apple Music 风格模糊：越远离活跃行越模糊，用户滚动时取消模糊
   const blurAmount = (isUserScrolling.value || !enableLyricsBlur.value) ? 0 : Math.min(absDist * 1.5, 6)
   const filter = blurAmount > 0.5 ? `blur(${blurAmount}px)` : 'none'
 
@@ -886,17 +915,20 @@ watch(() => props.visible, async (val) => {
     await nextTick()
     await nextTick()
     flyCoverIn()
+    if (jumpPending.value >= 0) jumpPending.value = -1
     if (!hasLyrics.value || !scrollRef.value) return
-    const idx = getCurrentLyricIndex(parsedLyrics.value, player.getLiveTime())
-    currentLineIndex.value = idx
-    if (idx >= 0) {
-      scrollToLine(idx, false)
+    // 重新打开面板：按当前时刻重新定位
+    const { activeIndexes: act } = computeActiveSet(parsedLyrics.value, player.getLiveTime())
+    activeIndexes.value = act
+    if (act.length > 0) {
+      scrollToActiveGroup(false)
       await nextTick()
-      if (parsedLyrics.value[idx]?.wordLevel) startWordAnimLoop()
+      if (_lastWordIndex(act) >= 0) startWordAnimLoop()
     }
   } else {
     flyCoverOut()
     stopWordAnimLoop()
+    if (jumpPending.value >= 0) jumpPending.value = -1
     // 清除逐字缓存的 DOM 引用，否则重新打开面板时会复用已销毁的旧元素
     for (const line of parsedLyrics.value) {
       delete line._wordSegEls
@@ -910,43 +942,61 @@ watch(() => props.visible, async (val) => {
   }
 })
 
-// 播放中行切换
+// 播放中活跃行集合变化（公平模型：多行同时播放时全部保留，滚动中心取组中心）
 watch(currentTime, async (time) => {
   if (!props.visible || !hasLyrics.value || !scrollRef.value) return
 
-  const idx = getCurrentLyricIndex(parsedLyrics.value, time)
-  if (idx !== currentLineIndex.value) {
-    const oldIdx = currentLineIndex.value
+  const { activeIndexes: nextActive } = computeActiveSet(parsedLyrics.value, time)
+  const prevActive = activeIndexes.value
+  if (JSON.stringify(prevActive) !== JSON.stringify(nextActive)) {
+    activeIndexes.value = nextActive
+  } else {
+    return
+  }
+
+  // 卡拉OK行：活跃集合中最后一个逐字行；逐字行变化才重启动画
+  const prevWord = _lastWordIndex(prevActive)
+  const nextWord = _lastWordIndex(nextActive)
+  if (nextWord !== prevWord) {
     stopWordAnimLoop()
-    currentLineIndex.value = idx
-    // 远距离跳转：存旧行索引，延迟一帧，lineStyle 与 .active 同步过渡
-    if (Math.abs(idx - oldIdx) > 1) {
-      jumpPending.value = oldIdx
-      nextTick(() => { jumpPending.value = -1 })
-      // 旧行逐字 DOM 延后销毁，留 0.4s 给 fadeOutWordSegs 的颜色过渡
-      if (fadingTimer) clearTimeout(fadingTimer)
-      fadingLineIndex.value = oldIdx
-      fadingTimer = setTimeout(() => { fadingLineIndex.value = -1 }, 400)
-    }
-    // 旧行逐字高亮渐变消失（无论是否在滚动模式都要执行）
-    if (oldIdx >= 0 && parsedLyrics.value[oldIdx]?.wordLevel) fadeOutWordSegs(oldIdx)
-    if (idx >= 0) {
-      if (isUserScrolling.value) {
-        // 用户滚轮滚动中：不滚动面板，但需要为新行启动逐字动画
-        await nextTick()
-        if (parsedLyrics.value[idx]?.wordLevel) startWordAnimLoop()
-        return
-      }
-      await nextTick()
-      scrollToLine(idx, true)
-      await nextTick()
-      if (parsedLyrics.value[idx]?.wordLevel) startWordAnimLoop()
-    } else if (parsedLyrics.value.length > 0) {
-      // 进度条移动到首句之前（-1），滚动到第一句等待
+    if (prevWord >= 0 && parsedLyrics.value[prevWord]?.wordLevel) fadeOutWordSegs(prevWord)
+  }
+
+  // 远距离跳转（seek）：保留旧行淡出缓冲
+  const prevFirst = prevActive.length ? prevActive[0] : -1
+  const nextFirst = nextActive.length ? nextActive[0] : -1
+  if (prevFirst >= 0 && nextFirst >= 0 && Math.abs(nextFirst - prevFirst) > 1) {
+    jumpPending.value = prevFirst
+    // jumpPending 保持到滚动/级联动画结束（由 animateScrollTo 的完成回调释放），
+    // 让目标行的放大/淡入发生在滚动到位、行可见之后，而不是在屏幕外悄悄完成
+    // 旧行逐字 DOM 延后销毁，留 0.4s 给 fadeOutWordSegs 的颜色过渡
+    if (fadingTimer) clearTimeout(fadingTimer)
+    fadingLineIndex.value = prevWord >= 0 ? prevWord : prevFirst
+    fadingTimer = setTimeout(() => { fadingLineIndex.value = -1 }, 400)
+  }
+
+  if (nextActive.length === 0) {
+    if (jumpPending.value >= 0) jumpPending.value = -1
+    // 无活跃行：若在首句之前则回到第一句等待；否则保持现状（间隙留白）
+    if (time < parsedLyrics.value[0].time) {
       await nextTick()
       if (!isUserScrolling.value) scrollToLine(0, true)
     }
+    return
   }
+
+  if (isUserScrolling.value) {
+    if (jumpPending.value >= 0) jumpPending.value = -1
+    // 用户滚轮滚动中：不滚动面板，但需要为新行启动逐字动画
+    await nextTick()
+    if (nextWord >= 0) startWordAnimLoop()
+    return
+  }
+
+  await nextTick()
+  scrollToActiveGroup(true)
+  await nextTick()
+  if (nextWord >= 0) startWordAnimLoop()
 })
 
 const STAGGER_MS = 38
@@ -960,6 +1010,41 @@ function scrollToLine(index, animate = true) {
 
   const containerHeight = mainRef.value.clientHeight
   const targetScroll = lineEl.offsetTop - containerHeight / 2 + lineEl.offsetHeight / 2
+  animateScrollTo(targetScroll, index, animate)
+}
+
+// 滚动到当前活跃行组：多行同时播放时，以这些行的中心点为滚动中心
+function scrollToActiveGroup(animate = true) {
+  if (!scrollRef.value || !mainRef.value) return
+  const active = activeIndexes.value
+  if (active.length === 0) {
+    return
+  }
+  if (active.length === 1) {
+    scrollToLine(active[0], animate)
+    return
+  }
+  const firstEl = lineRefs.value[active[0]]
+  const lastEl = lineRefs.value[active[active.length - 1]]
+  if (!firstEl || !lastEl) return
+
+  const containerHeight = mainRef.value.clientHeight
+  const top = firstEl.offsetTop
+  const bottom = lastEl.offsetTop + lastEl.offsetHeight
+  let targetScroll
+  if (bottom - top > containerHeight * 0.6) {
+    // 异常大组（罕见）：退化为以第一行居中，保证可读
+    targetScroll = top - containerHeight / 2 + firstEl.offsetHeight / 2
+  } else {
+    targetScroll = (top + bottom) / 2 - containerHeight / 2
+  }
+  animateScrollTo(targetScroll, active[active.length - 1], animate)
+}
+
+function animateScrollTo(targetScroll, index, animate = true) {
+  const lineEl = lineRefs.value[index]
+  if (!lineEl) return
+  const containerHeight = mainRef.value.clientHeight
   const scrollDelta = targetScroll - targetScrollPos
 
   // 平滑动画进行中：跳过相邻位置的小范围滚动，避免打断大跨度动画
@@ -1037,6 +1122,8 @@ function scrollToLine(index, animate = true) {
         if (el) { el.style.transform = ''; el.style.transition = '' }
       }
       if (scrollRef.value) { scrollRef.value.style.willChange = ''; scrollRef.value.style.transition = '' }
+      // 级联动画完成后再解除激活缓冲，目标行在可视位置放大/淡入
+      if (jumpPending.value >= 0) jumpPending.value = -1
       lyricsScrollCleanup = null
     }
     const timer = setTimeout(cleanup, totalDuration)
@@ -1057,6 +1144,7 @@ function scrollToLine(index, animate = true) {
         anim.cancel()
         currentScrollY = -targetScroll
         smoothAnimTarget = -1
+        if (jumpPending.value >= 0) jumpPending.value = -1
         scrollRef.value.style.willChange = ''
         lyricsScrollCleanup = null
       }
@@ -1072,6 +1160,7 @@ function scrollToLine(index, animate = true) {
       currentScrollY = -targetScroll
       const cleanup = () => {
         if (scrollRef.value) scrollRef.value.style.transition = ''
+        if (jumpPending.value >= 0) jumpPending.value = -1
         lyricsScrollCleanup = null
       }
       const timer = setTimeout(cleanup, 550)
@@ -1080,6 +1169,7 @@ function scrollToLine(index, animate = true) {
   } else {
     scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
     currentScrollY = -targetScroll
+    if (jumpPending.value >= 0) jumpPending.value = -1
     for (let i = 0; i < totalLines; i++) {
       const el = lineRefs.value[i]
       if (el) { el.style.transition = ''; el.style.transform = '' }
@@ -1137,7 +1227,8 @@ watch([currentIndex, queue], ([idx, q]) => {
 }, { immediate: true })
 
 watch(() => currentTrack.value?.path, () => {
-  currentLineIndex.value = -1
+  activeIndexes.value = []
+  if (jumpPending.value >= 0) jumpPending.value = -1
   stopWordAnimLoop()
   targetScrollPos = 0
   prevLineIndex = -1
@@ -1417,7 +1508,6 @@ onBeforeUnmount(() => {
   color: rgba(255,255,255,0.4); font-size: var(--lyrics-active-trans, 14px);
   max-width: var(--lyrics-trans-active-ch-limit);
 }
-
 /* 逐字歌词 */
 .lyric-line__original.word-level {
   display: inline-flex; flex-wrap: wrap;

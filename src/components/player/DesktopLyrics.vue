@@ -11,6 +11,12 @@
             </p>
             <p v-else class="dl-line__original">{{ activeLine?.original || '' }}</p>
             <p v-if="activeLine?.translation" class="dl-line__translation">{{ activeLine.translation }}</p>
+            <p class="dl-line__annotation">
+              <template v-for="(ol, oi) in overlapLines" :key="oi">
+                <span v-if="oi > 0" class="dl-line__annotation-sep"> / </span>
+                <span class="dl-line__annotation-text">{{ ol.original }}<template v-if="ol.translation"> {{ ol.translation }}</template></span>
+              </template>
+            </p>
           </div>
         </div>
         <div v-if="nextLine" class="dl-line dl-line--next" :class="{ 'has-translation': nextLine.translation }">
@@ -29,7 +35,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted } from 'v
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
-import { parseLRC, getCurrentLyricIndex } from '@/utils/format'
+import { parseLRC, computeActiveSet } from '@/utils/format'
 
 const player = usePlayerStore()
 const settings = useSettingsStore()
@@ -42,6 +48,7 @@ const isElectron = computed(() => !!window.electronAPI)
 const isInLyricsWindow = computed(() => window.location.hash === '#/desktop-lyrics')
 
 const currentLineIndex = ref(-1)
+const overlapLines = ref([])
 const windowWidth = ref(window.innerWidth)
 
 function onResize() { windowWidth.value = window.innerWidth }
@@ -74,6 +81,7 @@ const lyricsPayload = computed(() => {
   const needsSongInfo = track && (total === 0 || idx < 0)
   const lines = parsedLyrics.value.map(line => ({
     time: line.time,
+    end: line.end ?? null,
     original: line.original,
     translation: line.translation || null,
     wordLevel: line.wordLevel || false,
@@ -97,6 +105,7 @@ const lyricsPayload = computed(() => {
     parsedLyrics: lines,
     currentLineIndex: lineIndex,
     currentTime: currentTime.value,
+    overlap: overlapLines.value,
     settings: {
       fontSize: desktopLyricsFontSize.value,
       activeScale: desktopLyricsActiveScale.value,
@@ -178,15 +187,40 @@ watch(currentTime, (time) => {
     }
     return
   }
-  const idx = getCurrentLyricIndex(parsedLyrics.value, time)
-  if (idx !== currentLineIndex.value) {
-    currentLineIndex.value = idx
+
+  const { activeIndexes } = computeActiveSet(parsedLyrics.value, time)
+
+  // 主行：优先取活跃集合中的逐字歌词行（卡拉OK行），否则取最后一行
+  let mainIndex = -1
+  for (let i = activeIndexes.length - 1; i >= 0; i--) {
+    if (parsedLyrics.value[activeIndexes[i]]?.wordLevel) {
+      mainIndex = activeIndexes[i]
+      break
+    }
+  }
+  if (mainIndex < 0 && activeIndexes.length) {
+    mainIndex = activeIndexes[activeIndexes.length - 1]
+  }
+  if (mainIndex !== currentLineIndex.value) {
+    currentLineIndex.value = mainIndex
+  }
+  // 重叠附加行（对白/注释）变化时推送，让桌面窗口的注释槽及时淡入淡出
+  const newOverlap = activeIndexes.filter(i => i !== mainIndex).map(i => {
+    const line = parsedLyrics.value[i]
+    return { original: line.original, translation: line.translation || null }
+  })
+  if (JSON.stringify(newOverlap) !== JSON.stringify(overlapLines.value)) {
+    overlapLines.value = newOverlap
+    if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
+      pushToLyricsWindow()
+    }
   }
 })
 
 // 切歌时重置
 watch(() => currentTrack.value?.path, () => {
   currentLineIndex.value = -1
+  overlapLines.value = []
 })
 
 // 歌词 CSS 变量（非 Electron 内联渲染用）
@@ -271,6 +305,21 @@ const lyricsVars = computed(() => {
   transition: font-size 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               color 0.4s;
+}
+/* 常驻注释槽：始终预留高度，有对白/注释时淡入内容 */
+.dl-line__annotation {
+  margin: 0;
+  min-height: calc(var(--dl-base-original, 16px) * 0.7);
+  font-size: calc(var(--dl-base-original, 16px) * 0.58);
+  line-height: calc(var(--dl-base-original, 16px) * 0.7);
+  font-weight: 400;
+  color: var(--text-primary);
+  opacity: 0.45;
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: opacity 0.35s ease;
 }
 .dl-line--active .dl-line__original {
   opacity: 1;
