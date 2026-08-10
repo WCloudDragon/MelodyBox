@@ -58,6 +58,14 @@
 
             <Transition v-else :name="lyricsAnimName">
               <div class="lyrics-scroll" :key="currentTrack?.path" ref="scrollRef">
+              <!-- 空区长间隔提示：融入歌词列表的一行（仅三点，无文字） -->
+              <div v-if="showUpcomingHint" class="lyric-line upcoming-hint-line">
+                <div class="lyric-line__inner">
+                  <p class="lyric-line__original upcoming-hint-dots">
+                    <span></span><span></span><span></span>
+                  </p>
+                </div>
+              </div>
               <div
                 v-for="(line, index) in parsedLyrics"
                 :key="index"
@@ -87,7 +95,7 @@
                   <p v-if="line.translation" class="lyric-line__translation">{{ line.translation }}</p>
                 </div>
               </div>
-              <div class="lyrics-padding"></div>
+            <div class="lyrics-padding"></div>
             </div>
             </Transition>
           </div>
@@ -893,6 +901,19 @@ const parsedLyrics = computed(() => {
 
 const hasLyrics = computed(() => parsedLyrics.value.length > 0)
 
+// 长间隔提示：仅当进入无活跃行的空区、且下一句开始距当前超过该秒数时显示
+const UPCOMING_GAP_THRESHOLD = 10
+const showUpcomingHint = computed(() => {
+  if (!hasLyrics.value) return false
+  if (activeIndexes.value.length > 0) return false
+  const now = currentTime.value
+  let nextStart = Infinity
+  for (const line of parsedLyrics.value) {
+    if (line.time > now && line.time < nextStart) nextStart = line.time
+  }
+  return nextStart !== Infinity && nextStart - now > UPCOMING_GAP_THRESHOLD
+})
+
 // 从设置中按比例计算各字号级别，利用 MiSans VF 可变轴字重
 const lyricsVars = computed(() => {
   const base = lyricsFontSize.value
@@ -1570,6 +1591,26 @@ onBeforeUnmount(() => {
 }
 .lyrics-empty-state__icon { font-size: 48px; margin-bottom: 8px; }
 .lyrics-empty-state__text { font-size: 18px; font-weight: 500; color: rgba(255,255,255,0.8); }
+
+/* 空区长间隔提示：融入歌词列表的一行（仅三点，无文字） */
+.upcoming-hint-line .upcoming-hint-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.upcoming-hint-line .upcoming-hint-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.6);
+  animation: upcoming-dot 1.4s ease-in-out infinite;
+}
+.upcoming-hint-line .upcoming-hint-dots span:nth-child(2) { animation-delay: 0.2s; }
+.upcoming-hint-line .upcoming-hint-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes upcoming-dot {
+  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
 
 /* ===== 面板开闭过渡动画：从底部连贯上滑 ===== */
 .panel-slide-enter-active {
