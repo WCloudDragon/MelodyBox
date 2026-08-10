@@ -58,25 +58,18 @@
 
             <Transition v-else :name="lyricsAnimName">
               <div class="lyrics-scroll" :key="currentTrack?.path" ref="scrollRef">
-              <!-- 空区长间隔提示：融入歌词列表的一行（仅三点，无文字）；首行前显示在列表顶部 -->
-              <div v-if="showUpcomingHint && hintLineIndex < 0" class="lyric-line upcoming-hint-line">
-                <div class="lyric-line__inner">
-                  <p class="lyric-line__original upcoming-hint-dots">
-                    <span></span><span></span><span></span>
+              <!-- 空区长间隔提示（仅三点）：首行前显示在列表顶部 -->
+              <Transition name="upcoming-hint">
+                <div v-if="showUpcomingHint && hintLineIndex < 0" :key="'hint-top'" class="upcoming-hint-line">
+                  <p class="upcoming-hint-dots">
+                    <span v-for="i in 3" :key="i" class="upcoming-hint-dot"
+                          :class="{ 'upcoming-hint-dot--fade': dotFading(i) }"
+                          :style="{ '--dot-scale': dotScale(i) }"></span>
                   </p>
                 </div>
-              </div>
+              </Transition>
               <template v-for="(line, index) in parsedLyrics" :key="index">
-                <!-- 句中空区：在刚结束的上一行槽位显示三点（该位置即视口中央） -->
-                <div v-if="showUpcomingHint && index === hintLineIndex" class="lyric-line upcoming-hint-line">
-                  <div class="lyric-line__inner">
-                    <p class="lyric-line__original upcoming-hint-dots">
-                      <span></span><span></span><span></span>
-                    </p>
-                  </div>
-                </div>
                 <div
-                  v-else
                   class="lyric-line"
                   :class="{
                     active: activeIndexes.includes(index) && jumpPending < 0,
@@ -91,7 +84,7 @@
                   @click="seekToLine(line.time)"
                 >
                   <div class="lyric-line__inner">
-                    <p v-if="line.wordLevel && line.segments && (activeIndexes.some(a => Math.abs(index - a) <= 1) || index === fadingLineIndex)" class="lyric-line__original word-level">
+                    <p v-if="line.wordLevel && line.segments && (activeIndexes.some(a => Math.abs(index - a) <= 1) || index === fadingLineIndex || (showUpcomingHint && index === hintLineIndex))" class="lyric-line__original word-level">
                       <span
                         v-for="(seg, si) in line.segments"
                         :key="si"
@@ -103,6 +96,16 @@
                     <p v-if="line.translation" class="lyric-line__translation">{{ line.translation }}</p>
                   </div>
                 </div>
+                <!-- 句中空区：三点插在刚结束的上一行之后（上一行保留显示） -->
+                <Transition name="upcoming-hint">
+                  <div v-if="showUpcomingHint && index === hintLineIndex" :key="'hint-' + index" class="upcoming-hint-line">
+                    <p class="upcoming-hint-dots">
+                      <span v-for="i in 3" :key="i" class="upcoming-hint-dot"
+                            :class="{ 'upcoming-hint-dot--fade': dotFading(i) }"
+                            :style="{ '--dot-scale': dotScale(i) }"></span>
+                    </p>
+                  </div>
+                </Transition>
               </template>
               <div class="lyrics-padding"></div>
             </div>
@@ -876,15 +879,10 @@ function lineStyle(index) {
   // 远距离跳转缓冲期内以旧行索引为参考，避免 opacity 抢先过渡
   let refs = jumpPending.value >= 0 ? [jumpPending.value] : activeIndexes.value
 
-  // 无活跃行：首行之前以虚拟位置 -1 为基准（保留距离模糊渐隐）；
-  // 句中长间隙则整体弱化留白（避免顶部行被 -1 基准错误提亮）
+  // 无活跃行（空区）：以空区锚点（上一行索引，首行前为 -1）为距离基准，
+  // 恢复与其他时刻一致的模糊与透明度渐变
   if (refs.length === 0) {
-    const first = parsedLyrics.value[0]
-    if (!first || currentTime.value < first.time) {
-      refs = [-1]
-    } else {
-      return { opacity: 0.3, filter: 'none' }
-    }
+    refs = [hintLineIndex.value]
   }
 
   // 正在播放的行（公平模型：所有活跃行一律高亮，不区分主/副）
@@ -930,11 +928,35 @@ const hintLineIndex = computed(() => {
   }
   return prev
 })
+// 距下一句的剩余时间（秒）
+const upcomingRemaining = computed(() => {
+  const list = parsedLyrics.value
+  if (!list.length) return Infinity
+  const now = currentTime.value
+  let next = Infinity
+  for (const line of list) {
+    if (line.time > now && line.time < next) next = line.time
+  }
+  return next - now
+})
+// 当前空区的总长度（首行前 = 首行开始时间；句中 = 上一行的 gap）
+const upcomingZoneLength = computed(() => {
+  const list = parsedLyrics.value
+  if (!list.length) return 0
+  const now = currentTime.value
+  if (now < list[0].time) return list[0].time
+  const prev = hintLineIndex.value
+  return prev >= 0 ? (list[prev].gap ?? 0) : 0
+})
 // 长间隔“即将开唱”提示：仅当进入无活跃行的空区（该空区总长度 ≥ 填缝上限）时显示。
 // 空区长度由模型层预计算（line.gap / 首行开始时间），显示状态稳定，不随时间翻转。
 const showUpcomingHint = computed(() => {
   if (!hasLyrics.value) return false
   if (activeIndexes.value.length > 0) return false
+  // 纯音乐等无演唱内容：不显示提示
+  if (/纯音乐/.test(currentTrack.value?.lyrics || '')) return false
+  // 左边第一个点完全消失即下句开始：到点时元素无动画移除
+  if (upcomingRemaining.value <= 0) return false
   const list = parsedLyrics.value
   const now = currentTime.value
   // 首行之前：空区长度 = 首行开始时间
@@ -945,6 +967,22 @@ const showUpcomingHint = computed(() => {
   const prev = hintLineIndex.value
   return prev >= 0 && (list[prev].gap ?? 0) >= LYRIC_GAP_FILL_LIMIT
 })
+// 三点倒计时：进入空区即开始生长（三个点同时起跑、速度不同依次到顶），
+// 全部最大时为起播前 3 秒；生长区间按实际空区长度动态三等分
+const DOT_MAX_SCALE = 1.65
+function dotScale(i) {
+  const rem = upcomingRemaining.value
+  const rem0 = Math.max(upcomingZoneLength.value, rem)
+  const span = Math.max(0.1, rem0 - 3)
+  const endI = rem0 - (i / 3) * span
+  const progress = Math.max(0, Math.min(1, (rem0 - rem) / Math.max(0.05, rem0 - endI)))
+  return 1 + (DOT_MAX_SCALE - 1) * progress
+}
+// 起播前 3/2/1 秒依次开始模糊消失（dot3→dot2→dot1），每个淡出 1 秒，
+// 左边第一个点在下句开始瞬间完全消失
+function dotFading(i) {
+  return upcomingRemaining.value <= i
+}
 
 // 从设置中按比例计算各字号级别，利用 MiSans VF 可变轴字重
 const lyricsVars = computed(() => {
@@ -1624,24 +1662,66 @@ onBeforeUnmount(() => {
 .lyrics-empty-state__icon { font-size: 48px; margin-bottom: 8px; }
 .lyrics-empty-state__text { font-size: 18px; font-weight: 500; color: rgba(255,255,255,0.8); }
 
-/* 空区长间隔提示：融入歌词列表的一行（仅三点，无文字） */
-.upcoming-hint-line .upcoming-hint-dots {
+/* 空区长间隔提示：独立行（仅三点，无文字）；不挂 lyric-line，无 hover/指针交互 */
+.upcoming-hint-line {
+  padding: 8px 0;
+  max-height: calc(var(--lyrics-active-original, 24px) * 1.4 + 16px);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  user-select: none;
+}
+.upcoming-hint-dots {
+  margin: 0;
+  /* 与正在播放行的原词行同高（仅原词行，不含翻译行），并随歌词字号设置缩放 */
+  height: calc(var(--lyrics-active-original, 24px) * 1.4);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  /* 左右留白，避免点放大时被行边缘裁切 */
+  padding: 0 10px;
 }
-.upcoming-hint-line .upcoming-hint-dots span {
-  width: 7px;
-  height: 7px;
+/* 更大的点 + 倒计时缩放（随起播逼近依次变大） */
+.upcoming-hint-dot {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.6);
-  animation: upcoming-dot 1.4s ease-in-out infinite;
+  background: rgba(255,255,255,0.65);
+  transform: scale(var(--dot-scale, 1));
+  transition: transform 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.upcoming-hint-line .upcoming-hint-dots span:nth-child(2) { animation-delay: 0.2s; }
-.upcoming-hint-line .upcoming-hint-dots span:nth-child(3) { animation-delay: 0.4s; }
-@keyframes upcoming-dot {
-  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
-  30% { opacity: 1; transform: translateY(-3px); }
+/* 起播前依次模糊消失（dot3→dot2→dot1），每个淡出 1 秒，
+   左边第一个点在下句开始瞬间完全消失 */
+.upcoming-hint-dot--fade {
+  opacity: 0;
+  filter: blur(6px);
+  transform: scale(0.4);
+  transition: opacity 1s ease,
+              filter 1s ease,
+              transform 1s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+/* 提示行出入：max-height 从 0 展开（下方歌词连贯下移腾位）
+   同时模糊收拢 + 渐显 + 轻微缩放（无回弹，安静克制） */
+.upcoming-hint-enter-active {
+  transition: opacity 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              max-height 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              padding-top 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              padding-bottom 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.upcoming-hint-enter-from {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  filter: blur(6px);
+  transform: scale(0.92);
+}
+/* 移除无动画：三点已逐个消失，直接卸载（与下句滚动衔接） */
+.upcoming-hint-leave-active {
+  transition: none;
 }
 
 /* ===== 面板开闭过渡动画：从底部连贯上滑 ===== */
