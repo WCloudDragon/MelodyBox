@@ -40,8 +40,8 @@
           <!-- 左半屏：封面 — 切歌时方向感知动画（出入同时执行） -->
           <div class="np-layout__cover">
             <Transition :name="coverAnimName">
-              <div class="cover-artwork" :key="currentTrack?.path" ref="coverArtRef">
-                <img v-if="currentTrack?.cover" :src="currentTrack.cover" class="cover-artwork__img" decoding="async" />
+              <div class="cover-artwork" :key="currentTrack?.path" ref="coverArtRef" :style="coverArtStyle">
+                <img v-if="currentTrack?.cover" :src="currentTrack.cover" class="cover-artwork__img" decoding="async" @load="onCoverLoad" />
                 <div v-else class="cover-artwork__empty">
                   <el-icon size="64"><Headset /></el-icon>
                 </div>
@@ -136,6 +136,19 @@ const jumpPending = ref(-1)
 let fadingTimer = null
 const fadingLineIndex = ref(-1)   // 远距离跳转后，旧行逐字 DOM 延后销毁，给过渡动画时间
 const coverArtRef = ref(null)
+// 封面原始宽高比（w/h），用于全屏页按原比例显示与飞入动画的连续形变
+const coverAspect = ref(null)
+const coverArtStyle = computed(() => {
+  return coverAspect.value ? { '--cover-ratio': coverAspect.value } : {}
+})
+function onCoverLoad(e) {
+  const img = e.target
+  if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
+    coverAspect.value = img.naturalWidth / img.naturalHeight
+  }
+}
+// 切歌时重置封面比例，等待新封面加载后再应用
+watch(() => currentTrack.value?.cover, () => { coverAspect.value = null })
 
 // ==================== 动态流光背景（封面主色驱动渐变流动） ====================
 const flowColors = ref(null)
@@ -478,35 +491,24 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
   const toW = toRect.width, toH = toRect.height
   const fromW = fromRect.width, fromH = fromRect.height
 
-  const fromCX = fromRect.left + fromW / 2
-  const fromCY = fromRect.top + fromH / 2
-  const toCX = toRect.left + toW / 2
-  const toCY = toRect.top + toH / 2
-
-  // 以目标尺寸渲染，初始阶段反向缩放和偏移以匹配起始视觉
-  const initDX = fromCX - toCX
-  const initDY = fromCY - toCY
-  const initSX = fromW / toW
-  const initSY = fromH / toH
   const startBR = parseFloat(fromBR)
   const endBR = parseFloat(toBR)
-  const clipStartBR = startBR / initSX
-  const clipEndBR = endBR
 
+  // 窗口宽高/位置逐帧插值，内层图片保持 object-fit: cover：
+  // 窗口比例从源（方形）连续插值到目标（原图比例），cover 的可见区域
+  // 随之从中心方形扩展到完整原图，实现无缝“拉远揭示”，全程零变形。
   const wrapper = document.createElement('div')
   Object.assign(wrapper.style, {
     position: 'fixed', zIndex: '10000', pointerEvents: 'none',
-    left: toRect.left + 'px', top: toRect.top + 'px',
-    width: toW + 'px', height: toH + 'px',
-    transformOrigin: 'center center',
-    willChange: 'transform',
-    transform: `translate3d(${initDX}px, ${initDY}px, 0) scale(${initSX}, ${initSY})`
+    left: fromRect.left + 'px', top: fromRect.top + 'px',
+    width: fromW + 'px', height: fromH + 'px',
+    willChange: 'left, top, width, height'
   })
 
   const shadowEl = document.createElement('div')
   Object.assign(shadowEl.style, {
     position: 'absolute', inset: '0', pointerEvents: 'none',
-    borderRadius: `${clipStartBR}px`, boxShadow: 'none', zIndex: '0'
+    borderRadius: `${startBR}px`, boxShadow: 'none', zIndex: '0'
   })
 
   const imgEl = document.createElement('img')
@@ -515,7 +517,7 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
     position: 'absolute', inset: '0', zIndex: '1',
     width: '100%', height: '100%',
     objectFit: 'cover', objectPosition: 'center',
-    clipPath: `inset(0 round ${clipStartBR}px)`,
+    clipPath: `inset(0 round ${startBR}px)`,
     willChange: 'clip-path'
   })
 
@@ -541,21 +543,23 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
       const t = Math.min(elapsed / FLY_DURATION, 1)
       const p = easeCubicBezier(t, bx1, by1, bx2, by2)
 
-      const sx = initSX + (1 - initSX) * p
-      const sy = initSY + (1 - initSY) * p
-      const dx = initDX * (1 - p)
-      const dy = initDY * (1 - p)
-      const visualBR = startBR + (endBR - startBR) * p
-      const clipBR = visualBR / sx
+      const w = fromW + (toW - fromW) * p
+      const h = fromH + (toH - fromH) * p
+      const l = fromRect.left + (toRect.left - fromRect.left) * p
+      const tp = fromRect.top + (toRect.top - fromRect.top) * p
+      const br = startBR + (endBR - startBR) * p
 
-      wrapper.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${sx}, ${sy})`
-      imgEl.style.clipPath = `inset(0 round ${clipBR}px)`
+      wrapper.style.left = l + 'px'
+      wrapper.style.top = tp + 'px'
+      wrapper.style.width = w + 'px'
+      wrapper.style.height = h + 'px'
+      imgEl.style.clipPath = `inset(0 round ${br}px)`
 
       const sh = COVER_SHADOW
       const shadowP = shadowFrom + (shadowTo - shadowFrom) * p
-      shadowEl.style.borderRadius = `${clipBR}px`
+      shadowEl.style.borderRadius = `${br}px`
       shadowEl.style.boxShadow = shadowP > 0.01
-        ? `0 ${(sh.y / sx) * shadowP}px ${(sh.blur / sx) * shadowP}px rgba(0,0,0,${sh.opacity * shadowP})`
+        ? `0 ${sh.y * shadowP}px ${sh.blur * shadowP}px rgba(0,0,0,${sh.opacity * shadowP})`
         : 'none'
 
       if (t < 1) {
@@ -580,6 +584,19 @@ async function flyCoverIn() {
   cleanupFlyer()
   const origin = coverOriginRect?.value
   if (!origin || !coverArtRef.value) return
+
+  // 等待封面预解码完成，直接用解码结果的原比例设置容器，
+  // 再测量目标矩形（宽图/长图飞到原比例，不再依赖封面 <img> 二次加载）
+  const coverUrl = currentTrack.value?.cover
+  if (coverUrl) {
+    try {
+      const preloaded = await _ensureCoverReady(coverUrl)
+      if (preloaded && preloaded.naturalWidth > 0 && preloaded.naturalHeight > 0) {
+        coverAspect.value = preloaded.naturalWidth / preloaded.naturalHeight
+      }
+    } catch { /* 忽略 */ }
+  }
+  await nextTick()
 
   // 获取面板封面的最终视口位置（补偿面板滑动）
   const artEl = coverArtRef.value
@@ -1197,10 +1214,11 @@ function _preloadOne(url) {
   }).catch(() => {})
 }
 
-// 确保封面已解码就绪：优先命中 _coverCache，未命中时主动加载
+// 确保封面已解码就绪：优先命中 _coverCache，未命中时主动加载。
+// 返回解码后的 Image（含 naturalWidth/Height），供飞入动画直接取原比例。
 function _ensureCoverReady(url) {
-  if (!url) return Promise.resolve()
-  if (_coverCache.has(url)) return Promise.resolve()
+  if (!url) return Promise.resolve(null)
+  if (_coverCache.has(url)) return Promise.resolve(_coverCache.get(url))
   return new Promise((resolve) => {
     const img = new Image()
     img.src = url
@@ -1209,8 +1227,8 @@ function _ensureCoverReady(url) {
       while (_coverCache.size > PRELOAD_WINDOW * 2 + 1) {
         _coverCache.delete(_coverCache.keys().next().value)
       }
-      resolve()
-    }).catch(() => resolve()) // 即使加载失败也不阻塞飞行动画
+      resolve(img)
+    }).catch(() => resolve(null)) // 即使加载失败也不阻塞飞行动画
   })
 }
 
@@ -1433,8 +1451,9 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 .cover-artwork {
-  width: clamp(260px, 26vw, 520px);
-  aspect-ratio: 1;
+  /* 默认方形；加载到封面后按原图比例显示，且不超出最大高度 46vh */
+  width: min(clamp(240px, 26vw, 520px), calc(46vh * var(--cover-ratio, 1)));
+  aspect-ratio: var(--cover-ratio, 1);
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0,0,0,0.5);
