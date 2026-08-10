@@ -59,12 +59,13 @@
             <Transition v-else :name="lyricsAnimName">
               <div class="lyrics-scroll" :key="currentTrack?.path" ref="scrollRef">
               <!-- 空区长间隔提示（仅三点）：首行前显示在列表顶部 -->
-              <div v-if="hintVisible && hintLineIndex < 0" :key="'hint-top'"
+              <div v-if="hintVisible && hintAnchorIndex < 0" :key="'hint-top'"
                    class="upcoming-hint-line" :class="{ 'upcoming-hint-line--leaving': hintLeaving }">
                 <p class="upcoming-hint-dots">
                   <span v-for="i in 3" :key="i" class="upcoming-hint-dot"
-                        :class="{ 'upcoming-hint-dot--fade': dotFading(i) }"
-                        :style="{ '--dot-scale': dotScale(i) }"></span>
+                        :class="{ 'upcoming-hint-dot--fade': dotFading(i) }">
+                    <span class="upcoming-hint-dot__scale" :style="{ '--dot-scale': dotScale(i) / DOT_MAX_SCALE }"></span>
+                  </span>
                 </p>
               </div>
               <template v-for="(line, index) in parsedLyrics" :key="index">
@@ -83,7 +84,7 @@
                   @click="seekToLine(line.time)"
                 >
                   <div class="lyric-line__inner">
-                    <p v-if="line.wordLevel && line.segments && (activeIndexes.some(a => Math.abs(index - a) <= 1) || index === fadingLineIndex || (showUpcomingHint && index === hintLineIndex))" class="lyric-line__original word-level">
+                    <p v-if="line.wordLevel && line.segments && (activeIndexes.some(a => Math.abs(index - a) <= 1) || index === fadingLineIndex || (showUpcomingHint && (index === hintLineIndex || index === hintLineIndex + 1)))" class="lyric-line__original word-level">
                       <span
                         v-for="(seg, si) in line.segments"
                         :key="si"
@@ -96,12 +97,13 @@
                   </div>
                 </div>
                 <!-- 句中空区：三点插在刚结束的上一行之后（上一行保留显示） -->
-                <div v-if="hintVisible && index === hintLineIndex" :key="'hint-' + index"
+                <div v-if="hintVisible && index === hintAnchorIndex" :key="'hint-' + index"
                      class="upcoming-hint-line" :class="{ 'upcoming-hint-line--leaving': hintLeaving }">
                   <p class="upcoming-hint-dots">
                     <span v-for="i in 3" :key="i" class="upcoming-hint-dot"
-                          :class="{ 'upcoming-hint-dot--fade': dotFading(i) }"
-                          :style="{ '--dot-scale': dotScale(i) }"></span>
+                          :class="{ 'upcoming-hint-dot--fade': dotFading(i) }">
+                      <span class="upcoming-hint-dot__scale" :style="{ '--dot-scale': dotScale(i) / DOT_MAX_SCALE }"></span>
+                    </span>
                   </p>
                 </div>
               </template>
@@ -874,8 +876,9 @@ function onLyricsWheel(e) {
 }
 
 function lineStyle(index) {
-  // 远距离跳转缓冲期内以旧行索引为参考，避免 opacity 抢先过渡
-  let refs = jumpPending.value >= 0 ? [jumpPending.value] : activeIndexes.value
+  // 跳转时模糊/透明度立即跟随新的活跃位置，不等待滚动落地；
+  // jumpPending 只负责延迟 .active 的放大高亮，避免视觉脱节
+  let refs = activeIndexes.value
 
   // 无活跃行（空区）：以空区锚点（上一行索引，首行前为 -1）为距离基准，
   // 恢复与其他时刻一致的模糊与透明度渐变
@@ -969,8 +972,7 @@ const showUpcomingHint = computed(() => {
 // 每个点独占一段生长区间（前一个到顶后一个才开始），
 // 全部最大时为起播前 3 秒；区间按实际空区长度动态三等分
 const DOT_MAX_SCALE = 2.3
-function dotScale(i) {
-  const rem = upcomingRemaining.value
+function dotScaleFor(i, rem) {
   const rem0 = Math.max(upcomingZoneLength.value, rem)
   const span = Math.max(0.1, rem0 - 3)
   const segStart = rem0 - ((i - 1) / 3) * span  // 该点生长区间起点（剩余时间大）
@@ -980,28 +982,89 @@ function dotScale(i) {
   const progress = (segStart - rem) / Math.max(0.05, segStart - segEnd)
   return 1 + (DOT_MAX_SCALE - 1) * progress
 }
+function dotScale(i) {
+  return dotScaleFor(i, upcomingRemaining.value)
+}
 // 起播前 3/2/1 秒依次开始模糊消失（dot3→dot2→dot1），每个淡出 1 秒，
 // 左边第一个点在下句开始瞬间完全消失
 function dotFading(i) {
   return upcomingRemaining.value <= i
 }
+// 实时剩余时间：基于 audio.currentTime（60fps 平滑），不依赖 250ms 的 timeupdate 节拍
+function liveUpcomingRemaining() {
+  const list = parsedLyrics.value
+  if (!list.length) return Infinity
+  const now = player.getLiveTime()
+  for (const line of list) {
+    if (line.time > now) return line.time - now
+  }
+  return Infinity
+}
+// 三点放大 rAF 循环：按帧更新 --dot-scale，transform 亚像素平滑，消除 px 步进卡顿
+let _dotsScaleRaf = null
+function startDotsScaleLoop() {
+  if (_dotsScaleRaf) return
+  const step = () => {
+    if (!props.visible || !hintVisible.value || hintLeaving.value || !scrollRef.value) {
+      _dotsScaleRaf = null
+      return
+    }
+    const rem = liveUpcomingRemaining()
+    const dots = scrollRef.value.querySelectorAll('.upcoming-hint-dot__scale')
+    for (let i = 0; i < dots.length; i++) {
+      // 归一化到 1/2.3 → 1：内层元素按最大尺寸渲染，向下缩放保证任意尺寸清晰
+      dots[i].style.setProperty('--dot-scale', (dotScaleFor(i + 1, rem) / DOT_MAX_SCALE).toFixed(4))
+    }
+    _dotsScaleRaf = requestAnimationFrame(step)
+  }
+  _dotsScaleRaf = requestAnimationFrame(step)
+}
+function stopDotsScaleLoop() {
+  if (_dotsScaleRaf) { cancelAnimationFrame(_dotsScaleRaf); _dotsScaleRaf = null }
+}
 // 三点行的显示/收起状态：收起时保持挂载做 0.25s 平滑折叠，避免下方行闪现
 const hintVisible = ref(false)
 const hintLeaving = ref(false)
+// 三点行位置锚点：显示时冻结，收起期间不随时间变化，避免位置被“偷换”导致闪烁
+const hintAnchorIndex = ref(-1)
 let _dotsScrollDone = false
+// 三点自然结束准备（进入最后 0.35s，等待激活瞬间由级联滚动接管位移）
+let _dotsHandoff = false
+// 三点行已移除、激活时需要用级联滚动完成位移
+let _dotsCascadePending = false
+// 三点行高度（移除前测量，用于抵消移除瞬间的布局位移）
+let _dotsH = 0
+// 三点行收起定时器：跳转/切歌时需清除，避免残留定时器把新空区的三点误删
+let _dotsLeaveTimer = null
 watch(showUpcomingHint, (val) => {
   if (val) {
+    _dotsHandoff = false
     hintLeaving.value = false
     hintVisible.value = true
-  } else if (hintVisible.value) {
-    hintLeaving.value = true
-    setTimeout(() => {
+    hintAnchorIndex.value = hintLineIndex.value
+    startDotsScaleLoop()
+  } else if (hintVisible.value && !hintLeaving.value) {
+    if (_dotsHandoff) {
+      // 三点自然倒计时结束：点已全部淡出，立即移除（布局位移由激活时的级联滚动吸收）
+      _dotsHandoff = false
+      _dotsCascadePending = true
+      const dotsEl = scrollRef.value?.querySelector('.upcoming-hint-line')
+      _dotsH = dotsEl ? dotsEl.offsetHeight : 0
       hintVisible.value = false
       hintLeaving.value = false
-      _dotsScrollDone = false
-    }, 250)
+    } else {
+      // 非自然结束（进度条跳走等）：平滑折叠收起
+      hintLeaving.value = true
+      if (_dotsLeaveTimer) clearTimeout(_dotsLeaveTimer)
+      _dotsLeaveTimer = setTimeout(() => {
+        _dotsLeaveTimer = null
+        hintVisible.value = false
+        hintLeaving.value = false
+        _dotsScrollDone = false
+      }, 250)
+    }
   }
-})
+}, { immediate: true })
 
 // 从设置中按比例计算各字号级别，利用 MiSans VF 可变轴字重
 const lyricsVars = computed(() => {
@@ -1040,6 +1103,7 @@ watch(() => props.visible, async (val) => {
     await nextTick()
     await nextTick()
     flyCoverIn()
+    startDotsScaleLoop()
     if (jumpPending.value >= 0) jumpPending.value = -1
     if (!hasLyrics.value || !scrollRef.value) return
     // 重新打开面板：按当前时刻重新定位
@@ -1062,6 +1126,11 @@ watch(() => props.visible, async (val) => {
     exitUserScrollMode()
     targetScrollPos = 0
     prevLineIndex = -1
+    _dotsHandoff = false
+    _dotsCascadePending = false
+    _dotsH = 0
+    stopDotsScaleLoop()
+    if (_dotsLeaveTimer) { clearTimeout(_dotsLeaveTimer); _dotsLeaveTimer = null }
     if (fadingTimer) { clearTimeout(fadingTimer); fadingTimer = null }
     fadingLineIndex.value = -1
   }
@@ -1072,6 +1141,29 @@ watch(currentTime, async (time) => {
   if (!props.visible || !hasLyrics.value || !scrollRef.value) return
 
   if (!showUpcomingHint.value) _dotsScrollDone = false
+
+  // 进度条从一个长空区跳到另一个长空区：showUpcomingHint 全程为 true 不会触发
+  // showUpcomingHint 的 watch，三点锚点仍挂在旧空区。检测锚点与当前空区不一致时，
+  // 重新锚定到新空区、清除旧收起定时器并复位滚动标记，让新空区的三点重新定位居中。
+  if (showUpcomingHint.value && hintAnchorIndex.value !== hintLineIndex.value) {
+    if (_dotsLeaveTimer) { clearTimeout(_dotsLeaveTimer); _dotsLeaveTimer = null }
+    _dotsHandoff = false
+    hintAnchorIndex.value = hintLineIndex.value
+    hintLeaving.value = false
+    hintVisible.value = true
+    _dotsScrollDone = false
+    startDotsScaleLoop()
+    if (!isUserScrolling.value) {
+      await nextTick()
+      _dotsScrollDone = true
+      scrollToDots(true)
+    }
+  }
+
+  // 三点倒计时进入最后阶段：标记自然结束，激活瞬间由级联滚动接管（不再提前折叠）
+  if (hintVisible.value && !hintLeaving.value && upcomingRemaining.value <= 0.35) {
+    _dotsHandoff = true
+  }
 
   const { activeIndexes: nextActive } = computeActiveSet(parsedLyrics.value, time)
   const prevActive = activeIndexes.value
@@ -1105,20 +1197,18 @@ watch(currentTime, async (time) => {
   if (nextActive.length === 0) {
     if (jumpPending.value >= 0) jumpPending.value = -1
     // 无活跃行（空区）
-    if (time < parsedLyrics.value[0].time) {
-      if (showUpcomingHint.value) {
-        // 首行前三点显示：定位到三点位置（滚动到顶部，三点位于中心线）
-        if (!_dotsScrollDone && !isUserScrolling.value) {
-          _dotsScrollDone = true
-          await nextTick()
-          scrollToDots(true)
-        }
-      } else {
-        // 无三点：回到第一句等待
+    if (showUpcomingHint.value) {
+      // 三点显示：把三点滚到中心线（首行前与句中空区统一处理）
+      if (!_dotsScrollDone && !isUserScrolling.value) {
         _dotsScrollDone = true
         await nextTick()
-        if (!isUserScrolling.value) scrollToLine(0, true)
+        scrollToDots(true)
       }
+    } else if (time < parsedLyrics.value[0].time) {
+      // 无三点：回到第一句等待
+      _dotsScrollDone = true
+      await nextTick()
+      if (!isUserScrolling.value) scrollToLine(0, true)
     }
     return
   }
@@ -1132,6 +1222,15 @@ watch(currentTime, async (time) => {
   }
 
   await nextTick()
+  // 三点自然结束后：用多米诺级联滚动完成位移（含三点行移除的布局位移）
+  if (_dotsCascadePending) {
+    _dotsCascadePending = false
+    runDotsCascade(nextFirst)
+    prevLineIndex = nextFirst
+    if (jumpPending.value >= 0) jumpPending.value = -1
+    if (nextWord >= 0) startWordAnimLoop()
+    return
+  }
   // 三点行收起中：等收起完成后再测量滚动目标，避免布局未定
   if (hintLeaving.value) {
     await new Promise(r => setTimeout(r, 260))
@@ -1141,19 +1240,105 @@ watch(currentTime, async (time) => {
   if (nextWord >= 0) startWordAnimLoop()
 })
 
-// 首行前三点：定位到三点位置（歌词滚动到顶部，50vh 顶部留白使其位于中心线）
+// 三点显示：滚动到“三点收起后下一句恰好居中”的位置。
+// 该位置下三点块也正好位于中心线（三点行高≈歌词行高），
+// 三点收起后下一句已居中，激活滚动成为零位移，不会出现第二次滚动。
+// 首行前与句中空区统一处理（句中锚定下一句，并用上一行剩余收缩量预补偿）。
 function scrollToDots(animate = true) {
   if (!scrollRef.value || !mainRef.value) return
-  targetScrollPos = 0
-  currentScrollY = 0
+  const anchorIndex = hintAnchorIndex.value >= 0 ? hintAnchorIndex.value + 1 : 0
+  const anchorEl = lineRefs.value[anchorIndex]
+  if (!anchorEl) return
+  const dotsEl = scrollRef.value.querySelector('.upcoming-hint-line')
+  const dotsH = dotsEl ? dotsEl.offsetHeight : 0
+  const containerHeight = mainRef.value.clientHeight
+  let targetScroll = Math.max(0,
+    anchorEl.offsetTop - dotsH - containerHeight / 2 + anchorEl.offsetHeight / 2)
+  // 句中空区：上一行正从活跃字号收缩回基础字号，会带动三点继续上移。
+  // 用“上一行当前高度 - 下一行高度(≈收缩后高度)”预估剩余位移，提前补偿，
+  // 避免三点滚到中心后又因上一行收缩而偏上。
+  if (hintAnchorIndex.value >= 0) {
+    const prevEl = lineRefs.value[hintAnchorIndex.value]
+    if (prevEl) {
+      const drift = Math.max(0, prevEl.offsetHeight - anchorEl.offsetHeight)
+      if (drift > 0) targetScroll = Math.max(0, targetScroll - drift)
+    }
+  }
+  targetScrollPos = targetScroll
+  currentScrollY = -targetScroll
   if (!animate) {
     scrollRef.value.style.transition = 'none'
-    scrollRef.value.style.transform = 'translate3d(0, 0, 0)'
+    scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
     return
   }
   scrollRef.value.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
-  scrollRef.value.style.transform = 'translate3d(0, 0, 0)'
+  scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
   setTimeout(() => { if (scrollRef.value) scrollRef.value.style.transition = '' }, 550)
+}
+
+// 三点自然结束后：用多米诺级联滚动完成“下一行上移到中心”的位移。
+// 三点行在激活瞬间被移除（此时点已全部淡出），移除造成的布局位移（_dotsH）
+// 通过行级反向偏移吸收，再按序错峰归位，形成与普通切句一致的多米诺波浪。
+function runDotsCascade(nextIndex) {
+  if (!scrollRef.value || !mainRef.value) return
+  const nextEl = lineRefs.value[nextIndex]
+  if (!nextEl) return
+  const containerHeight = mainRef.value.clientHeight
+  const targetScroll = Math.max(0,
+    nextEl.offsetTop - containerHeight / 2 + nextEl.offsetHeight / 2)
+  const scrollDelta = targetScroll - targetScrollPos
+  const totalLines = parsedLyrics.value.length
+  // 下方行：三点行移除的布局位移 + 滚动差；上方行：仅滚动差（通常≈0）
+  const belowShift = _dotsH - scrollDelta
+  const aboveShift = -scrollDelta
+
+  if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
+  smoothAnimTarget = -1
+
+  // 容器瞬跳到目标位
+  scrollRef.value.style.transition = 'none'
+  scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
+  currentScrollY = -targetScroll
+  targetScrollPos = targetScroll
+  void scrollRef.value.offsetHeight
+
+  // 各行偏移到反向位置（下方行多偏一个三点行高，抵消移除瞬间的布局位移）
+  for (let i = 0; i < totalLines; i++) {
+    const el = lineRefs.value[i]
+    if (!el) continue
+    const shift = i >= nextIndex ? belowShift : aboveShift
+    el.style.transition = 'transform 0s, opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0), filter 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
+    el.style.transform = `translate3d(0, ${shift}px, 0)`
+  }
+  // 读 computedStyle 强制浏览器 commit transform 起始值
+  const csAfterOffset = getComputedStyle(nextEl).transform
+  void csAfterOffset
+
+  // 从下一行开始向下错峰归位（与普通前进切句的多米诺节奏一致）
+  for (let i = 0; i < totalLines; i++) {
+    const el = lineRefs.value[i]
+    if (!el) continue
+    const staggerIdx = i >= nextIndex
+      ? Math.min(Math.max(0, i - nextIndex), MAX_STAGGER_LINES)
+      : Math.min(Math.max(0, nextIndex - i), MAX_STAGGER_LINES)
+    const delay = staggerIdx * STAGGER_MS / 1000
+    el.style.transition = `transform ${STAGGER_DURATION}ms cubic-bezier(0.2, 0.9, 0.3, 1.0) ${delay}s, opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0), filter 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0)`
+    el.style.transform = 'translate3d(0, 0, 0)'
+  }
+
+  const maxStagger = MAX_STAGGER_LINES * STAGGER_MS
+  const totalDuration = STAGGER_DURATION + maxStagger + 60
+  const cleanup = () => {
+    for (let i = 0; i < totalLines; i++) {
+      const el = lineRefs.value[i]
+      if (el) { el.style.transform = ''; el.style.transition = '' }
+    }
+    if (scrollRef.value) { scrollRef.value.style.willChange = ''; scrollRef.value.style.transition = '' }
+    if (jumpPending.value >= 0) jumpPending.value = -1
+    lyricsScrollCleanup = null
+  }
+  const timer = setTimeout(cleanup, totalDuration)
+  lyricsScrollCleanup = () => { clearTimeout(timer); cleanup() }
 }
 
 const STAGGER_MS = 38
@@ -1388,7 +1573,14 @@ watch(() => currentTrack.value?.path, () => {
   activeIndexes.value = []
   hintVisible.value = false
   hintLeaving.value = false
+  hintAnchorIndex.value = -1
   _dotsScrollDone = false
+  _dotsHandoff = false
+  _dotsCascadePending = false
+  _dotsH = 0
+  stopDotsScaleLoop()
+  if (_dotsLeaveTimer) { clearTimeout(_dotsLeaveTimer); _dotsLeaveTimer = null }
+  if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
   if (jumpPending.value >= 0) jumpPending.value = -1
   stopWordAnimLoop()
   targetScrollPos = 0
@@ -1411,6 +1603,7 @@ watch(songChangeDirection, (dir) => {
 onBeforeUnmount(() => {
   stopWordAnimLoop()
   stopRhythmLoop()
+  stopDotsScaleLoop()
   cleanupFlyer()
   if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
 })
@@ -1746,14 +1939,20 @@ onBeforeUnmount(() => {
     transform: scale(1);
   }
 }
-/* 离场：0.25s 平滑收起（下方行连续上滑，之后再由滚动动画接管） */
+/* 离场：0.25s 平滑收起（下方行连续上滑）。
+   缓动与滚动动画一致（B1 同步滚动），点行高度同步收缩，
+   使折叠高度随时间线性变化，与滚动位移合成一条连续运动 */
 .upcoming-hint-line--leaving {
   max-height: 0;
   padding-top: 0;
   padding-bottom: 0;
-  transition: max-height 0.25s ease,
-              padding-top 0.25s ease,
-              padding-bottom 0.25s ease;
+  transition: max-height 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              padding-top 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              padding-bottom 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.upcoming-hint-line--leaving .upcoming-hint-dots {
+  height: 0;
+  transition: height 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .upcoming-hint-dots {
   margin: 0;
@@ -1762,19 +1961,36 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 16px;
+  /* 点最大尺寸 = 7px × DOT_MAX_SCALE(2.3)，以大尺寸渲染保证放大后边缘清晰 */
+  --dot-max-px: 16.1px;
 }
-/* 更大的点 + 倒计时缩放（随起播逼近依次变大） */
+/* 更大的点 + 倒计时缩放（随起播逼近依次变大）。
+   外层固定 7px：负责逐个弹出入场与淡出（中心收缩）；
+   内层 __scale 用 transform scale 生长：GPU 合成、亚像素平滑，
+   原点居左 → 只向右生长，不越界、无裁切，不再有 px 步进卡顿 */
 .upcoming-hint-dot {
-  /* 宽高驱动生长：点从自身左缘向右放大，不越界、无裁切，保持左对齐 */
-  width: calc(7px * var(--dot-scale, 1));
-  height: calc(7px * var(--dot-scale, 1));
+  width: 7px;
+  height: 7px;
+  position: relative;
   border-radius: 50%;
-  background: rgba(255,255,255,0.65);
-  transform-origin: center;
-  transition: width 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              height 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.0);
   /* 入场：三个点逐个弹出放大（backwards 保证延迟期内不可见，结束后交给倒计时缩放） */
   animation: upcoming-dot-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.0) backwards;
+}
+.upcoming-hint-dot__scale {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: var(--dot-max-px);
+  height: var(--dot-max-px);
+  /* 垂直居中：原点位于自身中心（left center），放大时只向右生长 */
+  margin-top: calc(var(--dot-max-px) / -2);
+  border-radius: 50%;
+  background: rgba(255,255,255,0.65);
+  /* --dot-scale 已归一化为 1/2.3 → 1：全分辨率渲染后向下缩放，任意尺寸都清晰；
+     rAF 按帧更新，无 transition，避免 250ms 节拍追赶造成顿挫 */
+  transform: scale(var(--dot-scale, 0.4348));
+  transform-origin: left center;
+  will-change: transform;
 }
 .upcoming-hint-dot:nth-child(2) { animation-delay: 0.18s; }
 .upcoming-hint-dot:nth-child(3) { animation-delay: 0.36s; }
