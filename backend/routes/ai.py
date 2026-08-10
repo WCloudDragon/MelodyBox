@@ -151,7 +151,8 @@ def embedding_status():
 
         audio_processing = _generating_audio_embeddings
         text_processing = _generating_text_embeddings
-        audio_done = _audio_done_count if audio_processing else audio_done_db
+        # 口径与文本进度一致：已完成数 = 数据库已有 + 本次处理中新增
+        audio_done = audio_done_db + (_audio_done_count if audio_processing else 0)
         audio_available = False
         try:
             from services.embedding import is_audio_available
@@ -187,7 +188,7 @@ def embedding_status():
             'langs': langs,
             'mood_scores_ready': mood_scores_ready,
             'audio_done': audio_done,
-            'audio_total': _audio_total,
+            'audio_total': total,
             'audio_available': audio_available,
             'audio_processing': audio_processing,
             'text_processing': text_processing,
@@ -212,7 +213,7 @@ def _upsert_vector(cursor, song_id, source, blob, audio=False):
                  audio_vec = excluded.audio_vec,
                  audio_version = excluded.audio_version,
                  updated_at = datetime('now','localtime')''',
-            (song_id, source, blob)
+            (song_id, source, blob, AUDIO_VECTOR_VERSION)
         )
     else:
         cursor.execute(
@@ -222,7 +223,7 @@ def _upsert_vector(cursor, song_id, source, blob, audio=False):
                  text_vec = excluded.text_vec,
                  text_version = excluded.text_version,
                  updated_at = datetime('now','localtime')''',
-            (song_id, source, blob)
+            (song_id, source, blob, TEXT_VECTOR_VERSION)
         )
 
 
@@ -354,6 +355,13 @@ def _run_generation(flask_app, pending_songs, audio_pending):
         t2.start()
         t1.join()
         t2.join()
+
+        # 文本与音频生成全部结束：主动卸载模型，释放 RAM/显存
+        try:
+            from services.embedding import unload_models
+            unload_models()
+        except Exception:
+            pass
 
         # 向量已变更：失效缓存 + 异步刷新情绪分数与画像
         from services.recommender import invalidate_embedding_cache

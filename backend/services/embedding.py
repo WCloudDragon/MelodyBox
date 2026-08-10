@@ -495,6 +495,17 @@ def get_generation_active():
     return _GENERATION_ACTIVE
 
 
+def unload_models():
+    """生成结束后主动卸载全部模型，释放 RAM/显存（下次使用懒加载重建）。"""
+    global _MODEL, _CPU_MODEL, _AUDIO_MODEL, _MODEL_PROVIDER
+    _MODEL = None
+    _CPU_MODEL = None
+    _AUDIO_MODEL = None
+    _MODEL_PROVIDER = None
+    import gc
+    gc.collect()
+
+
 def is_gpu_install_pending():
     """检查 GPU 组件是否正在后台安装"""
     return _GPU_INSTALL_PENDING
