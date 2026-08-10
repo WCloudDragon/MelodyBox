@@ -1586,6 +1586,15 @@ watch(() => currentTrack.value?.path, () => {
   targetScrollPos = 0
   prevLineIndex = -1
   if (scrollRef.value) { scrollRef.value.style.transform = 'translate3d(0, 0, 0)'; currentScrollY = 0 }
+  // 新歌一开始就处于长空区时立即恢复三点显示：
+  // 否则 showUpcomingHint 全程无翻转，三点要等播过首行再跳回才会出现
+  if (showUpcomingHint.value) {
+    hintVisible.value = true
+    hintLeaving.value = false
+    hintAnchorIndex.value = hintLineIndex.value
+    _dotsScrollDone = false
+    startDotsScaleLoop()
+  }
 })
 
 // 监听切歌方向，设置封面动画方向，动画结束后清除
