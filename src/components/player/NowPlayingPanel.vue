@@ -59,15 +59,14 @@
             <Transition v-else :name="lyricsAnimName">
               <div class="lyrics-scroll" :key="currentTrack?.path" ref="scrollRef">
               <!-- 空区长间隔提示（仅三点）：首行前显示在列表顶部 -->
-              <Transition name="upcoming-hint">
-                <div v-if="showUpcomingHint && hintLineIndex < 0" :key="'hint-top'" class="upcoming-hint-line">
-                  <p class="upcoming-hint-dots">
-                    <span v-for="i in 3" :key="i" class="upcoming-hint-dot"
-                          :class="{ 'upcoming-hint-dot--fade': dotFading(i) }"
-                          :style="{ '--dot-scale': dotScale(i) }"></span>
-                  </p>
-                </div>
-              </Transition>
+              <div v-if="hintVisible && hintLineIndex < 0" :key="'hint-top'"
+                   class="upcoming-hint-line" :class="{ 'upcoming-hint-line--leaving': hintLeaving }">
+                <p class="upcoming-hint-dots">
+                  <span v-for="i in 3" :key="i" class="upcoming-hint-dot"
+                        :class="{ 'upcoming-hint-dot--fade': dotFading(i) }"
+                        :style="{ '--dot-scale': dotScale(i) }"></span>
+                </p>
+              </div>
               <template v-for="(line, index) in parsedLyrics" :key="index">
                 <div
                   class="lyric-line"
@@ -97,15 +96,14 @@
                   </div>
                 </div>
                 <!-- 句中空区：三点插在刚结束的上一行之后（上一行保留显示） -->
-                <Transition name="upcoming-hint">
-                  <div v-if="showUpcomingHint && index === hintLineIndex" :key="'hint-' + index" class="upcoming-hint-line">
-                    <p class="upcoming-hint-dots">
-                      <span v-for="i in 3" :key="i" class="upcoming-hint-dot"
-                            :class="{ 'upcoming-hint-dot--fade': dotFading(i) }"
-                            :style="{ '--dot-scale': dotScale(i) }"></span>
-                    </p>
-                  </div>
-                </Transition>
+                <div v-if="hintVisible && index === hintLineIndex" :key="'hint-' + index"
+                     class="upcoming-hint-line" :class="{ 'upcoming-hint-line--leaving': hintLeaving }">
+                  <p class="upcoming-hint-dots">
+                    <span v-for="i in 3" :key="i" class="upcoming-hint-dot"
+                          :class="{ 'upcoming-hint-dot--fade': dotFading(i) }"
+                          :style="{ '--dot-scale': dotScale(i) }"></span>
+                  </p>
+                </div>
               </template>
               <div class="lyrics-padding"></div>
             </div>
@@ -967,15 +965,19 @@ const showUpcomingHint = computed(() => {
   const prev = hintLineIndex.value
   return prev >= 0 && (list[prev].gap ?? 0) >= LYRIC_GAP_FILL_LIMIT
 })
-// 三点倒计时：进入空区即开始生长（三个点同时起跑、速度不同依次到顶），
-// 全部最大时为起播前 3 秒；生长区间按实际空区长度动态三等分
-const DOT_MAX_SCALE = 1.65
+// 三点倒计时：进入空区即开始，三个点**严格逐个**放大——
+// 每个点独占一段生长区间（前一个到顶后一个才开始），
+// 全部最大时为起播前 3 秒；区间按实际空区长度动态三等分
+const DOT_MAX_SCALE = 2.3
 function dotScale(i) {
   const rem = upcomingRemaining.value
   const rem0 = Math.max(upcomingZoneLength.value, rem)
   const span = Math.max(0.1, rem0 - 3)
-  const endI = rem0 - (i / 3) * span
-  const progress = Math.max(0, Math.min(1, (rem0 - rem) / Math.max(0.05, rem0 - endI)))
+  const segStart = rem0 - ((i - 1) / 3) * span  // 该点生长区间起点（剩余时间大）
+  const segEnd = rem0 - (i / 3) * span          // 该点生长区间终点（剩余时间小）
+  if (rem > segStart) return 1                  // 还没轮到该点
+  if (rem <= segEnd) return DOT_MAX_SCALE       // 已完成，保持最大
+  const progress = (segStart - rem) / Math.max(0.05, segStart - segEnd)
   return 1 + (DOT_MAX_SCALE - 1) * progress
 }
 // 起播前 3/2/1 秒依次开始模糊消失（dot3→dot2→dot1），每个淡出 1 秒，
@@ -983,6 +985,23 @@ function dotScale(i) {
 function dotFading(i) {
   return upcomingRemaining.value <= i
 }
+// 三点行的显示/收起状态：收起时保持挂载做 0.25s 平滑折叠，避免下方行闪现
+const hintVisible = ref(false)
+const hintLeaving = ref(false)
+let _dotsScrollDone = false
+watch(showUpcomingHint, (val) => {
+  if (val) {
+    hintLeaving.value = false
+    hintVisible.value = true
+  } else if (hintVisible.value) {
+    hintLeaving.value = true
+    setTimeout(() => {
+      hintVisible.value = false
+      hintLeaving.value = false
+      _dotsScrollDone = false
+    }, 250)
+  }
+})
 
 // 从设置中按比例计算各字号级别，利用 MiSans VF 可变轴字重
 const lyricsVars = computed(() => {
@@ -1052,6 +1071,8 @@ watch(() => props.visible, async (val) => {
 watch(currentTime, async (time) => {
   if (!props.visible || !hasLyrics.value || !scrollRef.value) return
 
+  if (!showUpcomingHint.value) _dotsScrollDone = false
+
   const { activeIndexes: nextActive } = computeActiveSet(parsedLyrics.value, time)
   const prevActive = activeIndexes.value
   if (JSON.stringify(prevActive) !== JSON.stringify(nextActive)) {
@@ -1083,10 +1104,21 @@ watch(currentTime, async (time) => {
 
   if (nextActive.length === 0) {
     if (jumpPending.value >= 0) jumpPending.value = -1
-    // 无活跃行：若在首句之前则回到第一句等待；否则保持现状（间隙留白）
+    // 无活跃行（空区）
     if (time < parsedLyrics.value[0].time) {
-      await nextTick()
-      if (!isUserScrolling.value) scrollToLine(0, true)
+      if (showUpcomingHint.value) {
+        // 首行前三点显示：定位到三点位置（滚动到顶部，三点位于中心线）
+        if (!_dotsScrollDone && !isUserScrolling.value) {
+          _dotsScrollDone = true
+          await nextTick()
+          scrollToDots(true)
+        }
+      } else {
+        // 无三点：回到第一句等待
+        _dotsScrollDone = true
+        await nextTick()
+        if (!isUserScrolling.value) scrollToLine(0, true)
+      }
     }
     return
   }
@@ -1100,10 +1132,29 @@ watch(currentTime, async (time) => {
   }
 
   await nextTick()
+  // 三点行收起中：等收起完成后再测量滚动目标，避免布局未定
+  if (hintLeaving.value) {
+    await new Promise(r => setTimeout(r, 260))
+  }
   scrollToActiveGroup(true)
   await nextTick()
   if (nextWord >= 0) startWordAnimLoop()
 })
+
+// 首行前三点：定位到三点位置（歌词滚动到顶部，50vh 顶部留白使其位于中心线）
+function scrollToDots(animate = true) {
+  if (!scrollRef.value || !mainRef.value) return
+  targetScrollPos = 0
+  currentScrollY = 0
+  if (!animate) {
+    scrollRef.value.style.transition = 'none'
+    scrollRef.value.style.transform = 'translate3d(0, 0, 0)'
+    return
+  }
+  scrollRef.value.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
+  scrollRef.value.style.transform = 'translate3d(0, 0, 0)'
+  setTimeout(() => { if (scrollRef.value) scrollRef.value.style.transition = '' }, 550)
+}
 
 const STAGGER_MS = 38
 const STAGGER_DURATION = 480
@@ -1335,6 +1386,9 @@ watch([currentIndex, queue], ([idx, q]) => {
 
 watch(() => currentTrack.value?.path, () => {
   activeIndexes.value = []
+  hintVisible.value = false
+  hintLeaving.value = false
+  _dotsScrollDone = false
   if (jumpPending.value >= 0) jumpPending.value = -1
   stopWordAnimLoop()
   targetScrollPos = 0
@@ -1671,6 +1725,35 @@ onBeforeUnmount(() => {
   align-items: center;
   pointer-events: none;
   user-select: none;
+  /* 挂载即播放入场：展开 + 模糊收拢（离场直接 v-if 移除，保证滚动测量布局正确） */
+  animation: upcoming-hint-in 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+@keyframes upcoming-hint-in {
+  from {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    opacity: 0;
+    filter: blur(6px);
+    transform: scale(0.92);
+  }
+  to {
+    max-height: calc(var(--lyrics-active-original, 24px) * 1.4 + 16px);
+    padding-top: 8px;
+    padding-bottom: 8px;
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+}
+/* 离场：0.25s 平滑收起（下方行连续上滑，之后再由滚动动画接管） */
+.upcoming-hint-line--leaving {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  transition: max-height 0.25s ease,
+              padding-top 0.25s ease,
+              padding-bottom 0.25s ease;
 }
 .upcoming-hint-dots {
   margin: 0;
@@ -1678,18 +1761,26 @@ onBeforeUnmount(() => {
   height: calc(var(--lyrics-active-original, 24px) * 1.4);
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  /* 左右留白，避免点放大时被行边缘裁切 */
-  padding: 0 10px;
+  gap: 16px;
 }
 /* 更大的点 + 倒计时缩放（随起播逼近依次变大） */
 .upcoming-hint-dot {
-  width: 10px;
-  height: 10px;
+  /* 宽高驱动生长：点从自身左缘向右放大，不越界、无裁切，保持左对齐 */
+  width: calc(7px * var(--dot-scale, 1));
+  height: calc(7px * var(--dot-scale, 1));
   border-radius: 50%;
   background: rgba(255,255,255,0.65);
-  transform: scale(var(--dot-scale, 1));
-  transition: transform 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transform-origin: center;
+  transition: width 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              height 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  /* 入场：三个点逐个弹出放大（backwards 保证延迟期内不可见，结束后交给倒计时缩放） */
+  animation: upcoming-dot-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.0) backwards;
+}
+.upcoming-hint-dot:nth-child(2) { animation-delay: 0.18s; }
+.upcoming-hint-dot:nth-child(3) { animation-delay: 0.36s; }
+@keyframes upcoming-dot-in {
+  from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 /* 起播前依次模糊消失（dot3→dot2→dot1），每个淡出 1 秒，
    左边第一个点在下句开始瞬间完全消失 */
@@ -1697,31 +1788,10 @@ onBeforeUnmount(() => {
   opacity: 0;
   filter: blur(6px);
   transform: scale(0.4);
+  transform-origin: center;
   transition: opacity 1s ease,
               filter 1s ease,
               transform 1s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-}
-/* 提示行出入：max-height 从 0 展开（下方歌词连贯下移腾位）
-   同时模糊收拢 + 渐显 + 轻微缩放（无回弹，安静克制） */
-.upcoming-hint-enter-active {
-  transition: opacity 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              filter 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              max-height 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              padding-top 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              padding-bottom 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-}
-.upcoming-hint-enter-from {
-  max-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-  opacity: 0;
-  filter: blur(6px);
-  transform: scale(0.92);
-}
-/* 移除无动画：三点已逐个消失，直接卸载（与下句滚动衔接） */
-.upcoming-hint-leave-active {
-  transition: none;
 }
 
 /* ===== 面板开闭过渡动画：从底部连贯上滑 ===== */
