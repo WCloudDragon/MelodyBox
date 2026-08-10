@@ -58,44 +58,53 @@
 
             <Transition v-else :name="lyricsAnimName">
               <div class="lyrics-scroll" :key="currentTrack?.path" ref="scrollRef">
-              <!-- 空区长间隔提示：融入歌词列表的一行（仅三点，无文字） -->
-              <div v-if="showUpcomingHint" class="lyric-line upcoming-hint-line">
+              <!-- 空区长间隔提示：融入歌词列表的一行（仅三点，无文字）；首行前显示在列表顶部 -->
+              <div v-if="showUpcomingHint && hintLineIndex < 0" class="lyric-line upcoming-hint-line">
                 <div class="lyric-line__inner">
                   <p class="lyric-line__original upcoming-hint-dots">
                     <span></span><span></span><span></span>
                   </p>
                 </div>
               </div>
-              <div
-                v-for="(line, index) in parsedLyrics"
-                :key="index"
-                class="lyric-line"
-                :class="{
-                  active: activeIndexes.includes(index) && jumpPending < 0,
-                  sung: activeFirst >= 0 && index < activeFirst,
-                  upcoming: activeLast >= 0 && index > activeLast,
-                  'has-translation': line.translation,
-                  'is-word-level': line.wordLevel
-                }"
-                :ref="el => setLineRef(el, index)"
-                :style="lineStyle(index)"
-                v-ripple
-                @click="seekToLine(line.time)"
-              >
-                <div class="lyric-line__inner">
-                  <p v-if="line.wordLevel && line.segments && (activeIndexes.some(a => Math.abs(index - a) <= 1) || index === fadingLineIndex)" class="lyric-line__original word-level">
-                    <span
-                      v-for="(seg, si) in line.segments"
-                      :key="si"
-                      class="word-seg"
-                      :data-word="seg.text"
-                    >{{ seg.text }}</span>
-                  </p>
-                  <p v-else class="lyric-line__original">{{ line.original }}</p>
-                  <p v-if="line.translation" class="lyric-line__translation">{{ line.translation }}</p>
+              <template v-for="(line, index) in parsedLyrics" :key="index">
+                <!-- 句中空区：在刚结束的上一行槽位显示三点（该位置即视口中央） -->
+                <div v-if="showUpcomingHint && index === hintLineIndex" class="lyric-line upcoming-hint-line">
+                  <div class="lyric-line__inner">
+                    <p class="lyric-line__original upcoming-hint-dots">
+                      <span></span><span></span><span></span>
+                    </p>
+                  </div>
                 </div>
-              </div>
-            <div class="lyrics-padding"></div>
+                <div
+                  v-else
+                  class="lyric-line"
+                  :class="{
+                    active: activeIndexes.includes(index) && jumpPending < 0,
+                    sung: activeFirst >= 0 && index < activeFirst,
+                    upcoming: activeLast >= 0 && index > activeLast,
+                    'has-translation': line.translation,
+                    'is-word-level': line.wordLevel
+                  }"
+                  :ref="el => setLineRef(el, index)"
+                  :style="lineStyle(index)"
+                  v-ripple
+                  @click="seekToLine(line.time)"
+                >
+                  <div class="lyric-line__inner">
+                    <p v-if="line.wordLevel && line.segments && (activeIndexes.some(a => Math.abs(index - a) <= 1) || index === fadingLineIndex)" class="lyric-line__original word-level">
+                      <span
+                        v-for="(seg, si) in line.segments"
+                        :key="si"
+                        class="word-seg"
+                        :data-word="seg.text"
+                      >{{ seg.text }}</span>
+                    </p>
+                    <p v-else class="lyric-line__original">{{ line.original }}</p>
+                    <p v-if="line.translation" class="lyric-line__translation">{{ line.translation }}</p>
+                  </div>
+                </div>
+              </template>
+              <div class="lyrics-padding"></div>
             </div>
             </Transition>
           </div>
@@ -110,7 +119,7 @@ import { ref, computed, watch, nextTick, inject, onMounted, onBeforeUnmount } fr
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
-import { parseLRC, computeActiveSet } from '@/utils/format'
+import { parseLRC, computeActiveSet, LYRIC_GAP_FILL_LIMIT } from '@/utils/format'
 import { extractCoverColors } from '@/utils/coverColorExtractor'
 
 const props = defineProps({ visible: { type: Boolean, default: false } })
@@ -867,8 +876,16 @@ function lineStyle(index) {
   // 远距离跳转缓冲期内以旧行索引为参考，避免 opacity 抢先过渡
   let refs = jumpPending.value >= 0 ? [jumpPending.value] : activeIndexes.value
 
-  // 无活跃行（首句之前）：以虚拟位置 -1 为基准，保留距离模糊与渐隐
-  if (refs.length === 0) refs = [-1]
+  // 无活跃行：首行之前以虚拟位置 -1 为基准（保留距离模糊渐隐）；
+  // 句中长间隙则整体弱化留白（避免顶部行被 -1 基准错误提亮）
+  if (refs.length === 0) {
+    const first = parsedLyrics.value[0]
+    if (!first || currentTime.value < first.time) {
+      refs = [-1]
+    } else {
+      return { opacity: 0.3, filter: 'none' }
+    }
+  }
 
   // 正在播放的行（公平模型：所有活跃行一律高亮，不区分主/副）
   if (refs.includes(index)) {
@@ -901,17 +918,32 @@ const parsedLyrics = computed(() => {
 
 const hasLyrics = computed(() => parsedLyrics.value.length > 0)
 
-// 长间隔提示：仅当进入无活跃行的空区、且下一句开始距当前超过该秒数时显示
-const UPCOMING_GAP_THRESHOLD = 10
+// 提示所在行：空区前刚结束的一行（首行前为 -1）
+const hintLineIndex = computed(() => {
+  const list = parsedLyrics.value
+  const now = currentTime.value
+  if (!list.length || now < list[0].time) return -1
+  let prev = -1
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].time <= now) prev = i
+    else break
+  }
+  return prev
+})
+// 长间隔“即将开唱”提示：仅当进入无活跃行的空区（该空区总长度 ≥ 填缝上限）时显示。
+// 空区长度由模型层预计算（line.gap / 首行开始时间），显示状态稳定，不随时间翻转。
 const showUpcomingHint = computed(() => {
   if (!hasLyrics.value) return false
   if (activeIndexes.value.length > 0) return false
+  const list = parsedLyrics.value
   const now = currentTime.value
-  let nextStart = Infinity
-  for (const line of parsedLyrics.value) {
-    if (line.time > now && line.time < nextStart) nextStart = line.time
+  // 首行之前：空区长度 = 首行开始时间
+  if (now < list[0].time) {
+    return list[0].time >= LYRIC_GAP_FILL_LIMIT
   }
-  return nextStart !== Infinity && nextStart - now > UPCOMING_GAP_THRESHOLD
+  // 句中空区：长度 = 上一行原词结束到下一行的间隔（line.gap）
+  const prev = hintLineIndex.value
+  return prev >= 0 && (list[prev].gap ?? 0) >= LYRIC_GAP_FILL_LIMIT
 })
 
 // 从设置中按比例计算各字号级别，利用 MiSans VF 可变轴字重

@@ -139,7 +139,23 @@ export function parseLRC(lrcText) {
 
   // 按时间排序后合并双语对
   sentenceEntries.sort((a, b) => a.time - b.time)
-  return mergeBilingual(sentenceEntries)
+  const merged = mergeBilingual(sentenceEntries)
+  // 预计算每行原词结束后到下一行的间隔（供长间隙“即将开唱”提示使用，稳定不随时间变化）
+  for (let i = 0; i < merged.length; i++) {
+    const L = merged[i]
+    if (L.end == null) {
+      L.gap = 0
+      continue
+    }
+    const baseEnd = L.end
+    let nextAfter = Infinity
+    for (let j = 0; j < merged.length; j++) {
+      if (j === i) continue
+      if (merged[j].time > baseEnd && merged[j].time < nextAfter) nextAfter = merged[j].time
+    }
+    L.gap = nextAfter !== Infinity ? nextAfter - baseEnd : 0
+  }
+  return merged
 }
 
 // 获取当前歌词行索引
@@ -170,6 +186,10 @@ export function computeActiveSet(lyrics, currentTime) {
   return { activeIndexes }
 }
 
+// 句间间隙填缝上限（秒）：原词结束后到下一行开始的间隔达到该值时不再用翻译尾巴填缝，
+// 产生真实空区，供“即将开唱”提示显示（低于该值保持填缝，与现状一致）。
+export const LYRIC_GAP_FILL_LIMIT = 10
+
 function effectiveEnd(lyrics, i) {
   const L = lyrics[i]
   // 无结束时间戳（标准逐句歌词）：持续到下一行开始
@@ -192,7 +212,11 @@ function effectiveEnd(lyrics, i) {
       nextAfter = otherStart
     }
   }
-  // 无手递手：翻译尾巴延伸到下一行开始，填补句间空隙
+  // 长间隙（≥ 上限）不再填缝：原词结束即止，产生空区
+  if (nextAfter !== Infinity && nextAfter - baseEnd >= LYRIC_GAP_FILL_LIMIT) {
+    return baseEnd
+  }
+  // 短间隙：翻译尾巴延伸到下一行开始，填补句间空隙（与现状一致）
   return nextAfter
 }
 
