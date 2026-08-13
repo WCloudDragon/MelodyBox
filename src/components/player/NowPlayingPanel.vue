@@ -1066,24 +1066,60 @@ watch(showUpcomingHint, (val) => {
   }
 }, { immediate: true })
 
+// 用 canvas 实测 MiSans VF 在当前字重下的平均字形进宽，替代“(字号+1)”的估算模型。
+// 可变字体的进宽并不随字号线性变化（例如 37px 的进宽只比 32px 宽约 3%），
+// 旧估算会高估活跃行的容量差，导致临界句在两个稳态间换行跳变。
+let _measureCtx = null
+const CALIB_STR = '0123456789 abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ      '
+function measureAdvance(fontPx, weight) {
+  try {
+    const fontStr = `${weight} ${fontPx}px 'MiSans VF', 'MiSans', sans-serif`
+    if (typeof document !== 'undefined' && document.fonts && !document.fonts.check(fontStr)) return null
+    if (!_measureCtx) {
+      const canvas = document.createElement('canvas')
+      _measureCtx = canvas.getContext('2d')
+    }
+    _measureCtx.font = fontStr
+    return _measureCtx.measureText(CALIB_STR).width / CALIB_STR.length
+  } catch {
+    return null
+  }
+}
+const fontsReady = ref(false)
+if (typeof document !== 'undefined' && document.fonts) {
+  document.fonts.ready.then(() => { fontsReady.value = true })
+}
+
 // 从设置中按比例计算各字号级别，利用 MiSans VF 可变轴字重
 const lyricsVars = computed(() => {
   const base = lyricsFontSize.value
   const trans = Math.round(base * lyricsTransScale.value / 100)
   const active = lyricsActiveScale.value / 100
   const activeFont = Math.round(base * active)
+  const transActiveFont = Math.round(trans * active)
+  const weight = lyricsFontWeight.value
+  // 实测字形进宽（+1px letter-spacing）；字体未就绪时退回旧估算模型，就绪后自动重算
+  const advBase = measureAdvance(base, weight)
+  const advActive = measureAdvance(activeFont, weight)
+  const advTrans = measureAdvance(trans, weight)
+  const advTransActive = measureAdvance(transActiveFont, weight)
+  const measured = fontsReady.value
+    && advBase != null && advActive != null && advTrans != null && advTransActive != null
+  const effBase = measured ? advBase + 1 : base + 1
+  const effActive = measured ? advActive + 1 : activeFont + 1
+  const effTrans = measured ? advTrans + 1 : trans + 1
+  const effTransActive = measured ? advTransActive + 1 : transActiveFont + 1
   // 以活跃行（字号更大、容纳更少）为瓶颈，计算两行各自的 em max-width，确保换行位置绝对一致
   const availWidth = Math.max(200, windowWidth.value * 0.5 - 72)
-  const activeChars = Math.max(5, Math.floor(availWidth / (activeFont + 1)))
+  const activeChars = Math.max(5, Math.floor(availWidth / effActive))
   // +4px 安全余量，统一吸收亚像素渲染波动，避免活跃/非活跃态切换时边界字符闪烁
   const safetyPx = 4
-  const nonActiveMaxEm = (activeChars * (base + 1) + safetyPx) / base
-  const activeMaxEm = (activeChars * (activeFont + 1) + safetyPx) / activeFont
+  const nonActiveMaxEm = (activeChars * effBase + safetyPx) / base
+  const activeMaxEm = (activeChars * effActive + safetyPx) / activeFont
   // 翻译行同理，基于翻译活跃字号计算
-  const transActiveFont = Math.round(trans * active)
-  const transActiveChars = Math.max(3, Math.floor(availWidth / (transActiveFont + 1)))
-  const transNonActiveMaxEm = (transActiveChars * (trans + 1) + safetyPx) / trans
-  const transActiveMaxEm = (transActiveChars * (transActiveFont + 1) + safetyPx) / transActiveFont
+  const transActiveChars = Math.max(3, Math.floor(availWidth / effTransActive))
+  const transNonActiveMaxEm = (transActiveChars * effTrans + safetyPx) / trans
+  const transActiveMaxEm = (transActiveChars * effTransActive + safetyPx) / transActiveFont
   return {
     '--lyrics-base-original': base + 'px',
     '--lyrics-base-trans': trans + 'px',
@@ -1855,14 +1891,16 @@ onBeforeUnmount(() => {
   max-width: var(--lyrics-ch-limit);
   transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               font-size 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              font-weight 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+              font-weight 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              max-width 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .lyric-line__translation {
   margin: 0; font-size: var(--lyrics-base-trans, 10px); line-height: 1.3;
   font-weight: var(--lyrics-weight, 700); color: rgba(255,255,255,0.12);
   max-width: var(--lyrics-trans-ch-limit);
   transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              font-size 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+              font-size 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              max-width 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .lyric-line.active .lyric-line__original {
   color: #fff; font-size: var(--lyrics-active-original, 24px); font-weight: var(--lyrics-weight, 700);
