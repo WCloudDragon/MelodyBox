@@ -1,5 +1,16 @@
 <template>
-  <nav class="sidebar">
+  <nav class="sidebar" :class="{ collapsed }">
+    <!-- 顶部折叠/展开按钮 -->
+    <div class="sidebar__header">
+      <button
+        class="sidebar-toggle"
+        v-ripple
+        :title="collapsed ? '展开侧边栏' : '收起侧边栏'"
+        @click="collapsed = !collapsed"
+      >
+        <el-icon><component :is="collapsed ? Expand : Fold" /></el-icon>
+      </button>
+    </div>
     <!-- 主导航 -->
     <div class="sidebar__section">
       <router-link to="/" class="nav-item" v-ripple :class="{ active: $route.path === '/' }">
@@ -92,7 +103,8 @@
 </template>
 
 <script setup>
-import { Plus, Moon, Sunny, Monitor, UserFilled, Timer, TrendCharts } from '@element-plus/icons-vue'
+import { ref } from 'vue'
+import { Plus, Moon, Sunny, Monitor, UserFilled, Timer, TrendCharts, Expand, Fold } from '@element-plus/icons-vue'
 import { usePlaylistStore } from '@/stores/playlist'
 import { useSettingsStore } from '@/stores/settings'
 import { useAuthStore } from '@/stores/auth'
@@ -102,6 +114,7 @@ const playlistStore = usePlaylistStore()
 const settings = useSettingsStore()
 const auth = useAuthStore()
 const modal = useModal()
+const collapsed = ref(false)
 
 const themeOptions = [
   { value: 'light', icon: Sunny, label: '浅色' },
@@ -135,11 +148,43 @@ async function handleCreatePlaylist() {
   margin: 10px 0 10px 10px;
   display: flex;
   flex-direction: column;
-  background: var(--bg-primary);
+  background:
+    radial-gradient(120% 80% at 18% 0%, var(--glass-specular), transparent 55%),
+    var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   border-radius: 14px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
   flex-shrink: 0;
   overflow: hidden;
+  transition: width 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.sidebar.collapsed {
+  width: 64px;
+}
+.sidebar__header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 10px 0;
+  flex-shrink: 0;
+}
+.sidebar-toggle {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.sidebar-toggle:hover {
+  background: var(--hover-bg-strong);
+  color: var(--text-primary);
 }
 .sidebar__section:first-child { padding-top: 12px; }
 .sidebar__section {
@@ -214,6 +259,15 @@ async function handleCreatePlaylist() {
   margin-top: auto;
   padding: 8px 12px 12px;
 }
+
+/* 折叠态：仅保留图标，文字/计数/主题开关隐藏 */
+.sidebar.collapsed .sidebar__header { justify-content: center; padding: 10px 0 0; }
+.sidebar.collapsed .nav-item > span { display: none; }
+.sidebar.collapsed .nav-item__cover { width: 20px; height: 20px; }
+.sidebar.collapsed .sidebar__label { justify-content: center; padding: 4px 0; }
+.sidebar.collapsed .sidebar__label > span { display: none; }
+.sidebar.collapsed .theme-switch { display: none; }
+.sidebar.collapsed .empty-hint { display: none; }
 
 /* 主题切换开关：与 nav-item 同尺寸、同边界 */
 .theme-switch {

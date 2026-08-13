@@ -97,6 +97,14 @@
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);
   --mask-color: rgba(0, 0, 0, 0.35);
   --ripple-color: rgba(255, 255, 255, 0.14);
+  /* 液态玻璃材质（深色） */
+  --glass-blur: blur(24px) saturate(150%);
+  --glass-bg: rgba(255, 255, 255, 0.06);
+  --glass-bg-strong: rgba(30, 30, 34, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-highlight: rgba(255, 255, 255, 0.14);
+  --glass-specular: rgba(255, 255, 255, 0.06);
+  --glass-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 
 [data-theme='light'] {
@@ -113,6 +121,14 @@
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.38);
   --mask-color: rgba(255, 255, 255, 0.55);
   --ripple-color: rgba(0, 0, 0, 0.14);
+  /* 液态玻璃材质（浅色） */
+  --glass-blur: blur(24px) saturate(140%);
+  --glass-bg: rgba(255, 255, 255, 0.5);
+  --glass-bg-strong: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.65);
+  --glass-highlight: rgba(255, 255, 255, 0.95);
+  --glass-specular: rgba(255, 255, 255, 0.4);
+  --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
 }
 
 /* Element Plus 暗色模式适配 */

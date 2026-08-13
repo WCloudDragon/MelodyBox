@@ -1,6 +1,6 @@
 <template>
   <teleport to="body">
-    <transition name="queue-drawer" @enter="onPanelEnter" @before-leave="ready = false">
+    <transition name="queue-drawer" :duration="600" @enter="onPanelEnter" @before-leave="ready = false">
       <div v-if="visible" class="queue-drawer-overlay" @click.self="$emit('close')">
         <div class="queue-card">
           <div class="queue-card__header">
@@ -121,11 +121,16 @@ function onPanelEnter() {
   position: absolute;
   right: 10px; top: 46px; bottom: 82px;
   width: 420px; max-width: 100vw;
-  background: var(--bg-primary);
+  background:
+    radial-gradient(120% 80% at 20% 0%, var(--glass-specular), transparent 55%),
+    var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   border-radius: 14px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--glass-border);
   display: flex; flex-direction: column;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.35);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+  overflow: hidden;
 }
 .queue-card__header {
   display: flex; align-items: center; gap: 10px;
@@ -225,33 +230,20 @@ function onPanelEnter() {
 }
 
 /* ===== 动画 ===== */
-.queue-drawer-enter-active {
-  animation: qd-fade-in 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0) forwards;
-}
-.queue-drawer-leave-active {
-  animation: qd-fade-out 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0) forwards;
-}
+/* 玻璃壳用 right 做布局位移，不碰 transform，backdrop-filter 全程有效 */
 .queue-drawer-enter-active .queue-card {
-  animation: qd-slide-in 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0) forwards;
+  animation: qd-slide-in-right 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0) forwards;
 }
 .queue-drawer-leave-active .queue-card {
-  animation: qd-slide-out 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0) forwards;
+  animation: qd-slide-out-right 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0) forwards;
 }
 
-@keyframes qd-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+@keyframes qd-slide-in-right {
+  from { right: -440px; }
+  to { right: 10px; }
 }
-@keyframes qd-fade-out {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-@keyframes qd-slide-in {
-  from { transform: translateX(calc(100% + 20px)); }
-  to { transform: translateX(0); }
-}
-@keyframes qd-slide-out {
-  from { transform: translateX(0); }
-  to { transform: translateX(calc(100% + 20px)); }
+@keyframes qd-slide-out-right {
+  from { right: 10px; }
+  to { right: -440px; }
 }
 </style>
