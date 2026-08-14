@@ -9,7 +9,7 @@ export function useTrackList() {
   const multiSelectMode = ref(false)
   const selected = ref(new Set())
 
-  const ctxMenu = ref({ visible: false, x: 0, y: 0, track: null })
+  const ctxMenu = ref({ visible: false, x: 0, y: 0, track: null, submenu: null })
   const contextMenuTarget = ref(null)  // 当前右键目标 track.path，菜单关闭时清空
 
   // --- 右键菜单（含防出屏） ---
@@ -20,13 +20,31 @@ export function useTrackList() {
     let y = e.clientY
     if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 8
     if (y + menuH > window.innerHeight) y = window.innerHeight - menuH - 8
-    ctxMenu.value = { visible: true, x, y, track }
+    ctxMenu.value = { visible: true, x, y, track, submenu: null }
     contextMenuTarget.value = track.path
   }
 
   function hideContextMenu() {
     ctxMenu.value.visible = false
+    ctxMenu.value.submenu = null
     contextMenuTarget.value = null
+  }
+
+  function backFromSubmenu() {
+    ctxMenu.value.submenu = null
+  }
+
+  /** 打开“选择艺术家”二级页（多个艺术家时返回 true） */
+  function openArtistSubmenu() {
+    const track = ctxMenu.value.track
+    if (!track) return false
+    const names = (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)
+    if (names.length <= 1) return false
+    ctxMenu.value.submenu = {
+      title: '选择艺术家',
+      items: names.map(name => ({ label: name, artist: name }))
+    }
+    return true
   }
 
   /**
@@ -54,15 +72,31 @@ export function useTrackList() {
           return true
         case 'goAlbum':
           if (track.album) router.push('/album/' + encodeURIComponent(track.album))
-          return true
-        case 'goArtist':
-          if (track.artist) router.push('/artist/' + encodeURIComponent(track.artist))
-          return true
+          return 'navigate'
+        case 'goArtist': {
+          const names = (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)
+          if (names.length === 1) {
+            router.push('/artist/' + encodeURIComponent(names[0]))
+            return 'navigate'
+          }
+          if (openArtistSubmenu()) return 'submenu'
+          return 'handled'
+        }
         case 'trackInfo':
           router.push('/track-info?path=' + encodeURIComponent(track.path))
-          return true
+          return 'navigate'
       }
       return false
+    }
+  }
+
+  /** 二级页“选择艺术家”的动作处理器 */
+  function createSubActionHandler(router) {
+    return function (item) {
+      hideContextMenu()
+      if (item && item.artist) {
+        router.push('/artist/' + encodeURIComponent(item.artist))
+      }
     }
   }
 
@@ -70,7 +104,9 @@ export function useTrackList() {
    * 根据页面类型构建右键菜单项
    * @param {'library'|'playlist'|'album'|'artist'|'default'} page
    */
-  function buildMenuItems(page) {
+  function buildMenuItems(page, track) {
+    const artistNames = (track?.artist || '').split('/').map(s => s.trim()).filter(Boolean)
+    const hasMultiArtist = artistNames.length > 1
     const items = [
       { label: '播放', action: 'play' },
       { label: '插播至当前播放后', action: 'addQueueNext' },
@@ -84,7 +120,7 @@ export function useTrackList() {
     }
     items.push(
       { label: '跳转到专辑', action: 'goAlbum' },
-      { label: '跳转到艺术家', action: 'goArtist' },
+      { label: '跳转到艺术家', action: 'goArtist', hasSubmenu: hasMultiArtist },
       '-',
       { label: '音轨信息', action: 'trackInfo' }
     )
@@ -171,7 +207,10 @@ export function useTrackList() {
     contextMenuTarget,
     showContextMenu,
     hideContextMenu,
+    backFromSubmenu,
+    openArtistSubmenu,
     createCtxHandler,
+    createSubActionHandler,
     buildMenuItems,
     showAddPlaylistDialog,
     toggleSelectMode,

@@ -148,14 +148,9 @@ async function handleCreatePlaylist() {
   margin: 10px 0 10px 10px;
   display: flex;
   flex-direction: column;
-  background:
-    radial-gradient(120% 80% at 18% 0%, var(--glass-specular), transparent 55%),
-    var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
+  background: var(--bg-secondary);
   border-radius: 14px;
-  border: 1px solid var(--glass-border);
-  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+  border: 1px solid var(--border-color);
   flex-shrink: 0;
   overflow: hidden;
   transition: width 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0);

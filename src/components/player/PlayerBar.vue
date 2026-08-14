@@ -16,7 +16,7 @@
 
     <div class="player-bar__inner">
       <!-- 左侧：封面 + 歌名歌手 -->
-      <div class="player-bar__left" v-ripple @click="toggleNowPlaying" title="点击查看歌词">
+      <div class="player-bar__left" v-ripple @click="toggleNowPlaying" @contextmenu.prevent="onInfoContextMenu" title="点击查看歌词">
         <div class="now-playing">
           <Transition :name="coverAnimName">
             <img v-if="currentTrack?.cover" :key="currentTrack?.path" :src="currentTrack.cover" class="cover" ref="coverRef" />
@@ -125,15 +125,32 @@
 
     <!-- 播放列表侧边抽屉 -->
     <QueuePanel :visible="showQueue" @close="showQueue = false" />
+    <ContextMenu
+      :visible="ctxMenu.visible"
+      :x="ctxMenu.x"
+      :y="ctxMenu.y"
+      :items="playerBarMenuItems"
+      :submenu="ctxMenu.submenu"
+      :animated="true"
+      @close="hideContextMenu"
+      @action="onCtxAction"
+      @back="backFromSubmenu"
+      @sub-action="onSubAction"
+      @hover-submenu="openArtistSubmenu"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, computed, inject, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 import { formatDuration } from '@/utils/format'
 import QueuePanel from '@/components/player/QueuePanel.vue'
+import ContextMenu from '@/components/music/ContextMenu.vue'
+import { useTrackList } from '@/composables/useTrackList'
+import { closeOverlays } from '@/utils/overlays'
 
 const props = defineProps({
   panelOpen: { type: Boolean, default: false },
@@ -142,6 +159,7 @@ const props = defineProps({
 })
 const toggleNowPlaying = inject('toggleNowPlaying')
 const player = usePlayerStore()
+const router = useRouter()
 const { currentTrack, isPlaying, currentTime, duration, volume, isMuted,
         playMode, progress, bufferedPercent, queue, hasNext, hasPrev, showDesktopLyrics, songChangeDirection } = storeToRefs(player)
 
@@ -174,7 +192,39 @@ watch(songChangeDirection, (dir) => {
   }
 })
 
-defineExpose({ coverEl: coverRef, showQueue })
+defineExpose({ coverEl: coverRef, showQueue, closeQueue: () => { showQueue.value = false } })
+
+// 左下播放信息右键菜单（复用主列表交互，跳转后统一收回浮层）
+const { ctxMenu, showContextMenu, hideContextMenu, backFromSubmenu, openArtistSubmenu, createCtxHandler, createSubActionHandler, showAddPlaylistDialog } = useTrackList()
+const ctxHandler = createCtxHandler(player, router)
+const subActionHandler = createSubActionHandler(router)
+const playerBarMenuItems = computed(() => {
+  const names = (ctxMenu.value.track?.artist || '').split('/').map(s => s.trim()).filter(Boolean)
+  return [
+    { label: '添加到歌单', action: 'addToPlaylist' },
+    '-',
+    { label: '跳转到专辑', action: 'goAlbum' },
+    { label: '跳转到艺术家', action: 'goArtist', hasSubmenu: names.length > 1 },
+    '-',
+    { label: '音轨信息', action: 'trackInfo' }
+  ]
+})
+function onInfoContextMenu(e) {
+  if (currentTrack.value) showContextMenu(e, currentTrack.value)
+}
+function onCtxAction(action) {
+  const result = ctxHandler(action)
+  if (result === 'navigate') {
+    closeOverlays()
+    return
+  }
+  if (result === 'submenu') return
+  if (action === 'addToPlaylist') showAddPlaylistDialog(ctxMenu.value.track)
+}
+function onSubAction(item) {
+  subActionHandler(item)
+  closeOverlays()
+}
 
 // 拖拽中的本地即时视觉值
 const isDraggingProgress = ref(false)

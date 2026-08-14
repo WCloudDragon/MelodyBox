@@ -484,6 +484,36 @@ export const usePlayerStore = defineStore('player', () => {
     originalQueue.value = []
   }
 
+  // 拖拽调整队列顺序：保持当前播放曲不变
+  function moveInQueue(from, to) {
+    const q = queue.value
+    if (from < 0 || to < 0 || from >= q.length || to >= q.length || from === to) return
+    const c = currentIndex.value
+    const curTrack = c >= 0 && c < q.length ? q[c] : null
+    const next = [...q]
+    const [item] = next.splice(from, 1)
+    next.splice(to, 0, item)
+    queue.value = next
+    if (curTrack) {
+      const idx = next.findIndex(t => t === curTrack)
+      if (idx !== -1) currentIndex.value = idx
+    }
+  }
+
+  // 插播到下一曲：把指定项移到当前播放之后
+  function moveToNext(index) {
+    const q = queue.value
+    const c = currentIndex.value
+    if (c < 0 || index < 0 || index >= q.length || index === c) return
+    const curTrack = q[c]
+    const next = [...q]
+    const [item] = next.splice(index, 1)
+    const curIdx = next.findIndex(t => t === curTrack)
+    if (curIdx === -1) return
+    next.splice(curIdx + 1, 0, item)
+    queue.value = next
+  }
+
   // 播放全部（替换队列）
   function playAll(tracks, startIndex = 0) {
     clearQueue()
@@ -543,7 +573,7 @@ export const usePlayerStore = defineStore('player', () => {
     currentTrack, progress, hasNext, hasPrev,
     initAudio, play, pause, resume, togglePlay,
     next, prev, seek, setVolume, toggleMute, togglePlayMode, toggleDesktopLyrics,
-    addToQueue, addToQueueNext, removeFromQueue, clearQueue, playAll,
+    addToQueue, addToQueueNext, removeFromQueue, clearQueue, moveInQueue, moveToNext, playAll,
     saveSettings, loadSettings, saveProgress, restoreProgress,
     getLiveTime
   }

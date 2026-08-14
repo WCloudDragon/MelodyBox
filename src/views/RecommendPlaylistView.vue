@@ -59,9 +59,13 @@
       :x="ctxMenu.x"
       :y="ctxMenu.y"
       :items="menuItems"
+      :submenu="ctxMenu.submenu"
       :animated="true"
       @close="hideContextMenu"
       @action="ctxAction"
+      @back="backFromSubmenu"
+      @sub-action="subActionHandler"
+      @hover-submenu="openArtistSubmenu"
     />
   </div>
 </template>
@@ -85,10 +89,11 @@ const playerStore = usePlayerStore()
 const aiStore = useAiStore()
 const { currentTrack } = storeToRefs(playerStore)
 
-const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems, showAddPlaylistDialog } = useTrackList()
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, backFromSubmenu, openArtistSubmenu, createSubActionHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems, showAddPlaylistDialog } = useTrackList()
 
 const ctxHandler = createCtxHandler(playerStore, router)
-const menuItems = computed(() => buildMenuItems('default'))
+const subActionHandler = createSubActionHandler(router)
+const menuItems = computed(() => buildMenuItems('default', ctxMenu.value.track))
 
 function ctxAction(action) {
   if (ctxHandler(action)) return

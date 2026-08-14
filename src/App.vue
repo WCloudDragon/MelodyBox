@@ -66,6 +66,7 @@ import DesktopLyrics from '@/components/player/DesktopLyrics.vue'
 import ProgressPanel from '@/components/ProgressPanel.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
 import { createModalProvider } from '@/composables/useModal'
+import { registerOverlaysCloser } from '@/utils/overlays'
 
 const playerStore = usePlayerStore()
 const settingsStore = useSettingsStore()
@@ -114,6 +115,12 @@ function handleClose() {
   textShifted.value = false
   nextTick(() => { panelVisible.value = false })
 }
+
+// 跳转到专辑/艺术家/音轨信息时，统一收回全屏播放页与播放队列
+registerOverlaysCloser(() => {
+  handleClose()
+  playerBarRef.value?.closeQueue?.()
+})
 
 // ==================== 页面切换过渡动画 ====================
 

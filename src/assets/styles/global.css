@@ -23,9 +23,50 @@
 .ctx-menu-item:hover { background: var(--bg-tertiary); }
 .ctx-menu-item--danger { color: #f56c6c; }
 .ctx-menu-item--danger:hover { background: rgba(245,108,108,0.1); }
+.ctx-menu-item--has-submenu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  overflow: visible !important;  /* 覆盖 v-ripple 注入的 overflow:hidden，避免裁掉二级菜单 */
+}
+.ctx-menu-arrow {
+  margin-left: 12px;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+/* 二级子菜单：绝对定位于父项右侧/左侧，贴齐无间隙 */
+.ctx-submenu {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  min-width: 140px;
+  max-width: 240px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 4px 0;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+.ctx-submenu--left {
+  left: auto;
+  right: 100%;
+}
 .ctx-menu-divider {
   height: 1px; background: var(--border-color);
   margin: 4px 0;
+}
+.ctx-menu-subtitle {
+  padding: 6px 16px 2px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.ctx-menu-item--back {
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 2px;
 }
 .ctx-menu-backdrop {
   position: fixed; inset: 0; z-index: 9998;
