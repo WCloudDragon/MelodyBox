@@ -30,10 +30,6 @@ export function useTrackList() {
     contextMenuTarget.value = null
   }
 
-  function backFromSubmenu() {
-    ctxMenu.value.submenu = null
-  }
-
   /** 打开“选择艺术家”二级页（多个艺术家时返回 true） */
   function openArtistSubmenu() {
     const track = ctxMenu.value.track
@@ -207,7 +203,6 @@ export function useTrackList() {
     contextMenuTarget,
     showContextMenu,
     hideContextMenu,
-    backFromSubmenu,
     openArtistSubmenu,
     createCtxHandler,
     createSubActionHandler,

@@ -86,7 +86,6 @@
       :animated="true"
       @close="hideContextMenu"
       @action="onQueueCtxAction"
-      @back="backFromSubmenu"
       @sub-action="onQueueSubAction"
       @hover-submenu="openArtistSubmenu"
     />
@@ -167,7 +166,7 @@ onBeforeUnmount(() => {
 })
 
 // 右键菜单（复用主列表交互；除“添加到歌单”外，其余动作执行后自动关闭队列）
-const { ctxMenu, showContextMenu, hideContextMenu, backFromSubmenu, openArtistSubmenu, createCtxHandler, createSubActionHandler, showAddPlaylistDialog } = useTrackList()
+const { ctxMenu, showContextMenu, hideContextMenu, openArtistSubmenu, createCtxHandler, createSubActionHandler, showAddPlaylistDialog } = useTrackList()
 const ctxHandler = createCtxHandler(player, router)
 const subActionHandler = createSubActionHandler(router)
 const queueMenuItems = computed(() => {

@@ -63,7 +63,7 @@ const props = defineProps({
   animated: { type: Boolean, default: false },
   submenu: { type: Object, default: null }
 })
-const emit = defineEmits(['close', 'action', 'back', 'sub-action', 'hover-submenu'])
+const emit = defineEmits(['close', 'action', 'sub-action', 'hover-submenu'])
 
 const menuAnimName = computed(() => props.animated ? 'ctx-menu-blur' : 'ctx-menu-none')
 const backdropAnimName = computed(() => props.animated ? 'ctx-menu-backdrop' : 'ctx-menu-none')

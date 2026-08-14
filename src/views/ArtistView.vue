@@ -91,7 +91,6 @@
       :animated="true"
       @close="hideContextMenu"
       @action="ctxAction"
-      @back="backFromSubmenu"
       @sub-action="subActionHandler"
       @hover-submenu="openArtistSubmenu"
     />
@@ -116,7 +115,7 @@ const playerStore = usePlayerStore()
 const router = useRouter()
 const { currentTrack } = storeToRefs(playerStore)
 
-const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, backFromSubmenu, openArtistSubmenu, createSubActionHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems, showAddPlaylistDialog } = useTrackList()
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, openArtistSubmenu, createSubActionHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems, showAddPlaylistDialog } = useTrackList()
 
 const ctxHandler = createCtxHandler(playerStore, router)
 const subActionHandler = createSubActionHandler(router)

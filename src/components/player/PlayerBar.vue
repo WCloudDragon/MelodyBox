@@ -134,7 +134,6 @@
       :animated="true"
       @close="hideContextMenu"
       @action="onCtxAction"
-      @back="backFromSubmenu"
       @sub-action="onSubAction"
       @hover-submenu="openArtistSubmenu"
     />
@@ -195,7 +194,7 @@ watch(songChangeDirection, (dir) => {
 defineExpose({ coverEl: coverRef, showQueue, closeQueue: () => { showQueue.value = false } })
 
 // 左下播放信息右键菜单（复用主列表交互，跳转后统一收回浮层）
-const { ctxMenu, showContextMenu, hideContextMenu, backFromSubmenu, openArtistSubmenu, createCtxHandler, createSubActionHandler, showAddPlaylistDialog } = useTrackList()
+const { ctxMenu, showContextMenu, hideContextMenu, openArtistSubmenu, createCtxHandler, createSubActionHandler, showAddPlaylistDialog } = useTrackList()
 const ctxHandler = createCtxHandler(player, router)
 const subActionHandler = createSubActionHandler(router)
 const playerBarMenuItems = computed(() => {
