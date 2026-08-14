@@ -27,8 +27,14 @@
   position: relative;
   display: flex;
   align-items: center;
+  padding: 0;
+}
+.ctx-menu-item__body {
+  flex: 1;
+  display: flex;
+  align-items: center;
   justify-content: space-between;
-  overflow: visible !important;  /* 覆盖 v-ripple 注入的 overflow:hidden，避免裁掉二级菜单 */
+  padding: 8px 16px;
 }
 .ctx-menu-arrow {
   margin-left: 12px;
@@ -51,6 +57,10 @@
 .ctx-submenu--left {
   left: auto;
   right: 100%;
+}
+.ctx-submenu--bottom {
+  top: auto;
+  bottom: 0;
 }
 .ctx-menu-divider {
   height: 1px; background: var(--border-color);

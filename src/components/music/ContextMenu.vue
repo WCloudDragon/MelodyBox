@@ -5,29 +5,41 @@
         <template v-for="(item, i) in items" :key="i">
           <div v-if="item === '-'" class="ctx-menu-divider" />
           <div
+            v-else-if="item.hasSubmenu"
+            class="ctx-menu-item ctx-menu-item--has-submenu"
+            @mouseenter="onItemEnter(item, $event)"
+            @mouseleave="onItemLeave"
+          >
+            <div class="ctx-menu-item__body" v-ripple>
+              <span>{{ item.label }}</span>
+              <span class="ctx-menu-arrow">›</span>
+            </div>
+
+            <!-- 二级子菜单：嵌套在该项内，悬停展开，移出即收 -->
+            <Transition name="ctx-menu-blur">
+              <div
+                v-if="submenu && submenuOpen"
+                class="ctx-submenu"
+                :class="{ 'ctx-submenu--left': submenuSide === 'left', 'ctx-submenu--bottom': submenuAlign === 'bottom' }"
+                @click.stop
+              >
+                <div class="ctx-menu-subtitle">{{ submenu.title }}</div>
+                <template v-for="(sub, si) in submenu.items" :key="si">
+                  <div class="ctx-menu-item" v-ripple @click="$emit('sub-action', sub)">{{ sub.label }}</div>
+                </template>
+              </div>
+            </Transition>
+          </div>
+          <div
             v-else
             class="ctx-menu-item"
             v-ripple
-            :class="{ 'ctx-menu-item--danger': item.danger, 'ctx-menu-item--has-submenu': item.hasSubmenu }"
+            :class="{ 'ctx-menu-item--danger': item.danger }"
             @click="$emit('action', item.action)"
             @mouseenter="onItemEnter(item, $event)"
             @mouseleave="onItemLeave"
           >
             <span>{{ item.label }}</span>
-            <span v-if="item.hasSubmenu" class="ctx-menu-arrow">›</span>
-
-            <!-- 二级子菜单：嵌套在该项内，悬停展开，移出即收 -->
-            <div
-              v-if="item.hasSubmenu && submenu && submenuOpen"
-              class="ctx-submenu"
-              :class="{ 'ctx-submenu--left': submenuSide === 'left' }"
-              @click.stop
-            >
-              <div class="ctx-menu-subtitle">{{ submenu.title }}</div>
-              <template v-for="(sub, si) in submenu.items" :key="si">
-                <div class="ctx-menu-item" v-ripple @click="$emit('sub-action', sub)">{{ sub.label }}</div>
-              </template>
-            </div>
           </div>
         </template>
       </div>
@@ -58,12 +70,15 @@ const backdropAnimName = computed(() => props.animated ? 'ctx-menu-backdrop' : '
 
 const submenuOpen = ref(false)
 const submenuSide = ref('right')
+const submenuAlign = ref('top')
 const SUB_WIDTH = 180
+const SUB_HEIGHT = 160
 
 function onItemEnter(item, e) {
   if (item.hasSubmenu) {
     const rect = e.currentTarget.getBoundingClientRect()
     submenuSide.value = (rect.right + SUB_WIDTH > window.innerWidth - 8) ? 'left' : 'right'
+    submenuAlign.value = (rect.top + SUB_HEIGHT > window.innerHeight - 8) ? 'bottom' : 'top'
     submenuOpen.value = true
     emit('hover-submenu')
   } else {
