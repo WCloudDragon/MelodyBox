@@ -8,8 +8,8 @@
   <div v-else id="melody-box" :class="{ 'is-electron': isElectron }">
     <TitleBar v-if="isElectron" :lyrics-visible="panelVisible" />
     <div class="app-body">
-      <Sidebar />
-      <main class="main-content">
+      <Sidebar :mode="sidebarMode" @update:mode="sidebarMode = $event" />
+      <main class="main-content" :style="{ marginLeft: sidebarMarginLeft }">
         <router-view v-slot="{ Component, route: currentRoute }">
           <transition name="page" @before-leave="onPageBeforeLeave" @after-enter="onPageAfterEnter">
             <keep-alive include="HomeView,LibraryView,AlbumsView,ArtistsView,SettingsView,UserView,FoldersView">
@@ -86,6 +86,14 @@ const textShifted = ref(false)
 const coverOriginRect = ref(null)
 const playerBarRef = ref(null)
 const queueOpen = computed(() => playerBarRef.value?.showQueue ?? false)
+const sidebarMode = ref('expanded')
+const sidebarMarginLeft = computed(() => {
+  return {
+    expanded: '250px',
+    collapsed: '74px',
+    hidden: '0px'
+  }[sidebarMode.value]
+})
 
 provide('toggleNowPlaying', () => {
   if (!panelOpen.value && playerBarRef.value?.coverEl) {
@@ -340,6 +348,7 @@ onMounted(() => {
   flex: 1;
   overflow: hidden;
   background: var(--bg-secondary);
+  position: relative; /* 供隐藏模式侧边栏/热区做绝对定位 */
 }
 
 .main-content {
@@ -351,6 +360,7 @@ onMounted(() => {
   content-visibility: auto;
   background: var(--bg-secondary);
   position: relative; /* 为页面过渡动画提供定位参考 */
+  transition: margin-left 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .main-content.page-transitioning {
   overflow: hidden;
