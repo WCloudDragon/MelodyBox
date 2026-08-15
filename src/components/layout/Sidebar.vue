@@ -248,7 +248,7 @@ async function handleCreatePlaylist() {
   left: 0;
   top: 0;
   bottom: 0;
-  width: 10px;
+  width: 40px;
   z-index: 89;
 }
 .sidebar.hidden {
