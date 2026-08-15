@@ -912,7 +912,12 @@ function lineStyle(index) {
 const parsedLyrics = computed(() => {
   const raw = currentTrack.value?.lyrics
   if (!raw) return []
-  return parseLRC(raw)
+  const list = parseLRC(raw)
+  // 纯音乐等无演唱内容：末行代表整首纯音乐，不触发“末行取短”，保持常驻显示
+  if (list.length && /纯音乐/.test(raw)) {
+    list[list.length - 1].end = null
+  }
+  return list
 })
 
 const hasLyrics = computed(() => parsedLyrics.value.length > 0)
@@ -1205,7 +1210,7 @@ watch(currentTime, async (time) => {
   const prevActive = activeIndexes.value
   if (JSON.stringify(prevActive) !== JSON.stringify(nextActive)) {
     activeIndexes.value = nextActive
-  } else {
+  } else if (nextActive.length !== 0) {
     return
   }
 
@@ -1215,6 +1220,13 @@ watch(currentTime, async (time) => {
   if (nextWord !== prevWord) {
     stopWordAnimLoop()
     if (prevWord >= 0 && parsedLyrics.value[prevWord]?.wordLevel) fadeOutWordSegs(prevWord)
+  }
+
+  // 末行（逐字）结束进入无活跃区：保留其逐字 DOM 片刻，让字号收缩过渡可见
+  if (nextActive.length === 0 && prevWord >= 0 && parsedLyrics.value[prevWord]?.wordLevel) {
+    if (fadingTimer) clearTimeout(fadingTimer)
+    fadingLineIndex.value = prevWord
+    fadingTimer = setTimeout(() => { fadingLineIndex.value = -1 }, 400)
   }
 
   // 远距离跳转（seek）：保留旧行淡出缓冲
@@ -2155,14 +2167,12 @@ onBeforeUnmount(() => {
 /* ===== 歌词切歌过渡动画：方向感知滑入滑出 + 渐隐渐显（出入同时执行） ===== */
 .lyrics-next-enter-active,
 .lyrics-prev-enter-active {
-  transition: transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              opacity 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+  transition: opacity 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               filter 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .lyrics-next-leave-active,
 .lyrics-prev-leave-active {
-  transition: transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              opacity 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+  transition: opacity 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               filter 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
   position: absolute;
   top: 0;
@@ -2174,11 +2184,10 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 1;
 }
-/* 下一曲：新歌词从下方 50px 滑入并渐显+从模糊到清晰，旧歌词渐隐+模糊 */
-.lyrics-next-enter-from { transform: translateY(50px); opacity: 0; filter: blur(10px); }
+/* 切歌：新歌词渐显+从模糊到清晰，旧歌词渐隐+模糊（不位移，避免与滚动 transform 冲突） */
+.lyrics-next-enter-from { opacity: 0; filter: blur(10px); }
 .lyrics-next-leave-to   { opacity: 0; filter: blur(10px); }
-/* 上一曲：新歌词从上方 50px 滑入并渐显+从模糊到清晰，旧歌词渐隐+模糊 */
-.lyrics-prev-enter-from { transform: translateY(-50px); opacity: 0; filter: blur(10px); }
+.lyrics-prev-enter-from { opacity: 0; filter: blur(10px); }
 .lyrics-prev-leave-to   { opacity: 0; filter: blur(10px); }
 /* 无动画（初始状态） */
 .lyrics-none-enter-active,

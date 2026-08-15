@@ -212,8 +212,9 @@ function effectiveEnd(lyrics, i) {
       nextAfter = otherStart
     }
   }
-  // 长间隙（≥ 上限）不再填缝：原词结束即止，产生空区
-  if (nextAfter !== Infinity && nextAfter - baseEnd >= LYRIC_GAP_FILL_LIMIT) {
+  // 长间隙（≥ 上限）不再填缝：原词结束即止，产生空区；
+  // 最后一句没有下一行，同样以自身结束时间结束，避免末行一直保持“正在播放”
+  if (nextAfter === Infinity || nextAfter - baseEnd >= LYRIC_GAP_FILL_LIMIT) {
     return baseEnd
   }
   // 短间隙：翻译尾巴延伸到下一行开始，填补句间空隙（与现状一致）
