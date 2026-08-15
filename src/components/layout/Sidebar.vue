@@ -102,25 +102,21 @@
         <el-icon><Setting /></el-icon>
         <span>设置</span>
       </router-link>
-      <div class="theme-switch">
-        <span
-          v-for="opt in themeOptions"
-          :key="opt.value"
-          class="theme-switch__item"
-          :class="{ active: settings.theme === opt.value }"
-          :title="opt.label"
-          v-ripple
-          @click="setTheme(opt.value)"
-        >
-          <el-icon><component :is="opt.icon" /></el-icon>
-        </span>
-      </div>
+      <button
+        class="theme-switch"
+        v-ripple
+        :title="currentTheme.label"
+        @click="cycleTheme"
+      >
+        <el-icon><component :is="currentTheme.icon" /></el-icon>
+        <span class="theme-switch__label">{{ currentTheme.label }}</span>
+      </button>
     </div>
   </nav>
 </template>
 
 <script setup>
-import { ref, onBeforeUnmount } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import { Plus, Moon, Sunny, Monitor, UserFilled, Timer, TrendCharts, Expand, Fold, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
 import { usePlaylistStore } from '@/stores/playlist'
 import { useSettingsStore } from '@/stores/settings'
@@ -145,10 +141,18 @@ const themeOptions = [
   { value: 'dark', icon: Moon, label: '深色' },
   { value: 'system', icon: Monitor, label: '跟随系统' }
 ]
+const themeOrder = ['light', 'dark', 'system']
+const currentTheme = computed(() => themeOptions.find(o => o.value === settings.theme) || themeOptions[2])
 
 function setTheme(value) {
   settings.theme = value
   settings.saveSettings()
+}
+
+function cycleTheme() {
+  const idx = themeOrder.indexOf(settings.theme)
+  const next = themeOrder[(idx + 1) % themeOrder.length]
+  setTheme(next)
 }
 
 function toggleHidden() {
@@ -306,7 +310,9 @@ async function handleCreatePlaylist() {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  height: 40px;
+  padding: 0 12px;
+  box-sizing: border-box;
   border-radius: 8px;
   color: var(--text-secondary);
   text-decoration: none;
@@ -362,39 +368,42 @@ async function handleCreatePlaylist() {
   padding: 8px 12px 12px;
 }
 
-/* 折叠态：仅保留图标，文字/计数/主题开关隐藏 */
+/* 折叠态：仅保留图标，文字/计数隐藏 */
 .sidebar.collapsed .sidebar__header { justify-content: center; padding: 10px 0 0; }
 .sidebar.collapsed .nav-item > span { display: none; }
 .sidebar.collapsed .nav-item__cover { width: 20px; height: 20px; }
 .sidebar.collapsed .sidebar__label { justify-content: center; padding: 4px 0; }
 .sidebar.collapsed .sidebar__label > span { display: none; }
-.sidebar.collapsed .theme-switch { display: none; }
+.sidebar.collapsed .theme-switch__label { display: none; }
 .sidebar.collapsed .empty-hint { display: none; }
 
-/* 主题切换开关：与 nav-item 同尺寸、同边界 */
+/* 主题切换按钮：单键循环切换，尺寸与 nav-item 一致 */
 .theme-switch {
   display: flex;
-  gap: 2px;
-  padding: 0;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
   margin-bottom: 2px;
 }
-.theme-switch__item {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px 0;
-  border-radius: 8px;
-  color: var(--text-secondary);
-  transition: background 0.2s, color 0.2s;
-  cursor: pointer;
-}
-.theme-switch__item:hover {
+.theme-switch:hover {
   background: var(--hover-bg-strong);
   color: var(--text-primary);
 }
-.theme-switch__item.active {
-  background: var(--accent-bg);
-  color: var(--accent-color);
+.theme-switch__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
