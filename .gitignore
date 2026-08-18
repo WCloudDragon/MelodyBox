@@ -23,6 +23,8 @@ bin/
 debug-*.md
 *.log
 *.txt
+.vite-port
+.vite-ready
 
 # Node
 node_modules/

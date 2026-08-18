@@ -29,7 +29,7 @@
               @click="$router.push(`/album/${encodeURIComponent(album.name)}`)"
             >
               <div class="album-card__cover">
-                <LazyCover v-if="album.cover" :src="album.cover" class="album-card__img" :thumb-size="332" />
+                <LazyCover v-if="album.cover" :src="album.cover" class="album-card__img" :thumb-size="280" />
                 <div v-else class="cover-placeholder">
                   <el-icon size="36"><Folder /></el-icon>
                 </div>
@@ -69,7 +69,7 @@ const gridRef = ref(null)
 const albums = computed(() => libraryStore.albums)
 const hasAlbums = computed(() => albums.value.length > 0)
 
-// ---- 根据容器宽度实时计算每行卡片数 ----
+// ---- 根据容器宽度实时计算每行卡片数（与艺术家页一致）----
 const gridWidth = ref(0)
 let _resizeObs = null
 onMounted(() => {
@@ -80,12 +80,11 @@ onMounted(() => {
 })
 onUnmounted(() => _resizeObs?.disconnect())
 
-// 卡片 min-width + gap → 等价于 flex-wrap 的自动换行
-const CARD_MIN = 160
+const CARD_MIN = 150
 const GAP = 20
 const perRow = computed(() => {
   const w = gridWidth.value
-  if (!w) return 4 // SSR / 首帧兜底
+  if (!w) return 5
   return Math.max(1, Math.floor((w + GAP) / (CARD_MIN + GAP)))
 })
 
@@ -100,7 +99,7 @@ const albumRows = computed(() => {
 })
 
 // ---- 虚拟滚动 ----
-const ROW_HEIGHT = 300
+const ROW_HEIGHT = 260
 const { list: virtualList, containerProps, wrapperProps, scrollTo } = useVirtualList(
   albumRows,
   { itemHeight: ROW_HEIGHT, overscan: 5 }
@@ -189,36 +188,38 @@ function playAlbum(album) {
 .albums-grid__row {
   display: flex;
   gap: 20px;
-  height: 300px;
+  height: 260px;
   align-items: stretch;
   overflow: hidden;
 }
 
-/* 专辑卡片 —— 保持原样式 */
+/* 专辑卡片 —— 与艺术家页相同的响应式卡片结构 */
 .album-card {
-  flex: 1 1 190px;
-  min-width: 160px;
+  flex: 1 1 180px;
+  min-width: 150px;
   max-width: 100%;
-  padding: 12px;
+  padding: 16px 12px;
   border-radius: 10px;
+  text-align: center;
   cursor: pointer;
   transition: background 0.2s;
 }
 .album-card--phantom {
   visibility: hidden;
   pointer-events: none;
-  flex: 0 0 160px;
+  flex: 0 0 150px;
 }
 .album-card:hover {
   background: var(--hover-bg);
 }
 .album-card__cover {
   position: relative;
-  width: 100%;
-  aspect-ratio: 1;
+  width: 140px;
+  height: 140px;
   border-radius: 8px;
   overflow: hidden;
-  margin-bottom: 10px;
+  margin: 0 auto;
+  aspect-ratio: 1;
   box-shadow: 0 4px 16px rgba(0,0,0,0.25);
 }
 .album-card__img {
@@ -250,18 +251,19 @@ function playAlbum(album) {
   opacity: 1;
 }
 .album-card__info {
+  margin-top: 12px;
   min-width: 0;
 }
 .album-card__name {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 .album-card__artist {
   font-size: 12px;
   color: var(--text-secondary);
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 .album-card__count {
   font-size: 12px;

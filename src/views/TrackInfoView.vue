@@ -253,7 +253,9 @@ watch(() => route.query.path, (p) => {
 </script>
 
 <style scoped>
-.track-info-view { padding-bottom: 100px; max-width: 900px; }
+.track-info-view {
+  padding-bottom: 100px;
+}
 .back-link { margin-bottom: 24px; }
 
 .loading-state, .empty-state { text-align: center; padding: 80px 32px; color: var(--text-tertiary); }

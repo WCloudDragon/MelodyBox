@@ -9,6 +9,17 @@ const http = require('http')
 // 本地 Flask 后端健康检查地址（开发与打包均为本机服务）
 const FLASK_HEALTH_URL = 'http://127.0.0.1:5000/api/health'
 
+// Vite 开发服务器端口由 vite.config.js 写入 .vite-port，避免写死端口被占用/系统预留
+function getDevServerUrl() {
+  let port = 5200
+  try {
+    const file = path.join(__dirname, '..', '.vite-port')
+    const value = Number.parseInt(fs.readFileSync(file, 'utf8').trim(), 10)
+    if (Number.isInteger(value) && value > 0 && value < 65536) port = value
+  } catch {}
+  return `http://127.0.0.1:${port}`
+}
+
 // ==================== Flask 后端管理 ====================
 
 let flaskProcess = null
@@ -341,7 +352,7 @@ let _isFullScreen = false
 function getLyricsWindowUrl() {
   const isDev = !app.isPackaged
   if (isDev) {
-    return 'http://127.0.0.1:5200/#/desktop-lyrics'
+    return `${getDevServerUrl()}/#/desktop-lyrics`
   }
   return `file://${path.join(__dirname, '..', 'dist', 'index.html')}#/desktop-lyrics`
 }
@@ -457,7 +468,7 @@ function createWindow() {
   const isDev = !app.isPackaged
 
   if (isDev) {
-    mainWindow.loadURL('http://127.0.0.1:5200')
+    mainWindow.loadURL(getDevServerUrl())
     mainWindow.webContents.openDevTools()
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
@@ -598,7 +609,7 @@ let rhythmDebugWindow = null
 function getRhythmDebugUrl() {
   const isDev = !app.isPackaged
   if (isDev) {
-    return 'http://127.0.0.1:5200/#/rhythm-debug'
+    return `${getDevServerUrl()}/#/rhythm-debug`
   }
   return `file://${path.join(__dirname, '..', 'dist', 'index.html')}#/rhythm-debug`
 }
