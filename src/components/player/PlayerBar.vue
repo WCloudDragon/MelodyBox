@@ -1,5 +1,5 @@
 <template>
-  <div ref="barRef" class="player-bar" @mouseenter="hovered = true" @mouseleave="hovered = false" :class="{ 'cover-hidden': panelOpen, 'text-shifted': textShifted, 'panel-active': panelFading, immersive }">
+  <div ref="barRef" class="player-bar" :class="{ 'cover-hidden': panelOpen, 'text-shifted': textShifted, 'panel-active': panelFading, immersive }">
     <!-- 顶部进度条（全宽） -->
     <div class="progress-top" ref="progressRef"
          @mousedown="onProgressMouseDown"
@@ -35,8 +35,7 @@
 
       <!-- 中间：控制按钮（hover 可见） -->
       <div class="player-bar__center">
-        <transition name="fade">
-          <div class="controls" v-show="hovered">
+        <div class="controls">
             <button class="ctrl-btn" :class="{ active: playMode !== 'sequential' }" v-ripple @click="player.togglePlayMode" :title="playModeLabel">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
                 <template v-if="playMode === 'sequential'">
@@ -83,13 +82,11 @@
               </svg>
             </button>
           </div>
-        </transition>
       </div>
 
       <!-- 右侧：音量按钮 + 弹出面板（hover 可见） -->
       <div class="player-bar__right">
-        <transition name="fade">
-          <div class="volume-area" v-show="hovered">
+        <div class="volume-area">
             <div class="volume-btn" v-ripple @click="showVolumePop = !showVolumePop" ref="volumeBtnRef">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <template v-if="isMuted || volume === 0">
@@ -119,7 +116,6 @@
               </div>
             </transition>
           </div>
-        </transition>
       </div>
     </div>
 
@@ -163,7 +159,6 @@ const router = useRouter()
 const { currentTrack, isPlaying, currentTime, duration, volume, isMuted,
         playMode, progress, bufferedPercent, queue, hasNext, hasPrev, showDesktopLyrics, songChangeDirection } = storeToRefs(player)
 
-const hovered = ref(false)
 const progressHovered = ref(false)
 const showQueue = ref(false)
 const barRef = ref(null)

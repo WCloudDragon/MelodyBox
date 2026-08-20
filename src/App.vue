@@ -115,6 +115,10 @@ function scheduleImmersive() {
 function onPanelActivity() {
   if (panelVisible.value) scheduleImmersive()
 }
+watch(immersive, (v) => {
+  document.body.classList.toggle('cursor-hidden', v)
+})
+
 watch(panelVisible, (val) => {
   if (val) {
     scheduleImmersive()
@@ -369,6 +373,11 @@ onBeforeUnmount(() => {
 </script>
 
 <style>
+.cursor-hidden,
+.cursor-hidden * {
+  cursor: none !important;
+}
+
 #melody-box {
   width: 100vw;
   height: 100vh;
