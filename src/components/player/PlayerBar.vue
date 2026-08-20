@@ -666,14 +666,18 @@ function onVolumeMouseUp() {
 }
 .player-bar.immersive .info {
   flex: 0 0 auto;
+  --info-shift-x: 0px;
   text-align: center;
-  transition: text-align 0.5s;
 }
-
 /* ===== 切歌时歌曲信息方向感知滑入动画 ===== */
 /* 出入同时执行：新信息从对应方向滑入（在旧信息上方），旧信息渐隐+模糊 */
 /* leave 绝对定位用 left:58px=封面(48)+gap(10) 匹配 flex 流中的实际位置 */
 /* top:50% + translateY(-50%) 匹配 flex align-items:center 的垂直居中 */
+.player-bar.immersive .info-next-leave-active,
+.player-bar.immersive .info-prev-leave-active {
+  left: 0;
+  transform: translateY(-50%);
+}
 .info-next-leave-active,
 .info-prev-leave-active {
   position: absolute;
