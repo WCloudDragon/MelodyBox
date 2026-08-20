@@ -1,5 +1,5 @@
 <template>
-  <div class="title-bar" @dblclick="onMaximize">
+  <div class="title-bar" :class="{ 'title-bar--immersive': immersive }" @dblclick="onMaximize">
     <div class="title-bar__brand">
       <svg class="title-bar__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
@@ -46,7 +46,8 @@
 import { ref, onMounted } from 'vue'
 
 const props = defineProps({
-  lyricsVisible: { type: Boolean, default: false }
+  lyricsVisible: { type: Boolean, default: false },
+  immersive: { type: Boolean, default: false }
 })
 
 const isMax = ref(false)
@@ -102,6 +103,7 @@ function onClose() { window.electronAPI?.close() }
   right: 0;
   z-index: 1001;
   -webkit-app-region: no-drag;
+  transition: opacity 0.4s ease;
 }
 .title-btn {
   width: 46px;
@@ -130,5 +132,9 @@ function onClose() { window.electronAPI?.close() }
 .title-bar__controls--lyrics .title-btn--close:hover {
   background: #e81123;
   color: #fff;
+}
+.title-bar--immersive .title-bar__controls {
+  opacity: 0;
+  pointer-events: none;
 }
 </style>

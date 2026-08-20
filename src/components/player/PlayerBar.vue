@@ -1,5 +1,5 @@
 <template>
-  <div class="player-bar" @mouseenter="hovered = true" @mouseleave="hovered = false" :class="{ 'cover-hidden': panelOpen, 'text-shifted': textShifted, 'panel-active': panelFading }">
+  <div ref="barRef" class="player-bar" @mouseenter="hovered = true" @mouseleave="hovered = false" :class="{ 'cover-hidden': panelOpen, 'text-shifted': textShifted, 'panel-active': panelFading, immersive }">
     <!-- 顶部进度条（全宽） -->
     <div class="progress-top" ref="progressRef"
          @mousedown="onProgressMouseDown"
@@ -16,7 +16,7 @@
 
     <div class="player-bar__inner">
       <!-- 左侧：封面 + 歌名歌手 -->
-      <div class="player-bar__left" v-ripple @click="toggleNowPlaying" @contextmenu.prevent="onInfoContextMenu" title="点击查看歌词">
+      <div class="player-bar__left" ref="leftRef" :style="{ '--center-shift-x': centerShiftX + 'px' }" v-ripple @click="toggleNowPlaying" @contextmenu.prevent="onInfoContextMenu" title="点击查看歌词">
         <div class="now-playing">
           <Transition :name="coverAnimName">
             <img v-if="currentTrack?.cover" :key="currentTrack?.path" :src="currentTrack.cover" class="cover" ref="coverRef" />
@@ -141,7 +141,7 @@
 </template>
 
 <script setup>
-import { ref, computed, inject, watch } from 'vue'
+import { ref, computed, inject, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
@@ -154,7 +154,8 @@ import { closeOverlays } from '@/utils/overlays'
 const props = defineProps({
   panelOpen: { type: Boolean, default: false },
   panelFading: { type: Boolean, default: false },
-  textShifted: { type: Boolean, default: false }
+  textShifted: { type: Boolean, default: false },
+  immersive: { type: Boolean, default: false }
 })
 const toggleNowPlaying = inject('toggleNowPlaying')
 const player = usePlayerStore()
@@ -165,6 +166,32 @@ const { currentTrack, isPlaying, currentTime, duration, volume, isMuted,
 const hovered = ref(false)
 const progressHovered = ref(false)
 const showQueue = ref(false)
+const barRef = ref(null)
+const leftRef = ref(null)
+const centerShiftX = ref(0)
+
+function updateCenterShift() {
+  if (!props.immersive || !barRef.value || !leftRef.value) {
+    centerShiftX.value = 0
+    return
+  }
+  const barRect = barRef.value.getBoundingClientRect()
+  const leftRect = leftRef.value.getBoundingClientRect()
+  const shift = (barRect.width / 2) - (leftRect.left - barRect.left) - (leftRect.width / 2)
+  centerShiftX.value = shift
+}
+
+watch(() => props.immersive, async () => {
+  await nextTick()
+  updateCenterShift()
+})
+
+onMounted(() => {
+  window.addEventListener('resize', updateCenterShift)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateCenterShift)
+})
 const showVolumePop = ref(false)
 const progressRef = ref(null)
 const volumeRef = ref(null)
@@ -335,7 +362,7 @@ function onVolumeMouseUp() {
   height: 4px;
   cursor: pointer;
   z-index: 2;
-  transition: transform 0.15s, background 0.4s;
+  transition: transform 0.15s, top 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0), background 0.4s;
   background: var(--bg-tertiary);
   transform-origin: top;
 }
@@ -396,6 +423,8 @@ function onVolumeMouseUp() {
   min-width: 0;
   display: flex;
   align-items: center;
+  transform: translateX(var(--center-shift-x, 0px));
+  transition: transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .now-playing {
   display: flex;
@@ -437,6 +466,7 @@ function onVolumeMouseUp() {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: opacity 0.4s ease;
 }
 .controls { display: flex; align-items: center; gap: 10px; }
 .ctrl-btn {
@@ -466,6 +496,7 @@ function onVolumeMouseUp() {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  transition: opacity 0.4s ease;
 }
 .volume-area {
   display: flex;
@@ -610,6 +641,34 @@ function onVolumeMouseUp() {
   border-color: rgba(255, 255, 255, 0.1);
 }
 .player-bar.panel-active .volume-pop__val { color: rgba(255, 255, 255, 0.8); }
+
+/* ===== 全屏播放页空闲沉浸状态 ===== */
+.player-bar.immersive .player-bar__center,
+.player-bar.immersive .player-bar__right {
+  opacity: 0;
+  pointer-events: none;
+}
+.player-bar.immersive .progress-top {
+  top: calc(100% - 4px);
+}
+
+.player-bar.immersive .cover {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  margin: 0;
+  transition: opacity 0.5s;
+}
+.player-bar.immersive .now-playing {
+  justify-content: center;
+  gap: 0;
+  transition: justify-content 0.5s, gap 0.5s;
+}
+.player-bar.immersive .info {
+  flex: 0 0 auto;
+  text-align: center;
+  transition: text-align 0.5s;
+}
 
 /* ===== 切歌时歌曲信息方向感知滑入动画 ===== */
 /* 出入同时执行：新信息从对应方向滑入（在旧信息上方），旧信息渐隐+模糊 */

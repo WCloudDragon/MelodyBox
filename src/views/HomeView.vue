@@ -1,5 +1,5 @@
 <template>
-  <div class="home-view">
+  <div class="home-view" ref="homeRef" :style="homeStyle">
     <div class="home-view__header">
       <h1>欢迎回来</h1>
       <p class="subtitle">沉浸式音乐体验，从这里开始</p>
@@ -615,16 +615,14 @@ function onWeatherCardClick() {
 const recEntriesRef = ref(null)
 const recPage = ref(0)
 const recCardsPerPage = ref(5)
-const CARD_GAP = 12
-const CARD_WIDTH = 200
+const REC_CARD_MIN = 160
+const REC_GAP = 12
 
 function updateCardsPerPage() {
-  const el = recEntriesRef.value
-  if (!el) return
-  // 使用父容器宽度减去 padding（左右各 20px）
-  const wrapW = el.parentElement?.clientWidth || el.clientWidth
-  const w = wrapW - 40
-  recCardsPerPage.value = Math.max(1, Math.floor((w + CARD_GAP) / (CARD_WIDTH + CARD_GAP)))
+  const w = recEntriesRef.value?.clientWidth || 0
+  if (!w) return
+  const per = Math.max(1, Math.floor((w + REC_GAP) / (REC_CARD_MIN + REC_GAP)))
+  recCardsPerPage.value = per
   if (recPage.value > recMaxPage.value) recPage.value = recMaxPage.value
 }
 
@@ -638,16 +636,44 @@ const recMaxPage = computed(() => {
 })
 
 const recTrackStyle = computed(() => {
-  const offset = recPage.value * recCardsPerPage.value * (CARD_WIDTH + CARD_GAP)
-  return { transform: `translateX(-${offset}px)`, transition: 'transform 0.35s ease' }
+  const w = recEntriesRef.value?.clientWidth || 0
+  const per = recCardsPerPage.value
+  const cardW = w > 0 ? (w - (per - 1) * REC_GAP) / per : 200
+  const offset = recPage.value * per * (cardW + REC_GAP)
+  return {
+    transform: `translateX(-${offset}px)`,
+    transition: 'transform 0.35s ease',
+    '--rec-card-w': `${cardW}px`
+  }
 })
 
+// 首页普通网格（最近播放 / 专辑 / AI 推荐）响应式：卡片宽度随容器变化，比例固定
+const homeRef = ref(null)
+const homeCardW = ref(170)
+const HOME_CARD_MIN = 170
+const HOME_GAP = 4
+
+function updateHomeGrid() {
+  const w = homeRef.value?.clientWidth || 0
+  if (!w) return
+  const per = Math.max(1, Math.floor((w + HOME_GAP) / (HOME_CARD_MIN + HOME_GAP)))
+  homeCardW.value = (w - (per - 1) * HOME_GAP) / per
+}
+
+const homeStyle = computed(() => ({
+  '--music-card-w': `${homeCardW.value}px`,
+  '--home-card-w': `${homeCardW.value}px`
+}))
+
 let resizeObserver = null
+let homeResizeObserver = null
 onMounted(() => {
   updateCardsPerPage()
+  updateHomeGrid()
   resizeObserver = new ResizeObserver(updateCardsPerPage)
-  // 监听父容器（rec-entries-wrap）的宽度变化
-  if (recEntriesRef.value?.parentElement) resizeObserver.observe(recEntriesRef.value.parentElement)
+  if (recEntriesRef.value) resizeObserver.observe(recEntriesRef.value)
+  homeResizeObserver = new ResizeObserver(updateHomeGrid)
+  if (homeRef.value) homeResizeObserver.observe(homeRef.value)
   // 首次加载推荐卡片封面。loadPreviews 内部会判断缓存是否过期：
   //  - 缓存有效 → 直接用 store 缓存的数据，不重复请求
   //  - 缓存过期/不存在 → 拉取最新 previews
@@ -655,6 +681,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   if (resizeObserver) resizeObserver.disconnect()
+  if (homeResizeObserver) homeResizeObserver.disconnect()
 })
 
 // 推荐预览数据（单一数据源：ai store）
@@ -833,7 +860,7 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
 
 /* 专辑卡片 */
 .album-card {
-  width: 170px; cursor: pointer; border-radius: 10px;
+  width: var(--home-card-w, 170px); cursor: pointer; border-radius: 10px;
   padding: 12px; transition: background 0.2s;
 }
 .album-card:hover { background: var(--hover-bg); }
@@ -900,6 +927,7 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
 
 .ai-track-card {
   position: relative;
+  width: var(--home-card-w, 170px);
 }
 .ai-track-card__reason {
   position: absolute; bottom: 8px; left: 8px; right: 8px;
@@ -964,8 +992,9 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
   border: 1px solid transparent;
   cursor: pointer;
   overflow: hidden;
-  min-width: 200px;
-  max-width: 200px;
+  width: var(--rec-card-w, 200px);
+  min-width: var(--rec-card-w, 200px);
+  max-width: var(--rec-card-w, 200px);
   flex-shrink: 0;
   scroll-snap-align: start;
 }

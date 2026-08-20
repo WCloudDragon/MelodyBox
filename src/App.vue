@@ -6,7 +6,7 @@
 
   <!-- 正常应用布局 -->
   <div v-else id="melody-box" :class="{ 'is-electron': isElectron }">
-    <TitleBar v-if="isElectron" :lyrics-visible="panelVisible" />
+    <TitleBar v-if="isElectron" :lyrics-visible="panelVisible" :immersive="immersive" />
     <div class="app-body">
       <Sidebar :mode="sidebarMode" @update:mode="sidebarMode = $event" />
       <main class="main-content" :style="{ marginLeft: sidebarMarginLeft }">
@@ -19,13 +19,14 @@
         </router-view>
       </main>
     </div>
-    <PlayerBar ref="playerBarRef" style="z-index: 1001" :panel-open="panelOpen" :panel-fading="panelFading" :text-shifted="textShifted" />
+    <PlayerBar ref="playerBarRef" style="z-index: 1001" :panel-open="panelOpen" :panel-fading="panelFading" :text-shifted="textShifted" :immersive="immersive" />
 
     <ProgressPanel :queue-open="queueOpen" />
 
     <!-- 全屏播放面板覆盖层 -->
     <NowPlayingPanel
       :visible="panelVisible"
+      :immersive="immersive"
       @close="handleClose"
       @fly-complete="panelOpen = false"
     />
@@ -53,7 +54,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, provide, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, provide, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
@@ -83,6 +84,7 @@ const panelVisible = ref(false)
 const panelOpen = ref(false)
 const panelFading = ref(false)
 const textShifted = ref(false)
+const immersive = ref(false)
 const coverOriginRect = ref(null)
 const playerBarRef = ref(null)
 const queueOpen = computed(() => playerBarRef.value?.showQueue ?? false)
@@ -93,6 +95,39 @@ const sidebarMarginLeft = computed(() => {
     collapsed: '74px',
     hidden: '0px'
   }[sidebarMode.value]
+})
+
+// ==================== 全屏播放页空闲沉浸状态 ====================
+let immersiveTimer = null
+function clearImmersiveTimer() {
+  if (immersiveTimer) {
+    clearTimeout(immersiveTimer)
+    immersiveTimer = null
+  }
+}
+function scheduleImmersive() {
+  clearImmersiveTimer()
+  immersive.value = false
+  immersiveTimer = setTimeout(() => {
+    immersive.value = true
+  }, 5000)
+}
+function onPanelActivity() {
+  if (panelVisible.value) scheduleImmersive()
+}
+watch(panelVisible, (val) => {
+  if (val) {
+    scheduleImmersive()
+    window.addEventListener('mousemove', onPanelActivity, { passive: true })
+    window.addEventListener('mousedown', onPanelActivity, { passive: true })
+    window.addEventListener('keydown', onPanelActivity, { passive: true })
+  } else {
+    clearImmersiveTimer()
+    immersive.value = false
+    window.removeEventListener('mousemove', onPanelActivity)
+    window.removeEventListener('mousedown', onPanelActivity)
+    window.removeEventListener('keydown', onPanelActivity)
+  }
 })
 
 provide('toggleNowPlaying', () => {
@@ -323,6 +358,13 @@ onMounted(() => {
       coverOriginRect.value = playerBarRef.value.coverEl.getBoundingClientRect()
     }
   })
+})
+
+onBeforeUnmount(() => {
+  clearImmersiveTimer()
+  window.removeEventListener('mousemove', onPanelActivity)
+  window.removeEventListener('mousedown', onPanelActivity)
+  window.removeEventListener('keydown', onPanelActivity)
 })
 </script>
 

@@ -2,7 +2,7 @@
   <!-- 窗口控制器风格关闭按钮 — Teleport 到 body 确保独立层级 -->
   <Teleport to="body">
     <Transition name="np-close-btn-fade">
-      <button v-if="visible" class="np-close-btn" v-ripple @click.stop="$emit('close')" title="关闭全屏歌词">
+      <button v-if="visible && !immersive" class="np-close-btn" v-ripple @click.stop="$emit('close')" title="关闭全屏歌词">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
           <polyline points="1.5,4.5 6,8.5 10.5,4.5"/>
         </svg>
@@ -125,7 +125,10 @@ import { useSettingsStore } from '@/stores/settings'
 import { parseLRC, computeActiveSet, LYRIC_GAP_FILL_LIMIT } from '@/utils/format'
 import { extractCoverColors } from '@/utils/coverColorExtractor'
 
-const props = defineProps({ visible: { type: Boolean, default: false } })
+const props = defineProps({
+  visible: { type: Boolean, default: false },
+  immersive: { type: Boolean, default: false }
+})
 const emit = defineEmits(['close', 'afterLeave', 'flyComplete'])
 
 const player = usePlayerStore()
@@ -1154,6 +1157,23 @@ watch(() => props.visible, async (val) => {
       scrollToActiveGroup(false)
       await nextTick()
       if (_lastWordIndex(act) >= 0) startWordAnimLoop()
+    } else {
+      // 无活跃行（空区）：首行前 / 三点间奏 / 无三点间奏都要定位到当前位置，
+      // 否则重新打开面板时会停留在歌词顶部。
+      const list = parsedLyrics.value
+      const now = player.getLiveTime()
+      if (showUpcomingHint.value) {
+        hintAnchorIndex.value = hintLineIndex.value
+        hintVisible.value = true
+        hintLeaving.value = false
+        _dotsScrollDone = false
+        await nextTick()
+        await nextTick()
+        scrollToDots(false)
+      } else {
+        const target = now < list[0].time ? 0 : hintLineIndex.value
+        if (target >= 0 && target < list.length) scrollToLine(target, false)
+      }
     }
   } else {
     flyCoverOut()

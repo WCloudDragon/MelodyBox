@@ -119,7 +119,7 @@ const diffFields = computed(() => {
 
 <style scoped>
 .music-card {
-  width: 170px;
+  width: var(--music-card-w, 170px);
   cursor: pointer;
   border-radius: 10px;
   padding: 12px;

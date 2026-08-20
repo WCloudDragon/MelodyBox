@@ -84,7 +84,9 @@ const GAP = 20
 const perRow = computed(() => {
   const w = gridWidth.value
   if (!w) return 5
-  return Math.max(1, Math.floor((w + GAP) / (CARD_MIN + GAP)))
+  // 虚拟滚动容器左右各 4px 内边距，实际行可用宽度 = 测量宽度 - 8
+  const available = w - 8
+  return Math.max(1, Math.floor((available + GAP) / (CARD_MIN + GAP)))
 })
 
 // ---- 按 perRow 拆分为行 ----
@@ -193,6 +195,10 @@ function playArtist(artist) {
 
 /* 歌手卡片 —— 保持原样式 */
 .artist-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   flex: 1 1 180px;
   min-width: 150px;
   max-width: 100%;
