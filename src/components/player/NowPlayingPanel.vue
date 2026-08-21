@@ -443,6 +443,32 @@ const lyricsAnimName = computed(() => {
 })
 const windowWidth = ref(window.innerWidth)
 
+// 按当前播放时刻重新定位歌词（打开面板 / 窗口 resize 共用）
+async function repositionToCurrent() {
+  if (!hasLyrics.value || !scrollRef.value) return
+  const { activeIndexes: act } = computeActiveSet(parsedLyrics.value, player.getLiveTime())
+  activeIndexes.value = act
+  if (act.length > 0) {
+    scrollToActiveGroup(false)
+    return
+  }
+  // 无活跃行（空区）：首行前 / 三点间奏 / 无三点间奏都要定位到当前位置
+  const list = parsedLyrics.value
+  const now = player.getLiveTime()
+  if (showUpcomingHint.value) {
+    hintAnchorIndex.value = hintLineIndex.value
+    hintVisible.value = true
+    hintLeaving.value = false
+    _dotsScrollDone = false
+    await nextTick()
+    await nextTick()
+    scrollToDots(false)
+  } else {
+    const target = now < list[0].time ? 0 : hintLineIndex.value
+    if (target >= 0 && target < list.length) scrollToLine(target, false)
+  }
+}
+
 function onResize() {
   windowWidth.value = window.innerWidth
   // 强制触发歌词行换行重新计算（CSS 变量依赖窗口宽度）
@@ -450,11 +476,11 @@ function onResize() {
     if (scrollRef.value) {
       void scrollRef.value.offsetHeight
     }
-    // 布局重算后重新居中当前行，避免偏移出视口
-    nextTick(() => {
-      if (!props.visible || activeIndexes.value.length === 0) return
+    // 布局重算后重新定位当前行/空区，避免偏移出视口
+    nextTick(async () => {
+      if (!props.visible) return
       if (isUserScrolling.value) exitUserScrollMode()
-      scrollToActiveGroup(false)
+      await repositionToCurrent()
     })
   })
 }
@@ -1149,32 +1175,11 @@ watch(() => props.visible, async (val) => {
     flyCoverIn()
     startDotsScaleLoop()
     if (jumpPending.value >= 0) jumpPending.value = -1
-    if (!hasLyrics.value || !scrollRef.value) return
-    // 重新打开面板：按当前时刻重新定位
-    const { activeIndexes: act } = computeActiveSet(parsedLyrics.value, player.getLiveTime())
-    activeIndexes.value = act
-    if (act.length > 0) {
-      scrollToActiveGroup(false)
-      await nextTick()
-      if (_lastWordIndex(act) >= 0) startWordAnimLoop()
-    } else {
-      // 无活跃行（空区）：首行前 / 三点间奏 / 无三点间奏都要定位到当前位置，
-      // 否则重新打开面板时会停留在歌词顶部。
-      const list = parsedLyrics.value
-      const now = player.getLiveTime()
-      if (showUpcomingHint.value) {
-        hintAnchorIndex.value = hintLineIndex.value
-        hintVisible.value = true
-        hintLeaving.value = false
-        _dotsScrollDone = false
-        await nextTick()
-        await nextTick()
-        scrollToDots(false)
-      } else {
-        const target = now < list[0].time ? 0 : hintLineIndex.value
-        if (target >= 0 && target < list.length) scrollToLine(target, false)
-      }
-    }
+    // 重新打开面板：按当前时刻重新定位（空区与活跃行统一处理）
+    await repositionToCurrent()
+    await nextTick()
+    const act = activeIndexes.value
+    if (act.length > 0 && _lastWordIndex(act) >= 0) startWordAnimLoop()
   } else {
     flyCoverOut()
     stopWordAnimLoop()
