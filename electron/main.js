@@ -115,6 +115,9 @@ const DATA_DIR = path.join(process.env.LOCALAPPDATA, 'melodybox')
 const coverDir = path.join(DATA_DIR, 'covers')
 if (!fs.existsSync(coverDir)) fs.mkdirSync(coverDir, { recursive: true })
 
+// 播放会话持久化（进程重启后仍可恢复上次队列/歌曲/进度）
+const playbackFile = path.join(DATA_DIR, 'playback.json')
+
 // ==================== 本地 HTTP 音频服务器 ====================
 
 // Chromium 的 FFmpeg FLAC demuxer 对某些 FLAC 文件无法计算 PTS，导致播放失败。
@@ -590,6 +593,21 @@ ipcMain.handle('music:pathToUrl', async (_event, filePath) => {
 
 // 暴露音频服务器端口给渲染进程
 ipcMain.handle('audio:getPort', () => audioServerPort)
+ipcMain.handle('session:savePlayback', (_event, data) => {
+  try {
+    fs.writeFileSync(playbackFile, JSON.stringify(data ?? {}), 'utf8')
+    return true
+  } catch {
+    return false
+  }
+})
+ipcMain.handle('session:loadPlayback', () => {
+  try {
+    return JSON.parse(fs.readFileSync(playbackFile, 'utf8'))
+  } catch {
+    return null
+  }
+})
 ipcMain.handle('system:getRefreshRate', () => {
   try {
     return screen.getPrimaryDisplay().refreshRate

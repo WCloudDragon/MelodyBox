@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useAiStore } from './ai'
-import { apiUrl } from '@/config/api'
+import { apiUrl, audioUrl } from '@/config/api'
 import { useAuthStore } from './auth'
 import { ElMessage } from '@/utils/toast'
 
@@ -68,6 +68,8 @@ export const usePlayerStore = defineStore('player', () => {
   // seek 偏移量：当通过 URL reload 方式 seek 到中途时，Audio 元素内部时间线从 0 开始，
   // 此偏移量用于将 currentTime 映射回完整歌曲的时间轴
   let _seekOffset = 0
+  // 会话恢复：等待元数据加载完成后跳转到上次进度
+  let _pendingSeek = 0
 
   // 返回当前真实播放时间（绕过 timeupdate 节流，适用于逐字歌词动画等高频场景）
   function getLiveTime() {
@@ -553,11 +555,122 @@ export const usePlayerStore = defineStore('player', () => {
         playMode.value = settings.playMode ?? 'sequential'
       }
     } catch {}
+    // 启动时恢复上次播放会话（队列/当前歌曲/进度，不自动播放）
+    loadSession()
   }
 
   // 保存当前播放进度
   function saveProgress() {
     savedTime.value = currentTime.value
+  }
+
+  // ==================== 播放会话持久化 ====================
+  const SESSION_KEY = 'player-session'
+  let _sessionSaveTimer = null
+  let _sessionLastSave = 0
+
+  function _buildSessionData() {
+    return {
+      queue: queue.value
+        .map(t => {
+          if (!t || typeof t !== 'object') return null
+          try { return JSON.parse(JSON.stringify(t)) } catch { return null }
+        })
+        .filter(Boolean),
+      currentIndex: currentIndex.value,
+      currentTime: currentTime.value
+    }
+  }
+
+  async function persistSession(data) {
+    // Electron 环境：写主进程文件（不受开发端口/刷新影响）；浏览器环境回退 localStorage
+    try {
+      if (window.electronAPI?.savePlaybackSession) {
+        await window.electronAPI.savePlaybackSession(data)
+        return
+      }
+    } catch {}
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(data))
+    } catch {}
+  }
+
+  function saveSession() {
+    persistSession(_buildSessionData())
+  }
+
+  function saveSessionSoon() {
+    // 节流：播放中每 1 秒落盘一次（防抖会被 timeupdate 高频触发一直重置）
+    const now = Date.now()
+    if (now - _sessionLastSave >= 1000) {
+      _sessionLastSave = now
+      saveSession()
+      return
+    }
+    if (_sessionSaveTimer) clearTimeout(_sessionSaveTimer)
+    _sessionSaveTimer = setTimeout(() => {
+      _sessionSaveTimer = null
+      _sessionLastSave = Date.now()
+      saveSession()
+    }, 1000 - (now - _sessionLastSave))
+  }
+
+  async function loadSession() {
+    let data = null
+    try {
+      if (window.electronAPI?.loadPlaybackSession) {
+        data = await window.electronAPI.loadPlaybackSession()
+      } else {
+        const raw = localStorage.getItem(SESSION_KEY)
+        if (raw) data = JSON.parse(raw)
+      }
+    } catch {}
+    if (!data || !Array.isArray(data.queue) || data.queue.length === 0) return
+
+    queue.value = data.queue
+    const idx = Number.isInteger(data.currentIndex)
+      ? data.currentIndex
+      : data.currentIndex >= 0 && data.currentIndex < data.queue.length
+        ? Math.floor(data.currentIndex)
+        : -1
+    if (idx < 0 || idx >= queue.value.length) {
+      currentIndex.value = -1
+      return
+    }
+    currentIndex.value = idx
+    currentTime.value = Math.max(0, Number(data.currentTime) || 0)
+    isPlaying.value = false
+
+    // 准备好音频但不自动播放：用户点击播放即可从上次进度继续
+    initAudio()
+    const track = queue.value[currentIndex.value]
+    if (audio.value && track) {
+      if (!track.url && track.path) track.url = audioUrl(track.path)
+      audio.value.src = track.url
+      const resumeAt = currentTime.value
+      if (resumeAt > 0) {
+        if (audio.value.readyState >= 1) {
+          audio.value.currentTime = resumeAt
+        } else {
+          _pendingSeek = resumeAt
+          audio.value.addEventListener('loadedmetadata', () => {
+            if (_pendingSeek > 0) {
+              audio.value.currentTime = _pendingSeek
+              _pendingSeek = 0
+          }
+          }, { once: true })
+        }
+      }
+    }
+  }
+
+  // 队列/当前歌曲/进度变化时节流保存；窗口关闭前尽力兜底
+  watch(queue, saveSessionSoon, { deep: true })
+  watch(currentIndex, saveSessionSoon)
+  watch(currentTime, saveSessionSoon)
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', saveSession)
+    window.addEventListener('beforeunload', saveSession)
   }
 
   function restoreProgress() {

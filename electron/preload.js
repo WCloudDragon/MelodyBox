@@ -30,6 +30,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 获取音频服务器端口
   getAudioServerPort: () => ipcRenderer.invoke('audio:getPort'),
 
+  // 播放会话持久化（主进程文件，避免开发端口变化导致 localStorage 隔离）
+  savePlaybackSession: (data) => ipcRenderer.invoke('session:savePlayback', data),
+  loadPlaybackSession: () => ipcRenderer.invoke('session:loadPlayback'),
+
   // 获取主显示器刷新率（主进程 screen API，准确值）
   getRefreshRate: () => ipcRenderer.invoke('system:getRefreshRate'),
 
