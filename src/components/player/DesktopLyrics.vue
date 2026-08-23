@@ -1,33 +1,8 @@
 <template>
-  <!-- Electron 环境：无内联渲染，由独立窗口展示 -->
-  <!-- 非 Electron 环境：内联渲染兜底 -->
-  <template v-if="!isElectron">
-    <transition name="dl-fade">
-      <div v-if="showDesktopLyrics && currentTrack && hasLyrics && currentLineIndex >= 0" class="desktop-lyrics" :style="lyricsVars">
-        <div class="dl-line dl-line--active" :class="{ 'has-translation': activeLine?.translation, 'is-word-level': activeLine?.wordLevel }">
-          <div class="dl-line__inner">
-            <p v-if="activeLine?.wordLevel && activeLine?.segments" class="dl-line__original word-level">
-              <span v-for="(seg, si) in activeLine.segments" :key="si" class="word-seg" :data-word="seg.text">{{ seg.text }}</span>
-            </p>
-            <p v-else class="dl-line__original">{{ activeLine?.original || '' }}</p>
-            <p v-if="activeLine?.translation" class="dl-line__translation">{{ activeLine.translation }}</p>
-            <p class="dl-line__annotation">
-              <template v-for="(ol, oi) in overlapLines" :key="oi">
-                <span v-if="oi > 0" class="dl-line__annotation-sep"> / </span>
-                <span class="dl-line__annotation-text">{{ ol.original }}<template v-if="ol.translation"> {{ ol.translation }}</template></span>
-              </template>
-            </p>
-          </div>
-        </div>
-        <div v-if="nextLine" class="dl-line dl-line--next" :class="{ 'has-translation': nextLine.translation }">
-          <div class="dl-line__inner">
-            <p class="dl-line__original">{{ nextLine.original }}</p>
-            <p v-if="nextLine.translation" class="dl-line__translation">{{ nextLine.translation }}</p>
-          </div>
-        </div>
-      </div>
-    </transition>
-  </template>
+  <!-- 桌面歌词由 Electron 独立歌词窗口显示；非 Electron 环境不可用 -->
+  <div v-if="!isElectron" class="desktop-lyrics-unavailable">
+    桌面歌词仅在桌面端可用
+  </div>
 </template>
 
 <script setup>
@@ -40,7 +15,6 @@ import { parseLRC, computeActiveSet } from '@/utils/format'
 const player = usePlayerStore()
 const settings = useSettingsStore()
 const { currentTrack, currentTime, showDesktopLyrics } = storeToRefs(player)
-const { lyricsFontSize, lyricsFontWeight, lyricsTransScale, lyricsActiveScale } = storeToRefs(settings)
 const { desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale, desktopLyricsViewLines } = storeToRefs(settings)
 
 const isElectron = computed(() => !!window.electronAPI)
@@ -49,30 +23,26 @@ const isInLyricsWindow = computed(() => window.location.hash === '#/desktop-lyri
 
 const currentLineIndex = ref(-1)
 const overlapLines = ref([])
-const windowWidth = ref(window.innerWidth)
-
-function onResize() { windowWidth.value = window.innerWidth }
-onMounted(() => window.addEventListener('resize', onResize))
-onBeforeUnmount(() => window.removeEventListener('resize', onResize))
 
 const parsedLyrics = computed(() => {
   const raw = currentTrack.value?.lyrics
   if (!raw) return []
   return parseLRC(raw)
 })
-const hasLyrics = computed(() => parsedLyrics.value.length > 0)
 
-const activeLine = computed(() => {
-  if (currentLineIndex.value < 0 || currentLineIndex.value >= parsedLyrics.value.length) return null
-  return parsedLyrics.value[currentLineIndex.value]
-})
-const nextLine = computed(() => {
-  const idx = currentLineIndex.value + 1
-  if (idx < 0 || idx >= parsedLyrics.value.length) return null
-  return parsedLyrics.value[idx]
-})
-// 构建发送给独立窗口的数据
-const lyricsPayload = computed(() => {
+// ==================== 发送到独立歌词窗口 ====================
+
+function buildSettings() {
+  return {
+    fontSize: desktopLyricsFontSize.value,
+    activeScale: desktopLyricsActiveScale.value,
+    transScale: desktopLyricsTransScale.value,
+    viewLines: desktopLyricsViewLines.value
+  }
+}
+
+// 构建完整歌词行结构
+function buildLines() {
   const idx = currentLineIndex.value
   const total = parsedLyrics.value.length
   const track = currentTrack.value
@@ -97,103 +67,136 @@ const lyricsPayload = computed(() => {
       wordLevel: false,
       segments: null
     })
-    // currentLineIndex 指向这条合成行（0），后续真正歌词行从 1 开始
     lineIndex = idx < 0 ? 0 : idx + 1
   }
 
+  return { lines, lineIndex }
+}
+
+// 静态歌词结构：切歌/首帧时推送
+function buildStructurePayload() {
+  const { lines, lineIndex } = buildLines()
   return {
-    parsedLyrics: lines,
+    type: 'structure',
+    lines,
     currentLineIndex: lineIndex,
     currentTime: currentTime.value,
     overlap: overlapLines.value,
-    settings: {
-      fontSize: desktopLyricsFontSize.value,
-      activeScale: desktopLyricsActiveScale.value,
-      transScale: desktopLyricsTransScale.value,
-      viewLines: desktopLyricsViewLines.value
-    }
+    settings: buildSettings()
   }
-})
-
-// 推送数据到独立歌词窗口
-function pushToLyricsWindow() {
-  if (!isElectron.value) return
-  window.electronAPI.lyricsUpdate(lyricsPayload.value)
 }
 
-// 打开歌词窗口后的重试定时器（确保新窗口加载完成后收到首帧数据）
+// 运行时状态：行/重叠/设置变化时推送
+function buildStatePayload() {
+  const { lines } = buildLines()
+  return {
+    type: 'state',
+    // 携带完整结构：窗口加载完成后下次切行即可补上，避免首帧丢失后永久空白
+    lines,
+    currentLineIndex: currentLineIndex.value,
+    currentTime: currentTime.value,
+    overlap: overlapLines.value,
+    settings: buildSettings()
+  }
+}
+
+function send(payload) {
+  if (!isElectron.value) return
+  try {
+    window.electronAPI.lyricsUpdate(payload)
+  } catch {}
+}
+
+// 低频时间心跳：让独立歌词窗口持续校准逐字时钟，避免本地估算漂移
+let _tickTimer = null
+function startTick() {
+  if (_tickTimer) return
+  _tickTimer = setInterval(() => {
+    try {
+      if (!showDesktopLyrics.value) {
+        stopTick()
+        return
+      }
+      send({
+        type: 'tick',
+        time: player.getLiveTime(),
+        playing: player.isPlaying
+      })
+    } catch {
+      stopTick()
+    }
+  }, 250)
+}
+
+function stopTick() {
+  if (_tickTimer) {
+    clearInterval(_tickTimer)
+    _tickTimer = null
+  }
+}
+
+// ==================== 窗口开关与数据同步 ====================
+
 let _openRetryTimers = []
 function clearOpenRetryTimers() {
   _openRetryTimers.forEach(id => clearTimeout(id))
   _openRetryTimers = []
 }
-onUnmounted(() => clearOpenRetryTimers())
 
-// Electron 模式下：监听开关状态，控制独立窗口
-// 注意：在歌词窗口内不执行 IPC 控制逻辑（此组件可能因路由初始化时序而被意外挂载）
 watch(showDesktopLyrics, (val) => {
   if (!isElectron.value || isInLyricsWindow.value) return
   if (val) {
     window.electronAPI.lyricsOpen()
-    pushToLyricsWindow()
-    // 新窗口页面加载有延迟，重试多次确保首帧数据送达
+    send(buildStructurePayload())
+    // 兜底重试（真正可靠的送达由 lyrics:ready 事件触发）
     clearOpenRetryTimers()
-    _openRetryTimers = [200, 500, 1000, 2000].map(delay =>
-      setTimeout(() => pushToLyricsWindow(), delay)
+    _openRetryTimers = [500, 1000, 2000, 4000, 8000].map(delay =>
+      setTimeout(() => send(buildStructurePayload()), delay)
     )
+    startTick()
   } else {
     clearOpenRetryTimers()
+    stopTick()
     window.electronAPI.lyricsClose()
   }
 }, { immediate: true })
 
-// 监听歌词行变化，推送数据
 watch(currentLineIndex, () => {
   if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
-    pushToLyricsWindow()
+    send(buildStatePayload())
   }
 })
 
-// 切歌时推送（歌词数据变化）
+// 切歌时推送最新歌词结构
 watch(() => currentTrack.value?.path, () => {
+  currentLineIndex.value = -1
+  overlapLines.value = []
   if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
-    pushToLyricsWindow()
+    send(buildStructurePayload())
   }
 })
 
 // 桌面歌词设置变化时推送
 watch([desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale, desktopLyricsViewLines], () => {
   if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
-    pushToLyricsWindow()
+    send(buildStatePayload())
   }
 })
 
-// 监听独立窗口关闭事件，同步状态回 store
-onMounted(() => {
-  if (isElectron.value && !isInLyricsWindow.value) {
-    window.electronAPI.onLyricsWindowClosed(() => {
-      if (showDesktopLyrics.value) {
-        showDesktopLyrics.value = false
-      }
-    })
-  }
-})
-
-// 跟踪当前歌词行
+// 当前播放时刻：更新主行与重叠附加行（独立窗口据此推进）
 watch(currentTime, (time) => {
-  if (!hasLyrics.value) {
-    if (currentLineIndex.value !== -1) {
-      currentLineIndex.value = -1
-    }
+  const list = parsedLyrics.value
+  if (!list.length) {
+    if (currentLineIndex.value !== -1) currentLineIndex.value = -1
     return
   }
 
-  const { activeIndexes } = computeActiveSet(parsedLyrics.value, time)
+  const { activeIndexes } = computeActiveSet(list, time)
 
-  // 主行：优先取活跃集合中的逐字歌词行（卡拉OK行），否则取最后一行
+  // 主行：优先取活跃集合中的逐字歌词行，否则取最后一行
   let mainIndex = -1
   for (let i = activeIndexes.length - 1; i >= 0; i--) {
-    if (parsedLyrics.value[activeIndexes[i]]?.wordLevel) {
+    if (list[activeIndexes[i]]?.wordLevel) {
       mainIndex = activeIndexes[i]
       break
     }
@@ -204,171 +207,42 @@ watch(currentTime, (time) => {
   if (mainIndex !== currentLineIndex.value) {
     currentLineIndex.value = mainIndex
   }
-  // 重叠附加行（对白/注释）变化时推送，让桌面窗口的注释槽及时淡入淡出
+
   const newOverlap = activeIndexes.filter(i => i !== mainIndex).map(i => {
-    const line = parsedLyrics.value[i]
+    const line = list[i]
     return { original: line.original, translation: line.translation || null }
   })
   if (JSON.stringify(newOverlap) !== JSON.stringify(overlapLines.value)) {
     overlapLines.value = newOverlap
     if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
-      pushToLyricsWindow()
+      send(buildStatePayload())
     }
   }
 })
 
-// 切歌时重置
-watch(() => currentTrack.value?.path, () => {
-  currentLineIndex.value = -1
-  overlapLines.value = []
-})
-
-// 歌词 CSS 变量（非 Electron 内联渲染用）
-const lyricsVars = computed(() => {
-  const base = lyricsFontSize.value
-  const trans = Math.round(base * lyricsTransScale.value / 100)
-  const active = lyricsActiveScale.value / 100
-  const activeFont = Math.round(base * active)
-  const transActiveFont = Math.round(trans * active)
-  const availWidth = Math.max(300, windowWidth.value * 0.8)
-  const activeChars = Math.max(5, Math.floor(availWidth / (activeFont + 1)))
-  const safetyPx = 4
-  const nonActiveMaxEm = (activeChars * (base + 1) + safetyPx) / base
-  const activeMaxEm = (activeChars * (activeFont + 1) + safetyPx) / activeFont
-  const transActiveChars = Math.max(3, Math.floor(availWidth / (transActiveFont + 1)))
-  const transNonActiveMaxEm = (transActiveChars * (trans + 1) + safetyPx) / trans
-  const transActiveMaxEm = (transActiveChars * (transActiveFont + 1) + safetyPx) / transActiveFont
-  return {
-    '--dl-base-original': base + 'px',
-    '--dl-base-trans': trans + 'px',
-    '--dl-active-original': Math.round(base * active) + 'px',
-    '--dl-active-trans': Math.round(trans * active) + 'px',
-    '--dl-weight': lyricsFontWeight.value,
-    '--dl-ch-limit': nonActiveMaxEm + 'em',
-    '--dl-active-ch-limit': activeMaxEm + 'em',
-    '--dl-trans-ch-limit': transNonActiveMaxEm + 'em',
-    '--dl-trans-active-ch-limit': transActiveMaxEm + 'em'
+// 监听独立窗口关闭事件，同步状态回 store
+onMounted(() => {
+  if (isElectron.value && !isInLyricsWindow.value) {
+    // 歌词窗口加载完成后立刻补发首帧结构，避免打开瞬间被丢弃
+    window.electronAPI.onLyricsReady(() => {
+      clearOpenRetryTimers()
+      send(buildStructurePayload())
+      startTick()
+    })
+    window.electronAPI.onLyricsWindowClosed(() => {
+      if (showDesktopLyrics.value) {
+        showDesktopLyrics.value = false
+      }
+    })
   }
 })
+
+onBeforeUnmount(() => stopTick())
+onUnmounted(() => clearOpenRetryTimers())
 </script>
 
 <style scoped>
-.desktop-lyrics {
-  position: fixed;
-  bottom: 88px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 999;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  pointer-events: none;
-  max-width: 80vw;
-  text-align: center;
-}
-.dl-line {
-  text-align: center;
-  user-select: none;
-  letter-spacing: 1px;
-  transition: opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-}
-.dl-line__inner {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: center;
-}
-.dl-line__original {
-  margin: 0;
-  font-size: var(--dl-base-original, 16px);
-  line-height: 1.3;
-  font-weight: var(--dl-weight, 700);
-  color: var(--text-primary);
-  opacity: 0.4;
-  max-width: var(--dl-ch-limit);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-  transition: font-size 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              color 0.4s;
-}
-.dl-line__translation {
-  margin: 0;
-  font-size: var(--dl-base-trans, 10px);
-  line-height: 1.2;
-  font-weight: var(--dl-weight, 700);
-  color: var(--text-primary);
-  opacity: 0.2;
-  max-width: var(--dl-trans-ch-limit);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-  transition: font-size 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              color 0.4s;
-}
-/* 常驻注释槽：始终预留高度，有对白/注释时淡入内容 */
-.dl-line__annotation {
-  margin: 0;
-  min-height: calc(var(--dl-base-original, 16px) * 0.7);
-  font-size: calc(var(--dl-base-original, 16px) * 0.58);
-  line-height: calc(var(--dl-base-original, 16px) * 0.7);
-  font-weight: 400;
-  color: var(--text-primary);
-  opacity: 0.45;
-  max-width: 90%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition: opacity 0.35s ease;
-}
-.dl-line--active .dl-line__original {
-  opacity: 1;
-  color: var(--text-primary);
-  font-size: var(--dl-active-original, 24px);
-  max-width: var(--dl-active-ch-limit);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
-}
-.dl-line--active .dl-line__translation {
-  opacity: 0.55;
-  color: var(--text-secondary);
-  font-size: var(--dl-active-trans, 14px);
-  max-width: var(--dl-trans-active-ch-limit);
-}
-.dl-line--next .dl-line__original {
-  opacity: 0.5;
-  transform: translateY(0);
-}
-.dl-line__original.word-level {
-  display: inline-flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0;
-  white-space: pre;
-}
-.word-seg {
-  display: inline-block;
-  color: var(--text-primary);
-  opacity: 0.4;
-  transition: opacity 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              color 0.4s;
-}
-.dl-line--active .word-seg {
-  opacity: 1;
-  color: var(--text-primary);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
-}
-.dl-fade-enter-active {
-  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-}
-.dl-fade-leave-active {
-  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-}
-.dl-fade-enter-from {
-  opacity: 0;
-  transform: translateX(-50%) translateY(10px);
-}
-.dl-fade-leave-to {
-  opacity: 0;
-  transform: translateX(-50%) translateY(10px);
+.desktop-lyrics-unavailable {
+  display: none;
 }
 </style>

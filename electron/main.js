@@ -389,7 +389,8 @@ function createLyricsWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      backgroundThrottling: false
     },
     backgroundColor: '#00000000',
     show: false
@@ -419,6 +420,13 @@ function createLyricsWindow() {
 
   lyricsWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
     console.error('[lyrics] 页面加载失败:', errorCode, errorDescription)
+  })
+
+  // 歌词窗口加载完成后通知主窗口：此时再发送歌词结构才可靠
+  lyricsWindow.webContents.on('did-finish-load', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('lyrics:ready')
+    }
   })
 
   lyricsWindow.once('ready-to-show', () => {
@@ -462,7 +470,8 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      backgroundThrottling: false
     },
     backgroundColor: '#0a0a0a',
     show: false
@@ -710,9 +719,9 @@ ipcMain.on('lyrics:resize', (_event, { width, height }) => {
   if (lyricsWindow && !lyricsWindow.isDestroyed()) {
     const before = lyricsWindow.getSize()
     lyricsWindow.setSize(width, height)
-    // 锁定垂直高度，仅允许左右拖动调整宽度
-    lyricsWindow.setMinimumSize(200, height)
-    lyricsWindow.setMaximumSize(10000, height)
+    // 高度允许上下调整，避免测量偏小时窗口小到不可见；宽度保持可拖
+    lyricsWindow.setMinimumSize(200, Math.min(height, 160))
+    lyricsWindow.setMaximumSize(10000, Math.max(height, 2000))
     const after = lyricsWindow.getSize()
   }
 })

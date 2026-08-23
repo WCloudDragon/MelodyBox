@@ -50,6 +50,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onLyricsWindowClosed: (callback) => {
     ipcRenderer.on('lyrics:windowClosed', () => callback())
   },
+  onLyricsReady: (callback) => {
+    ipcRenderer.on('lyrics:ready', () => callback())
+  },
 
   // 桌面歌词数据接收（歌词窗口使用）
   onLyricsData: (callback) => {

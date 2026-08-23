@@ -43,6 +43,7 @@
               </div>
             </div>
           </template>
+          <div v-else class="dl-empty">等待歌词数据</div>
         </template>
 
       </div>
@@ -106,53 +107,58 @@ function lineStyle(index) {
   return { opacity, transform: `scale(${scale.toFixed(3)})` }
 }
 
-// ===== 窗口高度 =====
-function computeWindowHeight() {
-  const base = desktopSettings.value.fontSize
-  const viewLines = desktopSettings.value.viewLines
-  const activeScale = desktopSettings.value.activeScale / 100
-  const transBase = Math.round(base * desktopSettings.value.transScale / 100)
-
-  const activeOriginalLH = Math.round(base * activeScale * 1.2)
-  const activeTransLH = Math.round(transBase * activeScale * 1.2)
-  const annLH = Math.round(base * 0.58 * 1.2)
-  const normalOriginalLH = Math.round(base * 1.2)
-  const normalTransLH = Math.round(transBase * 1.2)
-  const lineOverhead = 14  // padding(6*2) + gap(2)
-  const gap = 2
-
-  // 每行预留原文+翻译+常驻注释槽高度，避免文本被裁切或窗口抖动
-  let contentH = activeOriginalLH + activeTransLH + annLH + gap * 2 + lineOverhead
-  if (viewLines >= 2) {
-    contentH += normalOriginalLH + normalTransLH + gap + lineOverhead
-  }
-
-  const wh = Math.max(60, Math.round(32 + contentH))
-  return wh
-}
-
 let _resizeTimer = null
+let lastResizeW = 0
+let lastResizeH = 0
 function requestResize() {
   clearTimeout(_resizeTimer)
-  const h = computeWindowHeight()
-  if (window.electronAPI?.lyricsResize) {
-    window.electronAPI.lyricsResize(300, h)
-  }
-  // 等待窗口 resize 完成后重新对齐滚动位置
-  _resizeTimer = setTimeout(() => {
-    const idx = currentLineIndex.value
-    if (idx >= 0) {
-      scrollToLine(idx, false)
-    }
-  }, 200)
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      if (!scrollRef.value || !window.electronAPI?.lyricsResize) return
+      const vl = desktopSettings.value.viewLines ?? 2
+      const start = Math.max(0, Math.min(currentLineIndex.value, parsedLyrics.value.length - 1))
+      const els = Array.from(scrollRef.value.querySelectorAll('.dl-line'))
+      const range = els.slice(start, start + vl)
+
+      let width = 300
+      let height = 32
+      for (const el of range) {
+        // 整行受 max-width 限制，需测内部原文/文字节点的真实内容宽度（含跑马灯溢出）
+        const nodes = el.querySelectorAll('.dl-line__original, .dl-line__translation, .dl-line__text')
+        let contentW = 0
+        for (const n of nodes) {
+          contentW = Math.max(contentW, n.scrollWidth)
+        }
+        width = Math.max(width, contentW + 48)
+        height += el.offsetHeight
+      }
+      if (range.length === 0) {
+        height = 32 + Math.round(desktopSettings.value.fontSize * 1.2 * 2)
+      }
+
+      const finalW = Math.round(Math.min(width, 10000))
+      // 兜底最小高度：避免测量为空/过小时窗口小到不可见
+      const finalH = Math.max(160, Math.round(height))
+      // 尺寸无明显变化时跳过，避免切行频繁抖窗
+      if (Math.abs(finalW - lastResizeW) <= 2 && Math.abs(finalH - lastResizeH) <= 2) return
+      lastResizeW = finalW
+      lastResizeH = finalH
+
+      window.electronAPI.lyricsResize(finalW, finalH)
+      // 等待窗口 resize 完成后重新对齐滚动位置
+      _resizeTimer = setTimeout(() => {
+        const idx = currentLineIndex.value
+        if (idx >= 0) {
+          scrollToLine(idx, false)
+        }
+      }, 200)
+    })
+  })
 }
 
 // ===== 滚动 =====
 let currentScrollY = 0
 let currentScrollTarget = 0
-
-// 视口高度：从设置参数直接算出，不依赖 DOM 测量
-const viewportHeight = computed(() => computeWindowHeight() - 32)
 
 function scrollToLine(index, animate = true) {
   if (index < 0 || !scrollRef.value || !mainRef.value) {
@@ -171,7 +177,7 @@ function scrollToLine(index, animate = true) {
   requestAnimationFrame(() => {
     if (!lineEl || !scrollRef.value || !mainRef.value) return
 
-    const containerHeight = viewportHeight.value
+    const containerHeight = Math.max(mainRef.value?.clientHeight || 0, 120)
     const vl = desktopSettings.value.viewLines ?? 2
     const total = parsedLyrics.value.length
     const isLast = index >= total - 1
@@ -307,13 +313,16 @@ function startActiveMarquee() {
 let karaokeRafId = null
 let songTimeBase = 0
 let clockBase = 0
+let clockPlaying = true
 
-function syncKaraokeClock(songTime) {
+function syncKaraokeClock(songTime, playing = true) {
   songTimeBase = songTime
   clockBase = performance.now()
+  clockPlaying = playing
 }
 
 function estimatedSongTime() {
+  if (!clockPlaying) return songTimeBase
   return songTimeBase + (performance.now() - clockBase) / 1000
 }
 
@@ -380,6 +389,12 @@ function startKaraokeLoop(activeIndex) {
 // ===== IPC 监听（顶层注册，在 Vue 挂载前就绪，确保首帧数据不丢失） =====
 if (window.electronAPI) {
   window.electronAPI.onLyricsData((data) => {
+    // 低频时间心跳：直接校准本地逐字时钟，避免长播放漂移
+    if (data?.type === 'tick') {
+      syncKaraokeClock(Number(data.time) || 0, data.playing !== false)
+      return
+    }
+
     // 更新设置（只在设置真正变化时才调整窗口大小）
     if (data?.settings) {
       const prevSettings = JSON.stringify(desktopSettings.value)
@@ -389,55 +404,47 @@ if (window.electronAPI) {
       }
     }
 
-    const newLyrics = data?.parsedLyrics || []
-    const newIndex = data?.currentLineIndex ?? -1
-    const newOverlap = data?.overlap || []
-
-    const lyricsChanged = JSON.stringify(newLyrics) !== JSON.stringify(parsedLyrics.value)
-    const indexChanged = newIndex !== currentLineIndex.value
-
-    // 重叠附加行（对白/注释）始终同步
-    overlap.value = newOverlap
-
-    if (lyricsChanged) {
-      // 切歌：重置滚动
-      parsedLyrics.value = newLyrics
+    // 结构更新：structure 或 state 携带 lines 且发生变化时替换整份歌词
+    const payloadLines = data?.lines || data?.parsedLyrics || []
+    const lyricsChanged = payloadLines.length > 0 &&
+      JSON.stringify(payloadLines) !== JSON.stringify(parsedLyrics.value)
+    if (payloadLines.length > 0 && lyricsChanged) {
+      parsedLyrics.value = payloadLines
       hasData.value = true
-      currentLineIndex.value = newIndex
+    }
 
-      // 逐字卡拉 OK：切歌时同步时钟（newIndex 可能因切歌时序问题越界，必须校验）
-      if (newIndex >= 0 && newIndex < newLyrics.length) {
-        const activeLine = newLyrics[newIndex]
+    const newIndex = data?.currentLineIndex ?? -1
+    overlap.value = data?.overlap || []
+
+    // 结构变化（含首帧）：先定位，无动画
+    if (data?.type === 'structure' || lyricsChanged) {
+      currentLineIndex.value = newIndex
+      if (newIndex >= 0 && newIndex < parsedLyrics.value.length) {
+        const activeLine = parsedLyrics.value[newIndex]
         if (activeLine && activeLine.wordLevel && activeLine.segments && activeLine.segments.length >= 2 && data.currentTime != null) {
-          syncKaraokeClock(data.currentTime)
+          syncKaraokeClock(data.currentTime, data.playing !== false)
         }
+        requestResize()
         nextTick(() => scrollToLine(newIndex, false))
       } else {
         stopKaraokeLoop()
+        requestResize()
         nextTick(() => resetScroll())
       }
       return
     }
 
-    if (!indexChanged) {
-      // 仅附加注释变化：更新即可，不重新滚动/重启动画
-      parsedLyrics.value = newLyrics
-      hasData.value = true
-      return
-    }
-
-    // 更新歌词行列表（内容未变但索引变了）
-    parsedLyrics.value = newLyrics
-    hasData.value = true
-    currentLineIndex.value = newIndex
-
-    // 逐字卡拉 OK：同步时钟 & 启动 rAF 循环
-    if (newIndex >= 0 && newIndex < newLyrics.length) {
-      const activeLine = newLyrics[newIndex]
-      if (activeLine && activeLine.wordLevel && activeLine.segments && activeLine.segments.length >= 2 && data.currentTime != null) {
-        syncKaraokeClock(data.currentTime)
+    // 运行时状态：仅行/重叠变化
+    if (newIndex !== currentLineIndex.value) {
+      currentLineIndex.value = newIndex
+      if (newIndex >= 0 && newIndex < parsedLyrics.value.length) {
+        const activeLine = parsedLyrics.value[newIndex]
+        if (activeLine && activeLine.wordLevel && activeLine.segments && activeLine.segments.length >= 2 && data.currentTime != null) {
+          syncKaraokeClock(data.currentTime, data.playing !== false)
+        }
+        requestResize()
+        nextTick(() => scrollToLine(newIndex, true))
       }
-      nextTick(() => scrollToLine(newIndex, true))
     }
   })
 }

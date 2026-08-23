@@ -541,7 +541,8 @@ export const usePlayerStore = defineStore('player', () => {
   function saveSettings() {
     const settings = {
       volume: volume.value,
-      playMode: playMode.value
+      playMode: playMode.value,
+      showDesktopLyrics: showDesktopLyrics.value
     }
     localStorage.setItem('player-settings', JSON.stringify(settings))
   }
@@ -553,11 +554,15 @@ export const usePlayerStore = defineStore('player', () => {
         const settings = JSON.parse(raw)
         volume.value = settings.volume ?? 0.7
         playMode.value = settings.playMode ?? 'sequential'
+        showDesktopLyrics.value = settings.showDesktopLyrics ?? false
       }
     } catch {}
     // 启动时恢复上次播放会话（队列/当前歌曲/进度，不自动播放）
     loadSession()
   }
+
+  // 播放器设置变化时落盘（音量/播放模式/桌面歌词开关）
+  watch([volume, playMode, showDesktopLyrics], saveSettings)
 
   // 保存当前播放进度
   function saveProgress() {
