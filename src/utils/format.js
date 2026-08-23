@@ -101,6 +101,10 @@ export function parseLRC(lrcText) {
         const rawText = line.slice(textStart, textEnd)
         if (rawText.trim()) {
           segments.push({ time: segTime, text: rawText })
+        } else if (/\s/.test(rawText) && segments.length > 0) {
+          // 两个时间戳之间只有空格（没有独立时间戳）：归入前一个字段，
+          // 避免逐字歌词拼接时丢失句内空格
+          segments[segments.length - 1].text += rawText
         }
       }
       if (segments.length > 0) {
