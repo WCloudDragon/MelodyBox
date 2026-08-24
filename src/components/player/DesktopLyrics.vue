@@ -10,7 +10,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted } from 'v
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
-import { parseLRC, computeActiveSet } from '@/utils/format'
+import { parseLRC, computeActiveSet, LYRIC_GAP_FILL_LIMIT } from '@/utils/format'
 
 const player = usePlayerStore()
 const settings = useSettingsStore()
@@ -28,6 +28,39 @@ const parsedLyrics = computed(() => {
   const raw = currentTrack.value?.lyrics
   if (!raw) return []
   return parseLRC(raw)
+})
+
+// 长间奏"即将开唱"提示（与全屏页同一判定口径）
+const hintPrevIndex = computed(() => {
+  const list = parsedLyrics.value
+  const now = currentTime.value
+  if (!list.length || now < list[0].time) return -1
+  let prev = -1
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].time <= now) prev = i
+    else break
+  }
+  return prev
+})
+const upcomingRemaining = computed(() => {
+  const list = parsedLyrics.value
+  if (!list.length) return Infinity
+  const now = currentTime.value
+  let next = Infinity
+  for (const l of list) {
+    if (l.time > now && l.time < next) next = l.time
+  }
+  return next - now
+})
+const showUpcomingHint = computed(() => {
+  if (!parsedLyrics.value.length) return false
+  if (/纯音乐/.test(currentTrack.value?.lyrics || '')) return false
+  if (upcomingRemaining.value <= 0) return false
+  const list = parsedLyrics.value
+  const now = currentTime.value
+  if (now < list[0].time) return list[0].time >= LYRIC_GAP_FILL_LIMIT
+  const prev = hintPrevIndex.value
+  return prev >= 0 && (list[prev].gap ?? 0) >= LYRIC_GAP_FILL_LIMIT
 })
 
 // ==================== 发送到独立歌词窗口 ====================
@@ -82,6 +115,10 @@ function buildStructurePayload() {
     currentLineIndex: lineIndex,
     currentTime: currentTime.value,
     overlap: overlapLines.value,
+    upcoming: {
+      visible: showUpcomingHint.value,
+      remaining: upcomingRemaining.value
+    },
     settings: buildSettings()
   }
 }
@@ -96,6 +133,10 @@ function buildStatePayload() {
     currentLineIndex: currentLineIndex.value,
     currentTime: currentTime.value,
     overlap: overlapLines.value,
+    upcoming: {
+      visible: showUpcomingHint.value,
+      remaining: upcomingRemaining.value
+    },
     settings: buildSettings()
   }
 }
@@ -103,8 +144,11 @@ function buildStatePayload() {
 function send(payload) {
   if (!isElectron.value) return
   try {
-    window.electronAPI.lyricsUpdate(payload)
-  } catch {}
+    // 确保 IPC 收到的是纯 JSON 数据（结构化克隆不接受响应式代理/循环引用）
+    window.electronAPI.lyricsUpdate(JSON.parse(JSON.stringify(payload)))
+  } catch (e) {
+    console.error('[dl-send][err]', payload.type, e)
+  }
 }
 
 // 低频时间心跳：让独立歌词窗口持续校准逐字时钟，避免本地估算漂移
@@ -138,14 +182,35 @@ function stopTick() {
 // ==================== 窗口开关与数据同步 ====================
 
 let _openRetryTimers = []
+let _structureAcked = false
+let _structureResendTimer = null
 function clearOpenRetryTimers() {
   _openRetryTimers.forEach(id => clearTimeout(id))
   _openRetryTimers = []
+}
+function stopStructureResend() {
+  if (_structureResendTimer) {
+    clearInterval(_structureResendTimer)
+    _structureResendTimer = null
+  }
+}
+
+// 桌面窗口确认收到结构前，每秒补发一次，彻底规避加载时序问题
+function startStructureResend() {
+  stopStructureResend()
+  _structureResendTimer = setInterval(() => {
+    if (_structureAcked) {
+      stopStructureResend()
+      return
+    }
+    send(buildStructurePayload())
+  }, 1000)
 }
 
 watch(showDesktopLyrics, (val) => {
   if (!isElectron.value || isInLyricsWindow.value) return
   if (val) {
+    _structureAcked = false
     window.electronAPI.lyricsOpen()
     send(buildStructurePayload())
     // 兜底重试（真正可靠的送达由 lyrics:ready 事件触发）
@@ -153,9 +218,11 @@ watch(showDesktopLyrics, (val) => {
     _openRetryTimers = [500, 1000, 2000, 4000, 8000].map(delay =>
       setTimeout(() => send(buildStructurePayload()), delay)
     )
+    startStructureResend()
     startTick()
   } else {
     clearOpenRetryTimers()
+    stopStructureResend()
     stopTick()
     window.electronAPI.lyricsClose()
   }
@@ -167,11 +234,20 @@ watch(currentLineIndex, () => {
   }
 })
 
+// 间奏三点进入/退出时同步（首句前 currentLineIndex 可能不变，需单独触发）
+watch(showUpcomingHint, () => {
+  if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
+    send(buildStatePayload())
+  }
+})
+
 // 切歌时推送最新歌词结构
 watch(() => currentTrack.value?.path, () => {
+  _structureAcked = false
   currentLineIndex.value = -1
   overlapLines.value = []
   if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
+    startStructureResend()
     send(buildStructurePayload())
   }
 })
@@ -229,6 +305,17 @@ onMounted(() => {
       send(buildStructurePayload())
       startTick()
     })
+    window.electronAPI.onLyricsAck(() => {
+      _structureAcked = true
+      stopStructureResend()
+    })
+    // 桌面歌词悬浮控件
+    window.electronAPI.onLyricsPrev(() => player.prev())
+    window.electronAPI.onLyricsNext(() => player.next())
+    window.electronAPI.onLyricsViewLines((n) => {
+      settings.desktopLyricsViewLines = n === 1 ? 1 : 2
+      settings.saveSettings()
+    })
     window.electronAPI.onLyricsWindowClosed(() => {
       if (showDesktopLyrics.value) {
         showDesktopLyrics.value = false
@@ -237,7 +324,10 @@ onMounted(() => {
   }
 })
 
-onBeforeUnmount(() => stopTick())
+onBeforeUnmount(() => {
+  stopTick()
+  stopStructureResend()
+})
 onUnmounted(() => clearOpenRetryTimers())
 </script>
 

@@ -53,6 +53,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onLyricsReady: (callback) => {
     ipcRenderer.on('lyrics:ready', () => callback())
   },
+  // 歌词窗口确认已收到结构，主窗口据此停止重发
+  lyricsAck: () => ipcRenderer.send('lyrics:ack'),
+  onLyricsAck: (callback) => {
+    ipcRenderer.on('lyrics:ack', () => callback())
+  },
+  // 桌面歌词悬浮控件：发送/接收
+  lyricsPrev: () => ipcRenderer.send('lyrics:prev'),
+  lyricsNext: () => ipcRenderer.send('lyrics:next'),
+  lyricsSetViewLines: (n) => ipcRenderer.send('lyrics:viewLines', n),
+  onLyricsPrev: (callback) => { ipcRenderer.on('lyrics:prev', () => callback()) },
+  onLyricsNext: (callback) => { ipcRenderer.on('lyrics:next', () => callback()) },
+  onLyricsViewLines: (callback) => {
+    ipcRenderer.on('lyrics:viewLines', (_event, n) => callback(n))
+  },
+  onLyricsHover: (callback) => {
+    ipcRenderer.on('lyrics:hover', (_event, inside) => callback(inside))
+  },
 
   // 桌面歌词数据接收（歌词窗口使用）
   onLyricsData: (callback) => {

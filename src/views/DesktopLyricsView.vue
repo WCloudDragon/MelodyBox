@@ -1,10 +1,20 @@
 <template>
   <div
     class="lyrics-window"
+    :class="{ hovering: hovered }"
     :style="desktopVars"
     @dblclick="handleClose"
     title="双击关闭桌面歌词"
   >
+    <!-- hover 悬浮控件 -->
+    <div class="dl-controls" :class="{ visible: hovered }" @click.stop>
+      <button class="dl-btn" v-ripple @click="prev">⏮</button>
+      <button class="dl-btn" v-ripple @click="next">⏭</button>
+      <button class="dl-btn" v-ripple @click="toggleLines">
+        {{ desktopSettings.viewLines === 1 ? '1行' : '2行' }}
+      </button>
+      <button class="dl-btn dl-btn--close" v-ripple @click="handleClose">×</button>
+    </div>
     <div ref="mainRef" class="lyrics-viewport">
       <div ref="scrollRef" class="lyrics-scroll">
         <!-- 等待数据 -->
@@ -12,6 +22,8 @@
 
         <template v-else>
           <template v-if="parsedLyrics.length > 0">
+            <!-- 首句前长间奏：顶部三点 -->
+            <div v-if="upcoming.visible && upcomingPrev < 0" ref="hintTopRef" class="dl-hint-line">· · ·</div>
             <div
               v-for="(line, index) in parsedLyrics"
               :key="index"
@@ -42,6 +54,8 @@
                 </p>
               </div>
             </div>
+            <!-- 句中长间奏：三点插在刚结束的一行之后 -->
+            <div v-if="upcoming.visible && index === upcomingPrev" class="dl-hint-line dl-hint-line--inline">· · ·</div>
           </template>
           <div v-else class="dl-empty">等待歌词数据</div>
         </template>
@@ -60,14 +74,38 @@ const currentLineIndex = ref(-1)
 const overlap = ref([])
 const desktopSettings = ref({ fontSize: 24, activeScale: 120, transScale: 60, viewLines: 2 })
 const hasData = ref(false)
+const upcoming = ref({ visible: false, remaining: 0 })
+const latestTime = ref(0)
+const hovered = ref(false)
 
 const mainRef = ref(null)
 const scrollRef = ref(null)
 const lineRefs = ref({})
+const hintTopRef = ref(null)
 
 function setLineRef(el, index) {
   if (el) lineRefs.value[index] = el
 }
+
+// 长间奏三点：桌面端依据自身歌词结构 + 最近心跳时间计算前后行
+const upcomingPrev = computed(() => {
+  if (!upcoming.value.visible || !parsedLyrics.value.length) return -1
+  const now = latestTime.value
+  let prev = -1
+  for (let i = 0; i < parsedLyrics.value.length; i++) {
+    if (parsedLyrics.value[i].time <= now) prev = i
+    else break
+  }
+  return prev
+})
+const upcomingNext = computed(() => {
+  if (!upcoming.value.visible || !parsedLyrics.value.length) return -1
+  const now = latestTime.value
+  for (let i = 0; i < parsedLyrics.value.length; i++) {
+    if (parsedLyrics.value[i].time > now) return i
+  }
+  return -1
+})
 
 // ===== CSS 变量 =====
 const desktopVars = computed(() => {
@@ -86,7 +124,9 @@ const desktopVars = computed(() => {
 
 // ===== 行样式 =====
 function lineStyle(index) {
-  const baseIndex = Math.max(0, currentLineIndex.value)
+  const baseIndex = upcoming.value.visible
+    ? Math.max(0, Math.min(upcomingPrev.value, parsedLyrics.value.length - 1))
+    : Math.max(0, currentLineIndex.value)
   const dist = index - baseIndex
   const vl = desktopSettings.value.viewLines ?? 2
 
@@ -110,7 +150,7 @@ function lineStyle(index) {
 let _resizeTimer = null
 let lastResizeW = 0
 let lastResizeH = 0
-function requestResize() {
+function requestResize(allowResize = false) {
   clearTimeout(_resizeTimer)
   nextTick(() => {
     requestAnimationFrame(() => {
@@ -120,8 +160,19 @@ function requestResize() {
       const els = Array.from(scrollRef.value.querySelectorAll('.dl-line'))
       const range = els.slice(start, start + vl)
 
-      let width = 300
+      let width = lastResizeW || 300
       let height = 32
+      const measured = []
+      if (allowResize) {
+        // 结构/字号变化：按整首歌所有行最大宽度一次性定宽，之后不再随切行抖动
+        for (const el of els) {
+          const nodes = el.querySelectorAll('.dl-line__original, .dl-line__translation, .dl-line__text')
+          let contentW = 0
+          for (const n of nodes) contentW = Math.max(contentW, n.scrollWidth)
+          measured.push(contentW)
+        }
+        width = Math.max(300, ...measured.map(v => v + 48))
+      }
       for (const el of range) {
         // 整行受 max-width 限制，需测内部原文/文字节点的真实内容宽度（含跑马灯溢出）
         const nodes = el.querySelectorAll('.dl-line__original, .dl-line__translation, .dl-line__text')
@@ -129,16 +180,23 @@ function requestResize() {
         for (const n of nodes) {
           contentW = Math.max(contentW, n.scrollWidth)
         }
-        width = Math.max(width, contentW + 48)
         height += el.offsetHeight
       }
       if (range.length === 0) {
         height = 32 + Math.round(desktopSettings.value.fontSize * 1.2 * 2)
       }
+      // 三点行参与测量：避免开场三点被窗口高度裁掉
+      const hintEl = scrollRef.value.querySelector('.dl-hint-line')
+      if (hintEl) {
+        width = Math.max(width, hintEl.scrollWidth + 48)
+        height += hintEl.offsetHeight
+      }
 
-      const finalW = Math.round(Math.min(width, 10000))
+      const finalW = Math.round(Math.min(allowResize ? width : (lastResizeW || width), 10000))
       // 兜底最小高度：避免测量为空/过小时窗口小到不可见
-      const finalH = Math.max(160, Math.round(height))
+      let finalH = Math.max(160, Math.round(height))
+      // 切行时高度只增不减，避免窗口上下抖动
+      if (!allowResize) finalH = Math.max(lastResizeH, finalH)
       // 尺寸无明显变化时跳过，避免切行频繁抖窗
       if (Math.abs(finalW - lastResizeW) <= 2 && Math.abs(finalH - lastResizeH) <= 2) return
       lastResizeW = finalW
@@ -225,6 +283,26 @@ function scrollToLine(index, animate = true) {
 
     // 滚动后启动行内效果（跑马灯 或 逐字卡拉OK）
     setTimeout(() => afterScrollEffect(index), 100)
+  })
+}
+
+// 开场三点：让顶部三点行贴近视口中心（而非把首句居中导致偏下）
+function scrollToHintTop(animate = true) {
+  if (!hintTopRef.value || !scrollRef.value || !mainRef.value) return
+  requestAnimationFrame(() => {
+    const el = hintTopRef.value
+    if (!el || !scrollRef.value || !mainRef.value) return
+    const containerHeight = Math.max(mainRef.value?.clientHeight || 0, 120)
+    const target = el.offsetTop - containerHeight * 0.5 + el.offsetHeight / 2
+    currentScrollTarget = target
+    scrollRef.value.style.transition = animate
+      ? 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
+      : 'none'
+    scrollRef.value.style.transform = `translate3d(0, ${-target}px, 0)`
+    currentScrollY = -target
+    setTimeout(() => {
+      if (scrollRef.value) scrollRef.value.style.transition = ''
+    }, animate ? 550 : 0)
   })
 }
 
@@ -388,9 +466,13 @@ function startKaraokeLoop(activeIndex) {
 
 // ===== IPC 监听（顶层注册，在 Vue 挂载前就绪，确保首帧数据不丢失） =====
 if (window.electronAPI) {
+  window.electronAPI.onLyricsHover((inside) => {
+    hovered.value = inside
+  })
   window.electronAPI.onLyricsData((data) => {
     // 低频时间心跳：直接校准本地逐字时钟，避免长播放漂移
     if (data?.type === 'tick') {
+      latestTime.value = Number(data.time) || 0
       syncKaraokeClock(Number(data.time) || 0, data.playing !== false)
       return
     }
@@ -400,8 +482,13 @@ if (window.electronAPI) {
       const prevSettings = JSON.stringify(desktopSettings.value)
       desktopSettings.value = data.settings
       if (JSON.stringify(data.settings) !== prevSettings) {
-        nextTick(() => requestResize())
+        nextTick(() => requestResize(true))
       }
+    }
+
+    // 长间奏提示状态
+    if (data?.upcoming) {
+      upcoming.value = data.upcoming
     }
 
     // 结构更新：structure 或 state 携带 lines 且发生变化时替换整份歌词
@@ -411,6 +498,11 @@ if (window.electronAPI) {
     if (payloadLines.length > 0 && lyricsChanged) {
       parsedLyrics.value = payloadLines
       hasData.value = true
+    }
+
+    // 确认已收到有效歌词结构：回 ACK，主窗口停止每秒重发
+    if (parsedLyrics.value.length > 0 && window.electronAPI?.lyricsAck) {
+      window.electronAPI.lyricsAck()
     }
 
     const newIndex = data?.currentLineIndex ?? -1
@@ -424,11 +516,15 @@ if (window.electronAPI) {
         if (activeLine && activeLine.wordLevel && activeLine.segments && activeLine.segments.length >= 2 && data.currentTime != null) {
           syncKaraokeClock(data.currentTime, data.playing !== false)
         }
-        requestResize()
-        nextTick(() => scrollToLine(newIndex, false))
+        requestResize(true)
+        if (upcoming.value.visible && upcomingPrev.value < 0) {
+          nextTick(() => scrollToHintTop(false))
+        } else {
+          nextTick(() => scrollToLine(newIndex, false))
+        }
       } else {
         stopKaraokeLoop()
-        requestResize()
+        requestResize(true)
         nextTick(() => resetScroll())
       }
       return
@@ -442,8 +538,18 @@ if (window.electronAPI) {
         if (activeLine && activeLine.wordLevel && activeLine.segments && activeLine.segments.length >= 2 && data.currentTime != null) {
           syncKaraokeClock(data.currentTime, data.playing !== false)
         }
-        requestResize()
+        requestResize(false)
         nextTick(() => scrollToLine(newIndex, true))
+      }
+    }
+
+    // 长间奏：滚动到下一句位置，让三点（位于上句之后）贴近可视中心
+    if (upcoming.value.visible && upcomingNext.value >= 0) {
+      if (upcomingPrev.value < 0) {
+        // 开场三点：以三点行为滚动中心
+        nextTick(() => scrollToHintTop(true))
+      } else {
+        nextTick(() => scrollToLine(upcomingNext.value, true))
       }
     }
   })
@@ -460,6 +566,16 @@ function handleClose() {
   if (window.electronAPI) {
     window.electronAPI.lyricsClose()
   }
+}
+
+function prev() {
+  window.electronAPI?.lyricsPrev?.()
+}
+function next() {
+  window.electronAPI?.lyricsNext?.()
+}
+function toggleLines() {
+  window.electronAPI?.lyricsSetViewLines?.(desktopSettings.value.viewLines === 1 ? 2 : 1)
 }
 
 onUnmounted(() => {
@@ -492,9 +608,15 @@ html, body {
   display: flex;
   flex-direction: column;
   padding: 16px 24px;
+  background: transparent;
+  border-radius: 14px;
+  overflow: hidden;
+  transition: background 0.25s ease;
   -webkit-app-region: drag;
   user-select: none;
-  overflow: hidden;
+}
+.lyrics-window.hovering {
+  background: rgba(15, 15, 20, 0.45);
 }
 
 .lyrics-viewport {
@@ -543,6 +665,7 @@ html, body {
   line-height: var(--dl-lh-original, 38px);
   font-weight: 700;
   color: rgba(255, 255, 255, 0.35);
+  transition: color 0.45s ease, font-size 0.45s ease, opacity 0.45s ease;
   text-shadow:
     -1px -1px 0 rgba(0, 0, 0, 0.3),
      1px -1px 0 rgba(0, 0, 0, 0.3),
@@ -566,6 +689,7 @@ html, body {
   line-height: var(--dl-lh-trans, 20px);
   font-weight: 700;
   color: rgba(255, 255, 255, 0.22);
+  transition: color 0.45s ease, font-size 0.45s ease, opacity 0.45s ease;
   text-shadow:
     -1px -1px 0 rgba(0, 0, 0, 0.2),
      1px -1px 0 rgba(0, 0, 0, 0.2),
@@ -656,4 +780,51 @@ html, body {
     -1px  1px 0 rgba(0, 0, 0, 0.4),
      1px  1px 0 rgba(0, 0, 0, 0.4);
 }
+
+/* 长间奏"即将开唱"三点 */
+.dl-hint-line {
+  text-align: center;
+  letter-spacing: 6px;
+  padding: 6px 0;
+  font-size: calc(var(--dl-base-original, 24px) * 0.6);
+  color: rgba(255, 255, 255, 0.6);
+  user-select: none;
+}
+
+/* 悬浮控件栏：鼠标进入歌词区域时显示 */
+.dl-controls {
+  position: fixed;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-14px);
+  display: flex;
+  gap: 4px;
+  padding: 4px 6px;
+  background: rgba(15, 15, 20, 0.62);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  z-index: 100;
+  -webkit-app-region: no-drag;
+}
+.dl-controls.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+.dl-btn {
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  min-width: 30px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.dl-btn:hover { background: rgba(255, 255, 255, 0.22); }
+.dl-btn--close:hover { background: #e81123; }
 </style>

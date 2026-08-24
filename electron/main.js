@@ -349,6 +349,36 @@ function stopAudioServer() {
 let mainWindow = null
 let lyricsWindow = null
 let _isFullScreen = false
+let _lyricsHoverTimer = null
+let _lyricsHoverState = false
+
+function stopLyricsHoverWatch() {
+  if (_lyricsHoverTimer) {
+    clearInterval(_lyricsHoverTimer)
+    _lyricsHoverTimer = null
+  }
+}
+
+// 用光标坐标判断是否在歌词窗口内：窗口可整窗拖拽（drag 区不派发 DOM 事件），
+// hover 由主进程计算，保证任意区域都能触发背景/控件栏
+function startLyricsHoverWatch() {
+  stopLyricsHoverWatch()
+  _lyricsHoverTimer = setInterval(() => {
+    if (!lyricsWindow || lyricsWindow.isDestroyed()) {
+      stopLyricsHoverWatch()
+      return
+    }
+    const { screen } = require('electron')
+    const pt = screen.getCursorScreenPoint()
+    const b = lyricsWindow.getBounds()
+    const inside = pt.x >= b.x && pt.x <= b.x + b.width &&
+      pt.y >= b.y && pt.y <= b.y + b.height
+    if (inside !== _lyricsHoverState) {
+      _lyricsHoverState = inside
+      lyricsWindow.webContents.send('lyrics:hover', inside)
+    }
+  }, 100)
+}
 
 // ==================== 桌面歌词窗口 ====================
 
@@ -397,6 +427,7 @@ function createLyricsWindow() {
   })
 
   lyricsWindow.setAlwaysOnTop(true, 'screen-saver')
+  startLyricsHoverWatch()
 
   // macOS: 所有工作区可见；Windows: 跳过
   if (process.platform === 'darwin') {
@@ -412,6 +443,7 @@ function createLyricsWindow() {
   // 渲染进程崩溃处理
   lyricsWindow.webContents.on('render-process-gone', (_event, details) => {
     console.error('[lyrics] 渲染进程崩溃:', details.reason, details.exitCode)
+    stopLyricsHoverWatch()
     if (lyricsWindow && !lyricsWindow.isDestroyed()) {
       lyricsWindow.close()
     }
@@ -447,6 +479,7 @@ function createLyricsWindow() {
 }
 
 function closeLyricsWindow() {
+  stopLyricsHoverWatch()
   if (lyricsWindow && !lyricsWindow.isDestroyed()) {
     lyricsWindow.close()
     lyricsWindow = null
@@ -458,6 +491,24 @@ function updateLyricsData(data) {
     lyricsWindow.webContents.send('lyrics:data', data)
   }
 }
+
+// 歌词窗口确认已收到结构：转发给主窗口停止重发
+ipcMain.on('lyrics:ack', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('lyrics:ack')
+  }
+})
+
+// 桌面歌词悬浮控件：转发给主窗口执行播放控制/视图切换
+ipcMain.on('lyrics:prev', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('lyrics:prev')
+})
+ipcMain.on('lyrics:next', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('lyrics:next')
+})
+ipcMain.on('lyrics:viewLines', (_event, n) => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('lyrics:viewLines', n)
+})
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -717,12 +768,19 @@ ipcMain.on('rhythm:close', () => closeRhythmDebugWindow())
 ipcMain.on('rhythm:update', (_event, data) => updateRhythmDebugData(data))
 ipcMain.on('lyrics:resize', (_event, { width, height }) => {
   if (lyricsWindow && !lyricsWindow.isDestroyed()) {
-    const before = lyricsWindow.getSize()
-    lyricsWindow.setSize(width, height)
+    // 以窗口中心为锚伸缩：宽度变化时左右对称展开，避免左边缘固定导致位置跳变
+    const bounds = lyricsWindow.getBounds()
+    const cx = bounds.x + bounds.width / 2
+    const cy = bounds.y + bounds.height / 2
+    lyricsWindow.setBounds({
+      x: Math.round(cx - width / 2),
+      y: Math.round(cy - height / 2),
+      width,
+      height
+    })
     // 高度允许上下调整，避免测量偏小时窗口小到不可见；宽度保持可拖
     lyricsWindow.setMinimumSize(200, Math.min(height, 160))
     lyricsWindow.setMaximumSize(10000, Math.max(height, 2000))
-    const after = lyricsWindow.getSize()
   }
 })
 
