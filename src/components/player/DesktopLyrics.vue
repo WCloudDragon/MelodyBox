@@ -98,7 +98,8 @@ function buildLines() {
       original: track.title || '...',
       translation: track.artist || null,
       wordLevel: false,
-      segments: null
+      segments: null,
+      synthetic: true
     })
     lineIndex = idx < 0 ? 0 : idx + 1
   }
@@ -117,7 +118,10 @@ function buildStructurePayload() {
     overlap: overlapLines.value,
     upcoming: {
       visible: showUpcomingHint.value,
-      remaining: upcomingRemaining.value
+      remaining: upcomingRemaining.value,
+      prevIndex: hintPrevIndex.value,
+      nextIndex: hintPrevIndex.value + 1,
+      hasSongInfo: !!currentTrack.value && (parsedLyrics.value.length === 0 || currentLineIndex.value < 0)
     },
     settings: buildSettings()
   }
@@ -135,7 +139,10 @@ function buildStatePayload() {
     overlap: overlapLines.value,
     upcoming: {
       visible: showUpcomingHint.value,
-      remaining: upcomingRemaining.value
+      remaining: upcomingRemaining.value,
+      prevIndex: hintPrevIndex.value,
+      nextIndex: hintPrevIndex.value + 1,
+      hasSongInfo: !!currentTrack.value && (parsedLyrics.value.length === 0 || currentLineIndex.value < 0)
     },
     settings: buildSettings()
   }
@@ -164,7 +171,8 @@ function startTick() {
       send({
         type: 'tick',
         time: player.getLiveTime(),
-        playing: player.isPlaying
+        playing: player.isPlaying,
+        remaining: showUpcomingHint.value ? upcomingRemaining.value : 0
       })
     } catch {
       stopTick()
@@ -239,7 +247,7 @@ watch(showUpcomingHint, () => {
   if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
     send(buildStatePayload())
   }
-})
+}, { immediate: true })
 
 // 切歌时推送最新歌词结构
 watch(() => currentTrack.value?.path, () => {

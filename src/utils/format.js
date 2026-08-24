@@ -148,7 +148,15 @@ export function parseLRC(lrcText) {
   for (let i = 0; i < merged.length; i++) {
     const L = merged[i]
     if (L.end == null) {
+      // 无结束时间戳：用"下一句开始 - 本行开始"近似空区长度，
+      // 避免句间长空区因 gap=0 而漏判三点提示。
       L.gap = 0
+      let nextAfter = Infinity
+      for (let j = 0; j < merged.length; j++) {
+        if (j === i) continue
+        if (merged[j].time > L.time && merged[j].time < nextAfter) nextAfter = merged[j].time
+      }
+      if (nextAfter !== Infinity) L.gap = nextAfter - L.time
       continue
     }
     const baseEnd = L.end

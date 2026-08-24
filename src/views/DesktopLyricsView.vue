@@ -22,40 +22,52 @@
 
         <template v-else>
           <template v-if="parsedLyrics.length > 0">
-            <!-- 首句前长间奏：顶部三点 -->
-            <div v-if="upcoming.visible && upcomingPrev < 0" ref="hintTopRef" class="dl-hint-line">· · ·</div>
-            <div
-              v-for="(line, index) in parsedLyrics"
-              :key="index"
-              class="dl-line"
-              :class="{
-                active: index === currentLineIndex,
-                'has-translation': line.translation,
-                'word-level': index === currentLineIndex && line.wordLevel && line.segments && line.segments.length >= 2
-              }"
-              :ref="el => setLineRef(el, index)"
-            >
-              <div class="dl-line__inner" :style="lineStyle(index)">
-                <!-- 活跃行 + 逐字数据：拆分 word-seg 供 rAF 逐字填充 -->
-                <p v-if="index === currentLineIndex && line.wordLevel && line.segments && line.segments.length >= 2"
-                   class="dl-line__original word-level">
-                  <span v-for="(seg, si) in line.segments" :key="si"
-                        class="word-seg" :data-i="si" :data-text="seg.text">{{ seg.text }}</span>
-                </p>
-                <!-- 普通行 / 活跃但无逐字数据 -->
-                <p v-else class="dl-line__original"><span class="dl-line__text">{{ line.original }}</span></p>
-                <p v-if="line.translation" class="dl-line__translation"><span class="dl-line__text">{{ line.translation }}</span></p>
-                <!-- 常驻注释槽：活跃块内预留，有对白/注释时淡入 -->
-                <p v-if="index === currentLineIndex" class="dl-line__annotation">
-                  <template v-for="(ol, oi) in overlap" :key="oi">
-                    <span v-if="oi > 0" class="dl-line__annotation-sep"> / </span>
-                    <span class="dl-line__annotation-text">{{ ol.original }}<template v-if="ol.translation"> {{ ol.translation }}</template></span>
-                  </template>
-                </p>
+            <template v-for="(line, index) in parsedLyrics" :key="index">
+              <div
+                class="dl-line"
+                :class="{
+                  active: index === currentLineIndex || (upcoming.visible && upcomingPrev < 0 && upcoming.hasSongInfo && index === 0),
+                  'has-translation': line.translation,
+                  'word-level': index === currentLineIndex && line.wordLevel && line.segments && line.segments.length >= 2
+                }"
+                :ref="el => setLineRef(el, index)"
+              >
+                <div class="dl-line__inner" :style="lineStyle(index)">
+                  <!-- 活跃行 + 逐字数据：拆分 word-seg 供 rAF 逐字填充 -->
+                  <p v-if="index === currentLineIndex && line.wordLevel && line.segments && line.segments.length >= 2"
+                     class="dl-line__original word-level">
+                    <span v-for="(seg, si) in line.segments" :key="si"
+                          class="word-seg" :data-i="si" :data-text="seg.text">{{ seg.text }}</span>
+                  </p>
+                  <!-- 普通行 / 活跃但无逐字数据 -->
+                  <p v-else class="dl-line__original"><span class="dl-line__text">{{ line.original }}</span></p>
+                  <p v-if="line.translation" class="dl-line__translation"><span class="dl-line__text">{{ line.translation }}</span></p>
+                  <!-- 常驻注释槽：活跃块内预留，有对白/注释时淡入 -->
+                  <p v-if="index === currentLineIndex" class="dl-line__annotation">
+                    <template v-for="(ol, oi) in overlap" :key="oi">
+                      <span v-if="oi > 0" class="dl-line__annotation-sep"> / </span>
+                      <span class="dl-line__annotation-text">{{ ol.original }}<template v-if="ol.translation"> {{ ol.translation }}</template></span>
+                    </template>
+                  </p>
+                </div>
               </div>
-            </div>
-            <!-- 句中长间奏：三点插在刚结束的一行之后 -->
-            <div v-if="upcoming.visible && index === upcomingPrev" class="dl-hint-line dl-hint-line--inline">· · ·</div>
+              <!-- 三点作为独立行：首句前跟在歌曲信息行之后，句间跟在刚结束行之后 -->
+              <div
+                v-if="upcoming.visible && (index === upcomingPrev || (upcomingPrev < 0 && upcoming.hasSongInfo && index === 0))"
+                :ref="setHintTopRef"
+                class="dl-hint-line"
+                :style="hintStyle"
+                :class="{ 'hint-hidden': upcomingPrev < 0 && hintStage === 0 && desktopSettings.viewLines === 1 }"
+              >
+                <span
+                  v-for="i in 3"
+                  :key="i"
+                  class="dl-hint-dot"
+                  :class="{ 'dl-hint-dot--fade': dotFading(i) }"
+                  :style="{ transform: `scale(${dotScaleFor(i)})` }"
+                >·</span>
+              </div>
+            </template>
           </template>
           <div v-else class="dl-empty">等待歌词数据</div>
         </template>
@@ -74,9 +86,35 @@ const currentLineIndex = ref(-1)
 const overlap = ref([])
 const desktopSettings = ref({ fontSize: 24, activeScale: 120, transScale: 60, viewLines: 2 })
 const hasData = ref(false)
-const upcoming = ref({ visible: false, remaining: 0 })
+const upcoming = ref({ visible: false, remaining: 0, prevIndex: -1, nextIndex: -1, hasSongInfo: false })
 const latestTime = ref(0)
 const hovered = ref(false)
+const hintStage = ref(0)
+let _hintTimer = null
+
+function clearHintTimer() {
+  if (_hintTimer) {
+    clearTimeout(_hintTimer)
+    _hintTimer = null
+  }
+}
+
+// 首句前三点分阶段：先显示歌曲信息，1 秒后滚动到三点
+function syncFirstHint() {
+  if (!upcoming.value.visible || upcomingPrev.value >= 0) {
+    clearHintTimer()
+    hintStage.value = 0
+    return
+  }
+  clearHintTimer()
+  hintStage.value = 0
+  const single = desktopSettings.value.viewLines === 1
+  nextTick(() => scrollToLine(0, false))
+  _hintTimer = setTimeout(() => {
+    hintStage.value = 1
+    scrollToHintTop(true, single ? 0.5 : 0.33)
+  }, 1000)
+}
 
 const mainRef = ref(null)
 const scrollRef = ref(null)
@@ -87,24 +125,39 @@ function setLineRef(el, index) {
   if (el) lineRefs.value[index] = el
 }
 
-// 长间奏三点：桌面端依据自身歌词结构 + 最近心跳时间计算前后行
-const upcomingPrev = computed(() => {
-  if (!upcoming.value.visible || !parsedLyrics.value.length) return -1
-  const now = latestTime.value
-  let prev = -1
-  for (let i = 0; i < parsedLyrics.value.length; i++) {
-    if (parsedLyrics.value[i].time <= now) prev = i
-    else break
-  }
-  return prev
-})
+function setHintTopRef(el) {
+  hintTopRef.value = el
+}
+
+// 三点逐点放大/淡出（与全屏逻辑一致：最后 3 秒依次放大，倒数 3/2/1 秒依次淡出）
+const DOT_MAX_SCALE = 2.3
+function dotScaleFor(i) {
+  const rem = upcoming.value.remaining
+  const rem0 = Math.max(rem, 3)
+  const span = Math.max(0.1, rem0 - 3)
+  const segStart = rem0 - ((i - 1) / 3) * span
+  const segEnd = rem0 - (i / 3) * span
+  if (rem > segStart) return 1
+  if (rem <= segEnd) return DOT_MAX_SCALE
+  const progress = (segStart - rem) / Math.max(0.05, segStart - segEnd)
+  return 1 + (DOT_MAX_SCALE - 1) * progress
+}
+function dotFading(i) {
+  return upcoming.value.remaining <= i
+}
+
+// 长间奏三点：索引直接使用主窗口下发的数据（已处理合成行偏移）
+const upcomingPrev = computed(() => upcoming.value.visible ? (upcoming.value.prevIndex ?? -1) : -1)
 const upcomingNext = computed(() => {
-  if (!upcoming.value.visible || !parsedLyrics.value.length) return -1
-  const now = latestTime.value
-  for (let i = 0; i < parsedLyrics.value.length; i++) {
-    if (parsedLyrics.value[i].time > now) return i
-  }
-  return -1
+  if (!upcoming.value.visible) return -1
+  const n = upcoming.value.nextIndex ?? -1
+  // 首句前结构含"歌曲信息"合成行，真实首句索引需 +1
+  return upcoming.value.hasSongInfo && upcoming.value.prevIndex < 0 ? n + 1 : n
+})
+// 三点作为显示主行：放大至 active 比例（透明度由 class 控制，避免覆盖淡出）
+const hintStyle = computed(() => {
+  const maxScale = (desktopSettings.value.activeScale || 120) / 100
+  return { transform: `scale(${maxScale.toFixed(3)})` }
 })
 
 // ===== CSS 变量 =====
@@ -124,11 +177,33 @@ const desktopVars = computed(() => {
 
 // ===== 行样式 =====
 function lineStyle(index) {
-  const baseIndex = upcoming.value.visible
-    ? Math.max(0, Math.min(upcomingPrev.value, parsedLyrics.value.length - 1))
-    : Math.max(0, currentLineIndex.value)
-  const dist = index - baseIndex
   const vl = desktopSettings.value.viewLines ?? 2
+
+  // 三点显示期间：三点作为主行(0)，下句为第 1 行；
+  // 上一句全程隐藏，歌曲信息行仅在首句前的第一阶段显示，与三点组两行
+  if (upcoming.value.visible) {
+    const isInfo = upcoming.value.hasSongInfo && upcomingPrev.value < 0 && index === 0
+    const isPrev = upcomingPrev.value >= 0 && index === upcomingPrev.value
+    const isNext = upcomingNext.value === index
+    const showInfo = isInfo && hintStage.value === 0
+
+    let row = -1
+    if (isInfo && showInfo) row = 0
+    else if (isNext && !showInfo) row = 1
+    if (isPrev) row = -1
+
+    if (row < 0 || row >= vl) return { opacity: 0, transform: 'scale(1)' }
+    const t = Math.min(row / 6, 1)
+    const opacity = Math.max(0.3, 1 - t * 0.7)
+    const maxScale = desktopSettings.value.activeScale / 100
+    const scale = row === 0
+      ? maxScale
+      : maxScale - (maxScale - 1) * Math.min(row, 1)
+    return { opacity, transform: `scale(${scale.toFixed(3)})` }
+  }
+
+  const baseIndex = Math.max(0, currentLineIndex.value)
+  const dist = index - baseIndex
 
   // 硬裁剪：viewLines 范围外的行直接隐藏
   if (dist < 0 || dist >= vl) return { opacity: 0, transform: 'scale(1)' }
@@ -173,23 +248,34 @@ function requestResize(allowResize = false) {
         }
         width = Math.max(300, ...measured.map(v => v + 48))
       }
-      for (const el of range) {
-        // 整行受 max-width 限制，需测内部原文/文字节点的真实内容宽度（含跑马灯溢出）
-        const nodes = el.querySelectorAll('.dl-line__original, .dl-line__translation, .dl-line__text')
-        let contentW = 0
-        for (const n of nodes) {
-          contentW = Math.max(contentW, n.scrollWidth)
+      if (upcoming.value.visible) {
+        // 三点期间：只按“三点行 + 可见第二行”测量，避免出现三行
+        const hintEl = scrollRef.value.querySelector('.dl-hint-line')
+        let h = 32
+        if (hintEl) {
+          h += hintEl.offsetHeight
+          width = Math.max(width, hintEl.scrollWidth + 48)
         }
-        height += el.offsetHeight
-      }
-      if (range.length === 0) {
-        height = 32 + Math.round(desktopSettings.value.fontSize * 1.2 * 2)
-      }
-      // 三点行参与测量：避免开场三点被窗口高度裁掉
-      const hintEl = scrollRef.value.querySelector('.dl-hint-line')
-      if (hintEl) {
-        width = Math.max(width, hintEl.scrollWidth + 48)
-        height += hintEl.offsetHeight
+        const secondIdx = upcomingPrev.value < 0
+          ? (hintStage.value === 0 ? 0 : upcomingNext.value)
+          : upcomingNext.value
+        if (vl >= 2 && secondIdx >= 0 && lineRefs.value[secondIdx]) {
+          h += lineRefs.value[secondIdx].offsetHeight
+        }
+        height = h
+      } else {
+        for (const el of range) {
+          // 整行受 max-width 限制，需测内部原文/文字节点的真实内容宽度（含跑马灯溢出）
+          const nodes = el.querySelectorAll('.dl-line__original, .dl-line__translation, .dl-line__text')
+          let contentW = 0
+          for (const n of nodes) {
+            contentW = Math.max(contentW, n.scrollWidth)
+          }
+          height += el.offsetHeight
+        }
+        if (range.length === 0) {
+          height = 32 + Math.round(desktopSettings.value.fontSize * 1.2 * 2)
+        }
       }
 
       const finalW = Math.round(Math.min(allowResize ? width : (lastResizeW || width), 10000))
@@ -286,14 +372,14 @@ function scrollToLine(index, animate = true) {
   })
 }
 
-// 开场三点：让顶部三点行贴近视口中心（而非把首句居中导致偏下）
-function scrollToHintTop(animate = true) {
+// 开场三点：让顶部三点行贴近视口中心（单行 0.5 居中；两行 0.33 偏上，等同"滚到第一行"）
+function scrollToHintTop(animate = true, ratio = 0.5) {
   if (!hintTopRef.value || !scrollRef.value || !mainRef.value) return
   requestAnimationFrame(() => {
     const el = hintTopRef.value
     if (!el || !scrollRef.value || !mainRef.value) return
     const containerHeight = Math.max(mainRef.value?.clientHeight || 0, 120)
-    const target = el.offsetTop - containerHeight * 0.5 + el.offsetHeight / 2
+    const target = el.offsetTop - containerHeight * ratio + el.offsetHeight / 2
     currentScrollTarget = target
     scrollRef.value.style.transition = animate
       ? 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
@@ -474,6 +560,14 @@ if (window.electronAPI) {
     if (data?.type === 'tick') {
       latestTime.value = Number(data.time) || 0
       syncKaraokeClock(Number(data.time) || 0, data.playing !== false)
+      // 三点剩余时间：最后 1 秒淡出，与全屏“起播前收起”节奏一致
+      if (upcoming.value.visible && data.remaining != null) {
+        const rem = Number(data.remaining) || 0
+        upcoming.value = { ...upcoming.value, remaining: rem }
+        if (rem <= 0.5) {
+          upcoming.value = { ...upcoming.value, visible: false, remaining: 0 }
+        }
+      }
       return
     }
 
@@ -518,7 +612,7 @@ if (window.electronAPI) {
         }
         requestResize(true)
         if (upcoming.value.visible && upcomingPrev.value < 0) {
-          nextTick(() => scrollToHintTop(false))
+          syncFirstHint()
         } else {
           nextTick(() => scrollToLine(newIndex, false))
         }
@@ -544,13 +638,13 @@ if (window.electronAPI) {
     }
 
     // 长间奏：滚动到下一句位置，让三点（位于上句之后）贴近可视中心
-    if (upcoming.value.visible && upcomingNext.value >= 0) {
-      if (upcomingPrev.value < 0) {
-        // 开场三点：以三点行为滚动中心
-        nextTick(() => scrollToHintTop(true))
-      } else {
-        nextTick(() => scrollToLine(upcomingNext.value, true))
-      }
+    if (upcoming.value.visible && upcomingPrev.value < 0) {
+      syncFirstHint()
+    } else if (upcoming.value.visible && upcomingNext.value >= 0) {
+      nextTick(() => scrollToLine(upcomingNext.value, true))
+    } else if (!upcoming.value.visible) {
+      clearHintTimer()
+      hintStage.value = 0
     }
   })
 }
@@ -581,6 +675,7 @@ function toggleLines() {
 onUnmounted(() => {
   stopKaraokeLoop()
   cancelMarquee()
+  clearHintTimer()
 })
 </script>
 
@@ -784,11 +879,28 @@ html, body {
 /* 长间奏"即将开唱"三点 */
 .dl-hint-line {
   text-align: center;
-  letter-spacing: 6px;
   padding: 6px 0;
+  /* 与含翻译+注释槽的歌词行同高 */
+  min-height: calc(12px + var(--dl-lh-original, 38px) + var(--dl-lh-trans, 20px) + var(--dl-base-original, 24px) * 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   font-size: calc(var(--dl-base-original, 24px) * 0.6);
   color: rgba(255, 255, 255, 0.6);
   user-select: none;
+  transition: opacity 0.3s ease;
+}
+.dl-hint-dot {
+  display: inline-block;
+  transform-origin: center;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+.dl-hint-dot--fade {
+  opacity: 0;
+}
+.dl-hint-line.hint-hidden {
+  opacity: 0;
 }
 
 /* 悬浮控件栏：鼠标进入歌词区域时显示 */
