@@ -53,11 +53,11 @@
               </div>
               <!-- 三点作为独立行：首句前跟在歌曲信息行之后，句间跟在刚结束行之后 -->
               <div
-                v-if="upcoming.visible && (index === upcomingPrev || (upcomingPrev < 0 && upcoming.hasSongInfo && index === 0))"
+                v-if="hintVisible && (index === hintAnchor.prevIndex || (hintAnchor.prevIndex < 0 && hintAnchor.hasSongInfo && index === 0))"
                 :ref="setHintTopRef"
                 class="dl-hint-line"
                 :style="hintStyle"
-                :class="{ 'hint-hidden': upcomingPrev < 0 && hintStage === 0 && desktopSettings.viewLines === 1 }"
+                :class="{ 'hint-hidden': hintAnchor.prevIndex < 0 && hintStage === 0 && desktopSettings.viewLines === 1, 'hint-leaving': hintLeaving }"
               >
                 <span
                   v-for="i in 3"
@@ -90,7 +90,14 @@ const upcoming = ref({ visible: false, remaining: 0, prevIndex: -1, nextIndex: -
 const latestTime = ref(0)
 const hovered = ref(false)
 const hintStage = ref(0)
+const hintVisible = ref(false)
+const hintLeaving = ref(false)
+const hintAnchor = ref({ prevIndex: -1, hasSongInfo: false })
 let _hintTimer = null
+let _hintH = 0
+let _hintOffset = 0
+let _hintOffsetTimer = null
+let _hintLeaveTimer = null
 
 function clearHintTimer() {
   if (_hintTimer) {
@@ -327,7 +334,7 @@ function scrollToLine(index, animate = true) {
     const isLast = index >= total - 1
 
     const ratio = (vl >= 2 && !isLast) ? 0.33 : 0.5
-    const targetScroll = lineEl.offsetTop - containerHeight * ratio + lineEl.offsetHeight / 2
+    const targetScroll = lineEl.offsetTop + _hintOffset - containerHeight * ratio + lineEl.offsetHeight / 2
 
     if (!animate) {
       scrollRef.value.style.transition = 'none'
@@ -564,9 +571,6 @@ if (window.electronAPI) {
       if (upcoming.value.visible && data.remaining != null) {
         const rem = Number(data.remaining) || 0
         upcoming.value = { ...upcoming.value, remaining: rem }
-        if (rem <= 0.5) {
-          upcoming.value = { ...upcoming.value, visible: false, remaining: 0 }
-        }
       }
       return
     }
@@ -582,7 +586,34 @@ if (window.electronAPI) {
 
     // 长间奏提示状态
     if (data?.upcoming) {
+      const prevVisible = hintVisible.value
       upcoming.value = data.upcoming
+      if (upcoming.value.visible) {
+        // 记录位置快照，保持三点行在 DOM 中稳定
+        hintAnchor.value = {
+          prevIndex: data.upcoming.prevIndex ?? -1,
+          hasSongInfo: !!data.upcoming.hasSongInfo
+        }
+        hintVisible.value = true
+        hintLeaving.value = false
+        clearTimeout(_hintLeaveTimer)
+        _hintOffset = 0
+        nextTick(() => {
+          const el = scrollRef.value?.querySelector('.dl-hint-line')
+          _hintH = el ? el.offsetHeight : 0
+        })
+      } else if (prevVisible) {
+        // 消失只做透明度过渡，延迟移除，布局保持稳定
+        hintLeaving.value = true
+        _hintOffset = _hintH
+        if (_hintOffsetTimer) clearTimeout(_hintOffsetTimer)
+        _hintOffsetTimer = setTimeout(() => { _hintOffset = 0 }, 900)
+        if (_hintLeaveTimer) clearTimeout(_hintLeaveTimer)
+        _hintLeaveTimer = setTimeout(() => {
+          hintVisible.value = false
+          hintLeaving.value = false
+        }, 600)
+      }
     }
 
     // 结构更新：structure 或 state 携带 lines 且发生变化时替换整份歌词
@@ -900,6 +931,9 @@ html, body {
   opacity: 0;
 }
 .dl-hint-line.hint-hidden {
+  opacity: 0;
+}
+.dl-hint-line.hint-leaving {
   opacity: 0;
 }
 

@@ -129,12 +129,13 @@ function buildStructurePayload() {
 
 // 运行时状态：行/重叠/设置变化时推送
 function buildStatePayload() {
-  const { lines } = buildLines()
+  const { lines, lineIndex } = buildLines()
   return {
     type: 'state',
     // 携带完整结构：窗口加载完成后下次切行即可补上，避免首帧丢失后永久空白
     lines,
-    currentLineIndex: currentLineIndex.value,
+    // 桌面视角索引：首句前结构含歌曲信息行，需 +1 对齐
+    currentLineIndex: lineIndex,
     currentTime: currentTime.value,
     overlap: overlapLines.value,
     upcoming: {
