@@ -34,11 +34,11 @@
               >
                 <div class="dl-line__inner" :style="lineStyle(index)">
                   <!-- 活跃行 + 逐字数据：拆分 word-seg 供 rAF 逐字填充 -->
-                  <p v-if="index === currentLineIndex && line.wordLevel && line.segments && line.segments.length >= 2"
-                     class="dl-line__original word-level">
-                    <span v-for="(seg, si) in line.segments" :key="si"
-                          class="word-seg" :data-i="si" :data-text="seg.text">{{ seg.text }}</span>
-                  </p>
+                <p v-if="index === currentLineIndex && line.wordLevel && line.segments && line.segments.length >= 2"
+                   class="dl-line__original word-level">
+                  <span v-for="(seg, si) in line.segments" :key="si"
+                        class="word-seg" :data-i="si" :data-text="seg.text">{{ seg.text.replace(/ /g, '\u00A0') }}</span>
+                </p>
                   <!-- 普通行 / 活跃但无逐字数据 -->
                   <p v-else class="dl-line__original"><span class="dl-line__text">{{ line.original }}</span></p>
                   <p v-if="line.translation" class="dl-line__translation"><span class="dl-line__text">{{ line.translation }}</span></p>
@@ -242,26 +242,15 @@ function requestResize(allowResize = false) {
       const els = Array.from(scrollRef.value.querySelectorAll('.dl-line'))
       const range = els.slice(start, start + vl)
 
-      let width = lastResizeW || 300
+      // 宽度始终使用用户当前拖动的窗口宽度，程序不自动覆盖
+      const width = window.innerWidth
       let height = 32
-      const measured = []
-      if (allowResize) {
-        // 结构/字号变化：按整首歌所有行最大宽度一次性定宽，之后不再随切行抖动
-        for (const el of els) {
-          const nodes = el.querySelectorAll('.dl-line__original, .dl-line__translation, .dl-line__text')
-          let contentW = 0
-          for (const n of nodes) contentW = Math.max(contentW, n.scrollWidth)
-          measured.push(contentW)
-        }
-        width = Math.max(300, ...measured.map(v => v + 48))
-      }
       if (upcoming.value.visible) {
         // 三点期间：只按“三点行 + 可见第二行”测量，避免出现三行
         const hintEl = scrollRef.value.querySelector('.dl-hint-line')
         let h = 32
         if (hintEl) {
           h += hintEl.offsetHeight
-          width = Math.max(width, hintEl.scrollWidth + 48)
         }
         const secondIdx = upcomingPrev.value < 0
           ? (hintStage.value === 0 ? 0 : upcomingNext.value)
@@ -285,13 +274,11 @@ function requestResize(allowResize = false) {
         }
       }
 
-      const finalW = Math.round(Math.min(allowResize ? width : (lastResizeW || width), 10000))
-      // 兜底最小高度：避免测量为空/过小时窗口小到不可见
-      let finalH = Math.max(160, Math.round(height))
-      // 切行时高度只增不减，避免窗口上下抖动
-      if (!allowResize) finalH = Math.max(lastResizeH, finalH)
-      // 尺寸无明显变化时跳过，避免切行频繁抖窗
-      if (Math.abs(finalW - lastResizeW) <= 2 && Math.abs(finalH - lastResizeH) <= 2) return
+      // 高度按行数/字号（结构/设置变化）调整；切行保持不变；宽度维持用户拖动值
+      const finalW = Math.round(width)
+      const computedH = Math.max(160, Math.round(height))
+      const finalH = allowResize ? computedH : (lastResizeH || computedH)
+      if (Math.abs(finalH - lastResizeH) <= 2 && Math.abs(finalW - lastResizeW) <= 2) return
       lastResizeW = finalW
       lastResizeH = finalH
 
@@ -418,20 +405,52 @@ function cancelMarquee() {
 }
 
 function lineDuration(index) {
-  if (index < 0 || index >= parsedLyrics.value.length) return 5000
-  const nextIdx = index + 1
-  if (nextIdx >= parsedLyrics.value.length) return 5000
-  const dur = (parsedLyrics.value[nextIdx].time - parsedLyrics.value[index].time) * 1000
-  return Math.max(2000, Math.min(dur, 12000))
+  const line = parsedLyrics.value[index]
+  if (!line) return 5000
+  const start = Number(line.time) || 0
+  // 有末时间戳按首末滚动；无末时间戳按下句起始；逐字行走逐字高亮
+  let dur = line.end != null && line.end > start
+    ? (line.end - start) * 1000
+    : (index + 1 < parsedLyrics.value.length
+        ? (parsedLyrics.value[index + 1].time - start) * 1000
+        : 5000)
+  return Math.max(2000, dur)
 }
 
 function afterScrollEffect(index) {
+  updateClipFade(index)
   const line = parsedLyrics.value[index]
   if (line?.wordLevel && line?.segments && line.segments.length >= 2) {
     startKaraokeLoop(index)
   } else {
     startActiveMarquee()
   }
+}
+
+// 仅横向超出的行才需要羽化边缘
+function updateClipFade(index) {
+  const lineEl = lineRefs.value[index]
+  if (!lineEl) return
+  // 布局完成后检测，避免宽高尚未稳定时误判
+  requestAnimationFrame(() => {
+    for (const sel of ['.dl-line__original', '.dl-line__translation']) {
+      const p = lineEl.querySelector(sel)
+      if (!p) continue
+      const span = p.querySelector('.dl-line__text')
+      const overflow = span
+        ? span.scrollWidth > p.clientWidth + 2
+        : p.scrollWidth > p.clientWidth + 2
+      p.classList.toggle('dl-clip-fade', overflow)
+      if (overflow) {
+        console.log('[dl-fade]', sel,
+          'pW=' + p.clientWidth,
+          'sW=' + (span ? span.scrollWidth : p.scrollWidth),
+          'mask=' + (getComputedStyle(p).webkitMaskImage || getComputedStyle(p).maskImage))
+      } else {
+        console.log('[dl-fade] skip', sel, 'pW=' + p.clientWidth, 'sW=' + (span ? span.scrollWidth : p.scrollWidth))
+      }
+    }
+  })
 }
 
 function startActiveMarquee() {
@@ -456,8 +475,6 @@ function startActiveMarquee() {
         { transform: `translateX(${-overflow}px)`, offset: 1 }
       ], { duration, easing: 'linear', fill: 'forwards' })
       marqueeAnims.push(anim)
-    } else if (span) {
-      span.style.transform = 'translateX(0)'
     }
   }
 
@@ -806,7 +823,6 @@ html, body {
 .dl-line__text {
   display: inline-block;
   white-space: nowrap;
-  will-change: transform;
 }
 
 .dl-line__translation {
@@ -867,18 +883,25 @@ html, body {
      1px  1px 0 rgba(0, 0, 0, 0.3);
 }
 
+/* 仅横向超出的行：边缘羽化（JS 检测后添加） */
+.dl-line__original.dl-clip-fade,
+.dl-line__translation.dl-clip-fade {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 8%, #000 92%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 8%, #000 92%, transparent 100%);
+}
+
 /* ---- 逐字卡拉 OK ---- */
 .dl-line__original.word-level {
   text-align: center;
-  overflow: visible;
-  white-space: normal;
+  overflow: hidden;
+  white-space: nowrap;
   text-overflow: clip;
 }
 
 .word-seg {
   position: relative;
   display: inline-block;
-  white-space: pre-wrap;
+  white-space: nowrap;
   /* 未播放颜色 */
   color: rgba(255, 255, 255, 0.35);
   text-shadow:

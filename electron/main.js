@@ -778,9 +778,9 @@ ipcMain.on('lyrics:resize', (_event, { width, height }) => {
       width,
       height
     })
-    // 高度允许上下调整，避免测量偏小时窗口小到不可见；宽度保持可拖
-    lyricsWindow.setMinimumSize(200, Math.min(height, 160))
-    lyricsWindow.setMaximumSize(10000, Math.max(height, 2000))
+    // 高度由程序按行数锁定，用户仅可拖动改变宽度
+    lyricsWindow.setMinimumSize(200, height)
+    lyricsWindow.setMaximumSize(10000, height)
   }
 })
 
