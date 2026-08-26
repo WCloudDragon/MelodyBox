@@ -20,15 +20,11 @@
           <p>{{ album.artist }} · {{ album.tracks.length }} 首歌曲</p>
           <p v-if="album.year">发行年份：{{ album.year }}</p>
         </div>
-      </div>
-
-      <div class="section-header">
-        <h3>歌曲列表</h3>
-        <div class="section-header__actions">
+        <div class="album-header__actions">
           <el-button type="primary" @click="playAll">播放全部</el-button>
           <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
             <el-icon><Select /></el-icon>
-            {{ multiSelectMode ? '退出多选' : '多选' }}
+            多选
           </el-button>
         </div>
       </div>
@@ -208,6 +204,7 @@ function batchAddQueueNext(tracks) {
 }
 .album-info h1 { font-size: 28px; font-weight: 700; margin: 0 0 8px; }
 .album-info p { color: var(--text-tertiary); margin: 0 0 2px; font-size: 14px; }
+.album-header__actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
 
 .section-header {
   display: flex; align-items: center; justify-content: space-between;

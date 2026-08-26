@@ -1,18 +1,24 @@
 <template>
   <div class="top-plays-view">
-    <div class="top-plays-view__header">
-      <h1>播放次数</h1>
-      <div class="header-actions">
-        <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
-          <el-icon><Select /></el-icon>
-          {{ multiSelectMode ? '退出多选' : '多选' }}
-        </el-button>
-        <el-button @click="refresh" :loading="loading">
-          <el-icon><Refresh /></el-icon>
-          刷新
-        </el-button>
-      </div>
-    </div>
+    <ListPageHeader
+      title="播放次数"
+      :count="filtered.length"
+      show-search
+      show-sort
+      :show-multi-select="true"
+      :multi-select-active="multiSelectMode"
+      :sort-options="sortOptionsList"
+      :sort-key="sortKey"
+      :sort-order="sortOrder"
+      :search-value="searchQuery"
+      @update:search-value="searchQuery = $event"
+      @sort="onSort"
+      @toggle-multi-select="toggleSelectMode"
+    >
+      <el-button @click="refresh" :loading="loading">
+        <el-icon><Refresh /></el-icon>
+      </el-button>
+    </ListPageHeader>
 
     <!-- 多选工具栏 -->
     <div v-if="multiSelectMode && selected.size > 0" class="batch-toolbar">
@@ -24,25 +30,6 @@
         <el-button size="small" @click="selectAll(filtered)">全选</el-button>
         <el-button size="small" @click="clearSelection">取消</el-button>
       </span>
-    </div>
-
-    <div class="toolbar">
-      <el-input
-        v-model="searchQuery"
-        placeholder="搜索歌曲、歌手、专辑..."
-        clearable
-        :prefix-icon="Search"
-        class="search-input"
-      />
-      <el-select v-model="sortKey" placeholder="排序" class="filter-select">
-        <el-option label="播放次数" value="play_count" />
-        <el-option label="歌名" value="title" />
-        <el-option label="歌手" value="artist" />
-        <el-option label="最近播放" value="last_played" />
-      </el-select>
-      <el-button text @click="sortOrder = sortOrder === 'asc' ? 'desc' : 'asc'">
-        <el-icon><SortUp v-if="sortOrder === 'asc'" /><SortDown v-else /></el-icon>
-      </el-button>
     </div>
 
     <!-- 加载中 -->
@@ -130,6 +117,7 @@ import { useTrackList } from '@/composables/useTrackList'
 import { ElMessage } from '@/utils/toast'
 import LazyCover from '@/components/LazyCover.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
+import ListPageHeader from '@/components/music/ListPageHeader.vue'
 
 import { apiUrl, audioUrl, coverUrl, initAudioPort } from '@/config/api'
 
@@ -150,6 +138,16 @@ const loading = ref(false)
 const searchQuery = ref('')
 const sortKey = ref('play_count')
 const sortOrder = ref('desc')
+const sortOptionsList = [
+  { label: '播放次数', value: 'play_count' },
+  { label: '歌名', value: 'title' },
+  { label: '歌手', value: 'artist' },
+  { label: '最近播放', value: 'last_played' }
+]
+function onSort({ key, order }) {
+  sortKey.value = key
+  sortOrder.value = order
+}
 
 function rankClass(index) {
   if (index === 0) return 'rank--gold'

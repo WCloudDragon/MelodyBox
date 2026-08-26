@@ -1,9 +1,6 @@
 <template>
   <div class="albums-view">
-    <div class="albums-view__header">
-      <h1>专辑</h1>
-      <span class="albums-view__count" v-if="albums.length">{{ albums.length }} 张专辑</span>
-    </div>
+    <ListPageHeader title="专辑" :count="albums.length ? `${albums.length} 张专辑` : null" show-play-mode />
 
     <!-- 空状态 -->
     <div v-if="!hasAlbums" class="empty-state">
@@ -60,6 +57,7 @@ import { useVirtualList } from '@vueuse/core'
 import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
 import LazyCover from '@/components/LazyCover.vue'
+import ListPageHeader from '@/components/music/ListPageHeader.vue'
 import { useScrollMemory } from '@/composables/useScrollMemory'
 
 const libraryStore = useLibraryStore()

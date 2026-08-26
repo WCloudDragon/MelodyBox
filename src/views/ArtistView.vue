@@ -19,15 +19,11 @@
           <h1>{{ artist.name }}</h1>
           <p>{{ artist.tracks.length }} 首歌曲</p>
         </div>
-      </div>
-
-      <div class="section-header">
-        <h3>所有歌曲</h3>
-        <div class="section-header__actions">
+        <div class="artist-header__actions">
           <el-button type="primary" @click="playAll">播放全部</el-button>
           <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
             <el-icon><Select /></el-icon>
-            {{ multiSelectMode ? '退出多选' : '多选' }}
+            多选
           </el-button>
         </div>
       </div>
@@ -197,6 +193,7 @@ function batchAddQueueNext(tracks) {
 }
 .artist-info h1 { font-size: 32px; font-weight: 700; margin: 0 0 8px; }
 .artist-info p { color: var(--text-tertiary); margin: 0; font-size: 14px; }
+.artist-header__actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
 
 .section-header {
   display: flex; align-items: center; justify-content: space-between;

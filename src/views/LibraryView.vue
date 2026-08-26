@@ -1,22 +1,31 @@
 <template>
   <div class="library-view">
-    <div class="library-view__header">
-      <h1>音乐库</h1>
-      <div class="header-actions">
-        <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
-          <el-icon><Select /></el-icon>
-          {{ multiSelectMode ? '退出多选' : '多选' }}
-        </el-button>
-        <el-button @click="handleImport" :loading="libraryStore.isScanning" v-if="isElectron">
-          <el-icon><FolderOpened /></el-icon>
-          导入音乐
-        </el-button>
-        <el-button @click="libraryStore.refreshLibrary" :loading="libraryStore.isLoading" v-if="isElectron && libraryStore.scanDirs.length > 0">
-          <el-icon><Refresh /></el-icon>
-          刷新
-        </el-button>
-      </div>
-    </div>
+    <ListPageHeader
+      title="音乐库"
+      :count="libraryStore.filteredTracks.length"
+      show-search
+      show-sort
+      show-filter
+      :show-multi-select="true"
+      :multi-select-active="multiSelectMode"
+      :sort-options="sortOptionsList"
+      :sort-key="libraryStore.sortKey"
+      :sort-order="libraryStore.sortOrder"
+      :filter-groups="filterGroups"
+      :filter-values="{ source: sourceFilter, genre: libraryStore.filterGenre }"
+      :search-value="libraryStore.searchQuery"
+      @update:search-value="libraryStore.searchQuery = $event"
+      @sort="onSort"
+      @filter="onFilter"
+      @toggle-multi-select="toggleSelectMode"
+    >
+      <el-button @click="handleImport" :loading="libraryStore.isScanning" v-if="isElectron">
+        <el-icon><FolderOpened /></el-icon>
+      </el-button>
+      <el-button @click="libraryStore.refreshLibrary" :loading="libraryStore.isLoading" v-if="isElectron && libraryStore.scanDirs.length > 0">
+        <el-icon><Refresh /></el-icon>
+      </el-button>
+    </ListPageHeader>
 
     <!-- 多选工具栏 -->
     <div v-if="multiSelectMode && selected.size > 0" class="batch-toolbar">
@@ -28,52 +37,6 @@
         <el-button size="small" @click="selectAll(libraryStore.filteredTracks)">全选</el-button>
         <el-button size="small" @click="clearSelection">取消</el-button>
       </span>
-    </div>
-
-    <!-- 搜索与筛选 -->
-    <div class="toolbar">
-      <el-input
-        v-model="libraryStore.searchQuery"
-        placeholder="搜索歌曲、歌手、专辑..."
-        clearable
-        :prefix-icon="Search"
-        class="search-input"
-      />
-      <el-select
-        v-model="libraryStore.filterGenre"
-        placeholder="流派"
-        clearable
-        class="filter-select"
-      >
-        <el-option v-for="g in libraryStore.genres" :key="g" :label="g" :value="g" />
-      </el-select>
-      <el-select
-        v-model="libraryStore.sortKey"
-        placeholder="排序"
-        class="filter-select"
-      >
-        <el-option label="歌名" value="title" />
-        <el-option label="歌手" value="artist" />
-        <el-option label="专辑" value="album" />
-        <el-option label="年份" value="year" />
-        <el-option label="时长" value="duration" />
-      </el-select>
-      <el-button text @click="toggleSortOrder">
-        <el-icon><SortUp v-if="libraryStore.sortOrder === 'asc'" /><SortDown v-else /></el-icon>
-      </el-button>
-      <el-radio-group v-model="sourceFilter" size="small">
-        <el-radio-button value="all">全部</el-radio-button>
-        <el-radio-button value="local">本地</el-radio-button>
-        <el-radio-button v-if="auth.isVip" value="cloud">云端</el-radio-button>
-      </el-radio-group>
-      <el-radio-group v-model="libraryStore.viewMode" size="small">
-        <el-radio-button value="list">
-          <el-icon><List /></el-icon>
-        </el-radio-button>
-        <el-radio-button value="grid">
-          <el-icon><Grid /></el-icon>
-        </el-radio-button>
-      </el-radio-group>
     </div>
 
     <!-- 空状态 -->
@@ -213,6 +176,7 @@ import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } fr
 import MusicCard from '@/components/music/MusicCard.vue'
 import LazyCover from '@/components/LazyCover.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
+import ListPageHeader from '@/components/music/ListPageHeader.vue'
 import { ElMessage } from '@/utils/toast'
 import { useScrollMemory } from '@/composables/useScrollMemory'
 import { useTrackList } from '@/composables/useTrackList'
@@ -242,6 +206,40 @@ const ctxHandler = createCtxHandler(playerStore, router)
 const subActionHandler = createSubActionHandler(router)
 const auth = useAuthStore()
 const sourceFilter = ref('all')
+
+const sortOptionsList = [
+  { label: '歌名', value: 'title' },
+  { label: '歌手', value: 'artist' },
+  { label: '专辑', value: 'album' },
+  { label: '年份', value: 'year' },
+  { label: '时长', value: 'duration' },
+  { label: '创建时间', value: 'created_at' },
+  { label: '修改时间', value: 'file_mtime' }
+]
+const filterGroups = computed(() => [
+  {
+    key: 'source',
+    label: '来源',
+    options: [
+      { label: '全部', value: 'all' },
+      { label: '本地', value: 'local' },
+      ...(auth.isVip ? [{ label: '云端', value: 'cloud' }] : [])
+    ]
+  },
+  {
+    key: 'genre',
+    label: '流派',
+    options: libraryStore.genres.map(g => ({ label: g, value: g }))
+  }
+])
+function onSort({ key, order }) {
+  libraryStore.sortKey = key
+  libraryStore.sortOrder = order
+}
+function onFilter({ key, value }) {
+  if (key === 'source') sourceFilter.value = value
+  else if (key === 'genre') libraryStore.filterGenre = value
+}
 
 const menuItems = computed(() => buildMenuItems('library', ctxMenu.value.track))
 
