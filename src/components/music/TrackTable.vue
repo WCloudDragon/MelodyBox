@@ -39,12 +39,17 @@
           <div class="col-title__text">
             <span class="col-title__name">{{ track.title }}</span>
             <span v-if="showArtist" class="col-title__artist">
-              {{ (track.artist || '').split('/').map(s => s.trim()).join(' / ') }}
+              <template v-for="(name, ai) in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
+                <span v-if="ai > 0" class="col-title__sep"> / </span>
+                <router-link :to="`/artist/${encodeURIComponent(name)}`" class="link col-title__artist__name">{{ name }}</router-link>
+              </template>
             </span>
             <span v-if="track.reason" class="col-title__reason">{{ track.reason }}</span>
           </div>
         </span>
-        <span v-if="showAlbum" class="col-album">{{ track.album || '' }}</span>
+        <span v-if="showAlbum" class="col-album">
+          <router-link v-if="track.album" :to="`/album/${encodeURIComponent(track.album)}`" class="link">{{ track.album }}</router-link>
+        </span>
         <span class="col-quality">
           <span v-if="track.quality" class="quality-tag" :class="qualityClass(track.quality)">
             {{ track.quality }}
@@ -228,6 +233,9 @@ defineExpose({ scrollToTop, bodyRef })
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.col-title__artist__name { color: var(--text-secondary); text-decoration: none; }
+.col-title__artist__name:hover { color: var(--accent-color); text-decoration: underline; }
+.col-title__sep { font-size: 12px; color: var(--text-tertiary); }
 .col-title__reason {
   font-size: 11px;
   color: var(--text-tertiary);
@@ -258,6 +266,8 @@ defineExpose({ scrollToTop, bodyRef })
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.link { color: var(--text-secondary); text-decoration: none; }
+.link:hover { color: var(--accent-color); text-decoration: underline; }
 
 /* 音质列 */
 .col-quality {

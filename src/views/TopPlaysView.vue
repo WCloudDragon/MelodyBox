@@ -83,7 +83,7 @@
                 <span class="col-title__name">{{ track.title }}</span>
                 <span class="col-title__artist-row">
                   <template v-for="(name, ai) in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
-                    <router-link v-if="ai > 0" :to="`/artist/${encodeURIComponent(name)}`" class="artist-sep link"> / </router-link>
+                    <span v-if="ai > 0" class="col-title__sep"> / </span>
                     <router-link :to="`/artist/${encodeURIComponent(name)}`" class="link col-title__artist">{{ name }}</router-link>
                   </template>
                 </span>
@@ -308,6 +308,7 @@ refresh()
 .col-title__name { font-size: 15px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .col-title__artist-row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .col-title__artist { font-size: 12px; line-height: 1.3; color: var(--text-secondary); }
+.col-title__sep { font-size: 12px; color: var(--text-tertiary); }
 .link { color: var(--text-secondary); text-decoration: none; }
 .link:hover { color: var(--accent-color); text-decoration: underline; }
 

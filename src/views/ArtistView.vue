@@ -63,7 +63,13 @@
             <div v-else class="row-cover row-cover--empty"><el-icon size="14"><Headset /></el-icon></div>
             <div class="col-title__text">
               <span class="col-title__name">{{ track.title }}</span>
-              <span class="col-title__artist">{{ track.artist }}</span>
+              <span class="col-title__artist-row">
+                <template v-for="(name, ai) in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
+                  <span v-if="ai > 0" class="col-title__sep"> / </span>
+                  <router-link v-if="name !== artist?.name" :to="`/artist/${encodeURIComponent(name)}`" class="link col-title__artist">{{ name }}</router-link>
+                  <span v-else class="col-title__artist">{{ name }}</span>
+                </template>
+              </span>
             </div>
           </span>
           <span class="col-album">
@@ -225,7 +231,9 @@ function batchAddQueueNext(tracks) {
 .col-title { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 15px; overflow: hidden; }
 .col-title__text { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
 .col-title__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-title__artist { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-title__artist-row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col-title__artist { font-size: 12px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-title__sep { font-size: 12px; color: var(--text-tertiary); }
 .row-cover { width: 44px; height: 44px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
 .row-cover--empty {
   background: var(--bg-tertiary); display: flex;

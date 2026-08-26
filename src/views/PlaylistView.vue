@@ -77,8 +77,15 @@
                 <div v-else class="row-cover row-cover--empty"><el-icon size="14"><Headset /></el-icon></div>
                 <span>{{ track.title }}</span>
               </span>
-              <span class="col-artist">{{ (track.artist || '').split('/').map(s => s.trim()).join(' / ') }}</span>
-              <span class="col-album">{{ track.album || '' }}</span>
+              <span class="col-artist">
+                <template v-for="(name, ai) in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
+                  <span v-if="ai > 0" class="col-title__sep"> / </span>
+                  <router-link :to="`/artist/${encodeURIComponent(name)}`" class="link col-artist__link">{{ name }}</router-link>
+                </template>
+              </span>
+              <span class="col-album">
+                <router-link v-if="track.album" :to="`/album/${encodeURIComponent(track.album)}`" class="link">{{ track.album }}</router-link>
+              </span>
               <span class="col-quality">
                 <span v-if="track.quality" class="quality-tag" :class="qualityClass(track.quality)">{{ track.quality }}</span>
               </span>
@@ -314,7 +321,11 @@ function batchAddQueueNext(tracks) {
   align-items: center; justify-content: center; color: var(--text-tertiary);
 }
 .col-artist { width: 160px; font-size: 13px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-artist__link { color: var(--text-secondary); text-decoration: none; }
+.col-artist__link:hover { color: var(--accent-color); text-decoration: underline; }
 .col-album { width: 180px; font-size: 13px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link { color: var(--text-secondary); text-decoration: none; }
+.link:hover { color: var(--accent-color); text-decoration: underline; }
 .col-quality { width: 52px; display: flex; align-items: center; justify-content: flex-end; font-size: 11px; }
 .col-time { width: 60px; text-align: right; font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 .col-action { width: 40px; text-align: center; }

@@ -264,6 +264,8 @@ function playArtist(artist) {
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 4px;
+  width: 100%;
+  text-align: left;
 }
 .truncate {
   overflow: hidden;

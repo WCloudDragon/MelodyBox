@@ -265,15 +265,20 @@ function playAlbum(album) {
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 4px;
+  width: 100%;
+  text-align: left;
 }
 .album-card__artist {
   font-size: 12px;
   color: var(--text-secondary);
   margin-bottom: 4px;
+  width: 100%;
+  text-align: left;
 }
 .album-card__count {
   font-size: 12px;
   color: var(--text-tertiary);
+  text-align: left;
 }
 .truncate {
   overflow: hidden;

@@ -74,7 +74,6 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 14h8v2H3v-2zm10 0h8v6h-8v-6zm2 2h4v2h-4v-2z"/>
               </svg>
-              <span class="queue-count" v-if="queue.length">{{ queue.length }}</span>
             </button>
             <button class="ctrl-btn" :class="{ active: showDesktopLyrics }" v-ripple @click="player.toggleDesktopLyrics" :title="showDesktopLyrics ? '关闭桌面歌词' : '打开桌面歌词'">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">

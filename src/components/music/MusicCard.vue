@@ -53,7 +53,12 @@
     </div>
     <div class="music-card__info">
       <div class="music-card__title truncate" :title="track.title">{{ track.title }}</div>
-      <div class="music-card__artist truncate" :title="track.artist">{{ track.artist.split('/').map(s => s.trim()).join(' / ') }}</div>
+      <div class="music-card__artist truncate" :title="track.artist">
+        <template v-for="(name, ai) in artistNames" :key="ai">
+          <span v-if="ai > 0" class="music-card__sep"> / </span>
+          <router-link :to="`/artist/${encodeURIComponent(name)}`" class="music-card__artist-link">{{ name }}</router-link>
+        </template>
+      </div>
     </div>
   </div>
 </template>
@@ -70,6 +75,9 @@ const props = defineProps({
 defineEmits(['click', 'play'])
 
 const metaLabels = { title: '标题', artist: '艺术家', album: '专辑', genre: '流派' }
+const artistNames = computed(() =>
+  (props.track.artist || '').split('/').map(s => s.trim()).filter(Boolean)
+)
 
 // 纯本地（无云端副本，无下架云端）
 const isLocalOnly = computed(() =>
@@ -158,6 +166,9 @@ const diffFields = computed(() => {
 .music-card__cover:hover .cover-overlay { opacity: 1; }
 .music-card__title { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
 .music-card__artist { font-size: 12px; color: var(--text-tertiary); }
+.music-card__sep { color: var(--text-tertiary); }
+.music-card__artist-link { color: var(--text-tertiary); text-decoration: none; }
+.music-card__artist-link:hover { color: var(--accent-color); text-decoration: underline; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 来源标签区域 */
