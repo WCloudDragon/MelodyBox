@@ -1,5 +1,6 @@
 import { ref, h } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { ElMessage } from '@/utils/toast'
 import { usePlaylistStore } from '@/stores/playlist'
 
 /**

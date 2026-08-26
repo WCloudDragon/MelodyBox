@@ -80,11 +80,16 @@
               <div class="col-title__text">
                 <span class="col-title__name">{{ track.title }}</span>
                 <span class="col-title__artist-row">
-                  <span class="col-title__artist">{{ (track.artist || '').split('/').map(s => s.trim()).join(' / ') }}</span>
+                  <template v-for="(name, ai) in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
+                    <router-link v-if="ai > 0" :to="`/artist/${encodeURIComponent(name)}`" class="artist-sep link"> / </router-link>
+                    <router-link :to="`/artist/${encodeURIComponent(name)}`" class="link col-title__artist">{{ name }}</router-link>
+                  </template>
                 </span>
               </div>
             </span>
-            <span class="col-album">{{ track.album }}</span>
+            <span class="col-album">
+              <router-link v-if="track.album" :to="`/album/${encodeURIComponent(track.album)}`" class="link">{{ track.album }}</router-link>
+            </span>
             <span class="col-time-text" v-ripple :title="showRelative ? '点击查看具体时间' : '点击查看相对时间'" @click="showRelative = !showRelative">{{ showRelative ? formatPlayedTime(track.played_at) : formatAbsoluteTime(track.played_at) }}</span>
             <span class="col-action">
               <el-checkbox v-if="multiSelectMode" :model-value="isSelected(track)" @change="toggleSelect(track)" />
@@ -312,6 +317,8 @@ refresh()
 .col-title__name { font-size: 15px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .col-title__artist-row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .col-title__artist { font-size: 12px; line-height: 1.3; color: var(--text-secondary); }
+.link { color: var(--text-secondary); text-decoration: none; }
+.link:hover { color: var(--accent-color); text-decoration: underline; }
 
 .row-cover { width: 44px; height: 44px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
 .row-cover--empty { background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); }
