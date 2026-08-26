@@ -45,40 +45,42 @@
         </span>
       </div>
 
-      <!-- 多碟分组 -->
-      <template v-if="discGroups.length > 1">
-        <div v-for="(group, gi) in discGroups" :key="gi">
-          <div class="disc-header">Disc {{ group.disc }}</div>
-          <TrackTable
-            :tracks="group.tracks"
-            :current-path="currentTrack?.path"
-            :context-target="contextMenuTarget"
-            :show-header="false"
-            :show-album="false"
-            :show-artist="true"
-            :multi-select-mode="multiSelectMode"
-            :selected-paths="selected"
-            @play="playTrack"
-            @contextmenu="showContextMenu"
-            @toggle-select="toggleSelect"
-          />
+      <!-- 歌曲列表（与艺术家页统一风格，无每首歌封面） -->
+      <template v-for="(group, gi) in discGroups" :key="gi">
+        <div v-if="discGroups.length > 1" class="disc-header">Disc {{ group.disc }}</div>
+        <div
+          v-for="(track, index) in group.tracks"
+          :key="track.path"
+          class="track-row"
+          v-ripple
+          :class="{ playing: currentTrack?.path === track.path, 'track-row--ctx-active': contextMenuTarget === track.path }"
+          @dblclick="playTrack(track)"
+          @contextmenu.prevent="showContextMenu($event, track, { albumName: album?.name })"
+        >
+          <span class="col-index">
+            <span class="index-num">{{ index + 1 }}</span>
+            <el-icon class="play-icon" v-ripple size="16" @click.stop="playTrack(track)"><VideoPlay /></el-icon>
+          </span>
+          <span class="col-title">
+            <span class="col-title__name">{{ track.title }}</span>
+          </span>
+          <span class="col-artist">
+            <router-link
+              v-for="name in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)"
+              :key="name"
+              :to="`/artist/${encodeURIComponent(name)}`"
+              class="link"
+            >{{ name }}</router-link>
+          </span>
+          <span class="col-quality">
+            <span v-if="track.quality" class="quality-tag" :class="qualityClass(track.quality)">{{ track.quality }}</span>
+          </span>
+          <span class="col-time">{{ formatDuration(track.duration) }}</span>
+          <span class="col-action">
+            <el-checkbox v-if="multiSelectMode" :model-value="isSelected(track)" @change="toggleSelect(track)" />
+          </span>
         </div>
       </template>
-
-      <!-- 单碟 -->
-      <TrackTable
-        v-else
-        :tracks="album.tracks"
-        :current-path="currentTrack?.path"
-        :context-target="contextMenuTarget"
-        :show-album="false"
-        :show-artist="true"
-        :multi-select-mode="multiSelectMode"
-        :selected-paths="selected"
-        @play="playTrack"
-        @contextmenu="showContextMenu"
-        @toggle-select="toggleSelect"
-      />
     </div>
 
     <div v-else class="empty-state">
@@ -108,9 +110,9 @@ import { storeToRefs } from 'pinia'
 import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
 import { useTrackList } from '@/composables/useTrackList'
+import { formatDuration, qualityClass } from '@/utils/format'
 import { ElMessage } from '@/utils/toast'
 import LazyCover from '@/components/LazyCover.vue'
-import TrackTable from '@/components/music/TrackTable.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
 
 const route = useRoute()
@@ -123,7 +125,7 @@ const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, cr
 
 const ctxHandler = createCtxHandler(playerStore, router)
 const subActionHandler = createSubActionHandler(router)
-const menuItems = computed(() => buildMenuItems('default', ctxMenu.value.track))
+const menuItems = computed(() => buildMenuItems('album', ctxMenu.value.track))
 
 const album = computed(() => {
   const name = route.params.id
@@ -221,6 +223,38 @@ function batchAddQueueNext(tracks) {
   color: var(--text-secondary);
   letter-spacing: 0.5px;
 }
+
+.track-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 1fr 52px 60px 40px;
+  align-items: center;
+  padding: 0 12px;
+  height: 64px;
+  border-radius: 6px;
+  transition: background 0.15s;
+  content-visibility: auto;
+  contain-intrinsic-size: 64px;
+  contain: layout style paint;
+}
+.track-row:hover, .track-row--ctx-active { background: var(--hover-bg); }
+.track-row.playing { background: var(--accent-bg); }
+.track-row.playing .col-title__name { color: var(--accent-color); }
+
+.col-index { width: 40px; text-align: center; }
+.col-index .index-num { font-size: 13px; color: var(--text-tertiary); }
+.col-index .play-icon { display: none; cursor: pointer; color: var(--accent-color); }
+.track-row:hover .col-index .index-num, .track-row--ctx-active .col-index .index-num { display: none; }
+.track-row:hover .col-index .play-icon, .track-row--ctx-active .col-index .play-icon { display: inline-flex; }
+
+.col-title { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 15px; overflow: hidden; }
+.col-title__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-artist { font-size: 14px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+.col-quantity { width: 52px; display: flex; align-items: center; justify-content: flex-end; }
+.col-quality { width: 52px; display: flex; align-items: center; justify-content: flex-end; }
+.col-time { width: 60px; text-align: right; font-size: 13px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.col-action { text-align: center; }
+.link { color: var(--text-secondary); text-decoration: none; }
+.link:hover { color: var(--accent-color); text-decoration: underline; }
 
 .empty-state { text-align: center; padding: 80px 0; color: var(--text-tertiary); }
 </style>

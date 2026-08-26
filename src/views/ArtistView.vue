@@ -52,7 +52,7 @@
           v-ripple
           :class="{ playing: currentTrack?.path === track.path, 'track-row--ctx-active': contextMenuTarget === track.path }"
           @dblclick="playTrack(track)"
-          @contextmenu.prevent="showContextMenu($event, track)"
+          @contextmenu.prevent="showContextMenu($event, track, { artistName: artist?.name })"
         >
           <span class="col-index">
             <span class="index-num">{{ index + 1 }}</span>
@@ -61,7 +61,10 @@
           <span class="col-title">
             <LazyCover v-if="track.cover" :src="track.cover" class="row-cover" :thumb-size="72" />
             <div v-else class="row-cover row-cover--empty"><el-icon size="14"><Headset /></el-icon></div>
-            <span>{{ track.title }}</span>
+            <div class="col-title__text">
+              <span class="col-title__name">{{ track.title }}</span>
+              <span class="col-title__artist">{{ track.artist }}</span>
+            </div>
           </span>
           <span class="col-album">
               <router-link :to="`/album/${encodeURIComponent(track.album || '')}`" class="link">{{ track.album || '未知专辑' }}</router-link>
@@ -120,7 +123,7 @@ const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, cr
 const ctxHandler = createCtxHandler(playerStore, router)
 const subActionHandler = createSubActionHandler(router)
 
-const menuItems = computed(() => buildMenuItems('default', ctxMenu.value.track))
+const menuItems = computed(() => buildMenuItems('artist', ctxMenu.value.track, { artistName: artist.value?.name }))
 
 const artist = computed(() => {
   const name = route.params.name
@@ -220,7 +223,9 @@ function batchAddQueueNext(tracks) {
 .track-row:hover .col-index .play-icon, .track-row--ctx-active .col-index .play-icon { display: inline-flex; }
 
 .col-title { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 15px; overflow: hidden; }
-.col-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-title__text { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.col-title__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-title__artist { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-cover { width: 44px; height: 44px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
 .row-cover--empty {
   background: var(--bg-tertiary); display: flex;

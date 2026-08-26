@@ -13,14 +13,14 @@ export function useTrackList() {
   const contextMenuTarget = ref(null)  // 当前右键目标 track.path，菜单关闭时清空
 
   // --- 右键菜单（含防出屏） ---
-  function showContextMenu(e, track) {
+  function showContextMenu(e, track, context = null) {
     const menuW = 180
     const menuH = 260
     let x = e.clientX
     let y = e.clientY
     if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 8
     if (y + menuH > window.innerHeight) y = window.innerHeight - menuH - 8
-    ctxMenu.value = { visible: true, x, y, track, submenu: null }
+    ctxMenu.value = { visible: true, x, y, track, submenu: null, context }
     contextMenuTarget.value = track.path
   }
 
@@ -34,8 +34,11 @@ export function useTrackList() {
   function openArtistSubmenu() {
     const track = ctxMenu.value.track
     if (!track) return false
-    const names = (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)
-    if (names.length <= 1) return false
+    const exclude = ctxMenu.value.context?.artistName
+    const names = (track.artist || '')
+      .split('/').map(s => s.trim()).filter(Boolean)
+      .filter(n => !exclude || n !== exclude)
+    if (names.length === 0) return false
     ctxMenu.value.submenu = {
       title: '选择艺术家',
       items: names.map(name => ({ label: name, artist: name }))
@@ -100,9 +103,10 @@ export function useTrackList() {
    * 根据页面类型构建右键菜单项
    * @param {'library'|'playlist'|'album'|'artist'|'default'} page
    */
-  function buildMenuItems(page, track) {
+  function buildMenuItems(page, track, context = {}) {
     const artistNames = (track?.artist || '').split('/').map(s => s.trim()).filter(Boolean)
     const hasMultiArtist = artistNames.length > 1
+    const currentArtist = context.artistName
     const items = [
       { label: '播放', action: 'play' },
       { label: '插播至当前播放后', action: 'addQueueNext' },
@@ -114,9 +118,22 @@ export function useTrackList() {
     } else {
       items.push({ label: '从歌单移除', action: 'remove', danger: true }, '-')
     }
+    if (page !== 'album') {
+      items.push({ label: '跳转到专辑', action: 'goAlbum' })
+    }
+    // 艺术家详情页：单艺术家不显示“跳转艺术家”；多艺术家必须二级（剔除当前歌手）
+    let showGoArtist = true
+    let hasGoArtistSub = hasMultiArtist
+    if (page === 'artist') {
+      showGoArtist = hasMultiArtist
+      if (showGoArtist && currentArtist) {
+        hasGoArtistSub = artistNames.some(n => n !== currentArtist)
+      }
+    }
+    if (showGoArtist) {
+      items.push({ label: '跳转到艺术家', action: 'goArtist', hasSubmenu: hasGoArtistSub })
+    }
     items.push(
-      { label: '跳转到专辑', action: 'goAlbum' },
-      { label: '跳转到艺术家', action: 'goArtist', hasSubmenu: hasMultiArtist },
       '-',
       { label: '音轨信息', action: 'trackInfo' }
     )
