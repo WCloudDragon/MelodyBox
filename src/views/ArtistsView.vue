@@ -40,6 +40,7 @@
               <div class="artist-card__info">
                 <div class="artist-card__name truncate" :title="artist.name">{{ artist.name }}</div>
                 <div class="artist-card__count">{{ artist.tracks.length }} 首歌曲</div>
+                <div class="artist-card__albums">{{ albumCountOf(artist) }} 张专辑</div>
               </div>
             </div>
             <template v-for="ph in (perRow - row.length)" :key="'ph-' + ph">
@@ -67,6 +68,10 @@ const playerStore = usePlayerStore()
 const gridRef = ref(null)
 const artists = computed(() => libraryStore.artists)
 const hasArtists = computed(() => artists.value.length > 0)
+
+function albumCountOf(artist) {
+  return new Set((artist.tracks || []).map(t => t.album).filter(Boolean)).size
+}
 
 // ---- 根据容器宽度实时计算每行卡片数 ----
 const gridWidth = ref(0)
@@ -258,14 +263,25 @@ function playArtist(artist) {
 }
 .artist-card__info {
   margin-top: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 0 6px;
+  text-align: center;
 }
 .artist-card__name {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 4px;
-  width: 100%;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
 }
 .truncate {
   overflow: hidden;
@@ -275,5 +291,10 @@ function playArtist(artist) {
 .artist-card__count {
   font-size: 12px;
   color: var(--text-tertiary);
+}
+.artist-card__albums {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
 }
 </style>

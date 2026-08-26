@@ -40,7 +40,7 @@
               <div class="album-card__info">
                 <div class="album-card__name truncate" :title="album.name">{{ album.name }}</div>
                 <div class="album-card__artist truncate" :title="album.artist">{{ album.artist }}</div>
-                <div class="album-card__count">{{ album.tracks.length }} 首</div>
+                <div class="album-card__count">{{ album.tracks.length }} 首歌曲</div>
               </div>
             </div>
             <template v-for="ph in (perRow - row.length)" :key="'ph-' + ph">
@@ -258,27 +258,43 @@ function playAlbum(album) {
 }
 .album-card__info {
   margin-top: 12px;
+  width: 100%;
   min-width: 0;
+  padding: 0 6px;
+  text-align: center;
 }
 .album-card__name {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 4px;
-  width: 100%;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
 }
 .album-card__artist {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
   font-size: 12px;
   color: var(--text-secondary);
   margin-bottom: 4px;
-  width: 100%;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
 }
 .album-card__count {
   font-size: 12px;
   color: var(--text-tertiary);
-  text-align: left;
 }
 .truncate {
   overflow: hidden;
