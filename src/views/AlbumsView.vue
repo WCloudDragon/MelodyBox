@@ -220,8 +220,8 @@ function playAlbum(album) {
 }
 .album-card__cover {
   position: relative;
-  width: 140px;
-  height: 140px;
+  width: min(140px, 100%);
+  height: auto;
   border-radius: 8px;
   overflow: hidden;
   margin: 0 auto;

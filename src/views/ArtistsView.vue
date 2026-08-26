@@ -223,8 +223,8 @@ function playArtist(artist) {
 }
 .artist-card__avatar {
   position: relative;
-  width: 140px;
-  height: 140px;
+  width: min(140px, 100%);
+  height: auto;
   border-radius: 50%;
   overflow: hidden;
   margin: 0 auto;
