@@ -68,6 +68,7 @@
 - 窗口：高度按行数锁定，宽度用户自由拖（`lyricsResize` 以窗口中心为锚），拖拽时 `resize` 事件触发 `_activeRemeasure` 实时重测溢出/对齐范围（滚动进度不变）。
 - **横向羽化（已解决，勿回退 mask 方案）**：本窗口渲染器里，mask 挂在 transform 滚动容器内部（文本 `<p>` 或 `.dl-line__inner` 合成层）一律不渲染；WAAPI/合成器驱动的动画在 masked 视口内会被冻结在首帧。最终方案：mask 挂在 `.lyrics-viewport`（滚动容器之外），羽化宽度由 JS 按各文本行的当前裁剪量动态写入（对齐端零羽化，保证行首/行尾完整可见）；跑马灯因此改用 rAF 主循环写 `style.transform`（~30fps 跳帧），普通行行首→行尾对称往返（两端各停 12%），逐字行滚动跟随演唱点（锚定可视区 35% 处，clamp 到行首/行尾对齐范围）。逐字行必须套 `.dl-line__text` 包裹层供整体位移。
 - 活跃行 font-size 恒为基础字号（`--dl-active-*` 变量已定义但无 CSS 消费），变大纯靠 inner 的 `transform: scale`，不影响布局测量，`scrollWidth`/`offsetLeft` 可直接用。
+- 后续迭代补充（勿回退）：歌曲信息合成行**整首歌常驻**结构，视图索引 = 真实索引 + 1（`upcomingNext`/`isPrev`/三点插入位均 +1）；跑马灯溢出按**视觉宽度**（layout × scale）判定，静止期贴左 6px 零左羽化；三点只在**真实空区**显示（与全屏同口径：`computeActiveSet` 活跃守卫），切歌瞬间 sender 用 `switchingTrack` 抑制假三点；三点出现窗口增高 + 顶对齐，离场 600ms 移除时无动画反向补偿滚动量，结构替换时 `resetHintForStructure` 复位离场状态；跑马灯/卡拉OK均有 600ms 自校准与 resize 实时重测，定时器统一清理；对齐/羽化全部基于实测 `offsetLeft` 反推（`computeNaturalVisual`），不要恢复居中几何假设。
 
 ### 5.3 全屏歌词（NowPlayingPanel）
 

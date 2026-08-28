@@ -55,7 +55,7 @@
               </div>
               <!-- 三点作为独立行：首句前跟在歌曲信息行之后，句间跟在刚结束行之后 -->
               <div
-                v-if="hintVisible && (index === hintAnchor.prevIndex || (hintAnchor.prevIndex < 0 && hintAnchor.hasSongInfo && index === 0))"
+                v-if="hintVisible && (index === hintAnchor.prevIndex + 1 || (hintAnchor.prevIndex < 0 && hintAnchor.hasSongInfo && index === 0))"
                 :ref="setHintTopRef"
                 class="dl-hint-line"
                 :style="hintStyle"
@@ -108,6 +108,26 @@ function clearHintTimer() {
   }
 }
 
+// 结构替换（切歌/歌词变更）时复位旧三点离场流程。
+// keepVisible：新结构自身带三点（如新歌首行前长间隙）时保留 hintVisible，
+// 只清理旧歌词遗留的滚动偏移补偿与定时器；否则连三点显隐一起复位
+function resetHintForStructure(keepVisible = false) {
+  clearHintTimer()
+  if (_hintOffsetTimer) {
+    clearTimeout(_hintOffsetTimer)
+    _hintOffsetTimer = null
+  }
+  if (_hintLeaveTimer) {
+    clearTimeout(_hintLeaveTimer)
+    _hintLeaveTimer = null
+  }
+  if (!keepVisible) hintVisible.value = false
+  hintLeaving.value = false
+  hintStage.value = 0
+  _hintOffset = 0
+  _hintH = 0
+}
+
 // 首句前三点分阶段：先显示歌曲信息，1 秒后滚动到三点
 function syncFirstHint() {
   if (!upcoming.value.visible || upcomingPrev.value >= 0) {
@@ -155,13 +175,13 @@ function dotFading(i) {
   return upcoming.value.remaining <= i
 }
 
-// 长间奏三点：索引直接使用主窗口下发的数据（已处理合成行偏移）
+// 长间奏三点：索引直接使用主窗口下发的数据（prevIndex 为真实歌词索引）
+// 注意：歌曲信息合成行自起播起常驻行首，视图索引 = 真实索引 + 1
 const upcomingPrev = computed(() => upcoming.value.visible ? (upcoming.value.prevIndex ?? -1) : -1)
 const upcomingNext = computed(() => {
   if (!upcoming.value.visible) return -1
   const n = upcoming.value.nextIndex ?? -1
-  // 首句前结构含"歌曲信息"合成行，真实首句索引需 +1
-  return upcoming.value.hasSongInfo && upcoming.value.prevIndex < 0 ? n + 1 : n
+  return n < 0 ? -1 : n + 1
 })
 // 三点作为显示主行：放大至 active 比例（透明度由 class 控制，避免覆盖淡出）
 const hintStyle = computed(() => {
@@ -192,7 +212,7 @@ function lineStyle(index) {
   // 上一句全程隐藏，歌曲信息行仅在首句前的第一阶段显示，与三点组两行
   if (upcoming.value.visible) {
     const isInfo = upcoming.value.hasSongInfo && upcomingPrev.value < 0 && index === 0
-    const isPrev = upcomingPrev.value >= 0 && index === upcomingPrev.value
+    const isPrev = upcomingPrev.value >= 0 && index === upcomingPrev.value + 1
     const isNext = upcomingNext.value === index
     const showInfo = isInfo && hintStage.value === 0
 
@@ -280,18 +300,30 @@ function requestResize(allowResize = false) {
       const finalW = Math.round(width)
       const computedH = Math.max(160, Math.round(height))
       const finalH = allowResize ? computedH : (lastResizeH || computedH)
-      if (Math.abs(finalH - lastResizeH) <= 2 && Math.abs(finalW - lastResizeW) <= 2) return
-      lastResizeW = finalW
-      lastResizeH = finalH
-
-      window.electronAPI.lyricsResize(finalW, finalH)
-      // 等待窗口 resize 完成后重新对齐滚动位置
-      _resizeTimer = setTimeout(() => {
-        const idx = currentLineIndex.value
-        if (idx >= 0) {
-          scrollToLine(idx, false)
-        }
-      }, 200)
+      const sizeChanged = Math.abs(finalH - lastResizeH) > 2 || Math.abs(finalW - lastResizeW) > 2
+      if (sizeChanged) {
+        lastResizeW = finalW
+        lastResizeH = finalH
+        window.electronAPI.lyricsResize(finalW, finalH)
+      }
+      // 尺寸真实变化或调用方显式请求（结构/设置/三点出现消失）时重对齐滚动位置；
+      // 纯切行（allowResize=false 且尺寸未变）不重对齐，避免打断正在进行的行滚动动画
+      if (sizeChanged || allowResize) {
+        _resizeTimer = setTimeout(() => {
+          if (upcoming.value.visible) {
+            if (upcomingPrev.value < 0) {
+              hintStage.value >= 1 ? scrollToHintTop(false) : scrollToLine(0, false)
+            } else if (upcomingNext.value >= 0) {
+              scrollToHintTop(false)
+            }
+            return
+          }
+          const idx = currentLineIndex.value
+          if (idx >= 0) {
+            scrollToLine(idx, false)
+          }
+        }, 200)
+      }
     })
   })
 }
@@ -323,14 +355,17 @@ function scrollToLine(index, animate = true) {
     const isLast = index >= total - 1
 
     const ratio = (vl >= 2 && !isLast) ? 0.33 : 0.5
-    const targetScroll = lineEl.offsetTop + _hintOffset - containerHeight * ratio + lineEl.offsetHeight / 2
+    // _hintOffset 只在三点行已从 DOM 移除后补偿（此时行的 offsetTop 已不含三点高度）；
+    // 三点行还在 DOM（含离场过渡期间）时 offsetTop 已包含其高度，再加会双重补偿把行推出视口
+    const hintPad = hintVisible.value ? 0 : _hintOffset
+    const targetScroll = lineEl.offsetTop + hintPad - containerHeight * ratio + lineEl.offsetHeight / 2
 
     if (!animate) {
       scrollRef.value.style.transition = 'none'
       scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
       currentScrollY = -targetScroll
-      // 无动画也启动行内效果（切歌场景）
-      nextTick(() => afterScrollEffect(index))
+      // 立即启动行内效果（布局已稳定，避免新行以居中裁切状态闪现）
+      afterScrollEffect(index)
       return
     }
 
@@ -363,19 +398,24 @@ function scrollToLine(index, animate = true) {
       }, 550)
     }
 
-    // 滚动后启动行内效果（跑马灯 或 逐字卡拉OK）
-    setTimeout(() => afterScrollEffect(index), 100)
+    // 滚动的同时立即启动行内效果（跑马灯贴左定位 / 逐字卡拉OK），消除居中裁切闪现；
+    // 测量值均为布局量（offsetLeft/scrollWidth），不受滚动与缩放过渡影响
+    afterScrollEffect(index)
   })
 }
 
-// 开场三点：让顶部三点行贴近视口中心（单行 0.5 居中；两行 0.33 偏上，等同"滚到第一行"）
-function scrollToHintTop(animate = true, ratio = 0.5) {
-  if (!hintTopRef.value || !scrollRef.value || !mainRef.value) return
+// 三点行对齐：窗口高度已按"三点+下一句"设定（见 requestResize），
+// 直接将三点行顶对齐到视口顶部留白处，保证三点与下一句完整可见
+function scrollToHintTop(animate = true, ratio = 0.5, retried = false) {
+  if (!hintTopRef.value) {
+    // 提示行可能尚未挂载完成，下一渲染帧重试一次
+    if (!retried) nextTick(() => scrollToHintTop(animate, ratio, true))
+    return
+  }
   requestAnimationFrame(() => {
     const el = hintTopRef.value
     if (!el || !scrollRef.value || !mainRef.value) return
-    const containerHeight = Math.max(mainRef.value?.clientHeight || 0, 120)
-    const target = el.offsetTop - containerHeight * ratio + el.offsetHeight / 2
+    const target = el.offsetTop - HINT_TOP_MARGIN
     currentScrollTarget = target
     scrollRef.value.style.transition = animate
       ? 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
@@ -405,6 +445,7 @@ let _mqRafId = null
 let _mqFrameSkip = 0
 let _lastMask = ''
 let _activeRemeasure = null  // 当前跑马灯的实时重测函数（窗口宽度变化时调用）
+let _calTimer = null        // 行位缩放过渡稳定后的自校准定时器
 
 // 复位动态羽化
 function resetMarqueeMask() {
@@ -421,50 +462,89 @@ function cancelMarquee() {
     cancelAnimationFrame(_mqRafId)
     _mqRafId = null
   }
+  if (_calTimer) {
+    clearTimeout(_calTimer)
+    _calTimer = null
+  }
   _activeRemeasure = null
   // 复位循环写入的位移（仅活跃行会有值）
   document.querySelectorAll('.dl-line__text').forEach(s => { s.style.transform = '' })
   resetMarqueeMask()
 }
 
-// 窗口宽度变化（用户拖拽）：rAF 节流后重测当前跑马灯，滚动进度保持不变
+// 窗口宽度变化（用户拖拽）：rAF 节流后重测当前跑马灯，滚动进度保持不变；
+// 若无活动跑马灯（行此前未溢出），对当前活跃行重新测量，拖窄后现场启动滚动
 let _vpResizeRafId = null
 function handleViewportResize() {
   if (_vpResizeRafId) return
   _vpResizeRafId = requestAnimationFrame(() => {
     _vpResizeRafId = null
-    _activeRemeasure?.()
+    if (_activeRemeasure) {
+      _activeRemeasure()
+    } else if (!upcoming.value.visible && !hintVisible.value && currentLineIndex.value >= 0) {
+      afterScrollEffect(currentLineIndex.value)
+    }
   })
 }
 
-// 测量溢出（布局 px）。注意：活跃行 font-size 恒为基础字号（变大纯靠 inner 的
-// transform: scale，不影响布局测量），scrollWidth/clientWidth 无过渡问题，可直接用。
-function measureMarqueeSpan(p) {
+// 跑马灯行的实际视觉缩放：与 lineStyle 的行位映射保持一致
+// （正常活跃行在 row0=满档；间奏三点期间下一句在 row1=1.0）
+function marqueeScaleFor(idx) {
+  const maxScale = (desktopSettings.value.activeScale || 100) / 100
+  if (upcoming.value.visible && upcomingNext.value === idx) return 1
+  return maxScale
+}
+
+// 文本起点在"未位移"状态下的视觉 x（视口坐标）：
+// inner 绕自身中心做 scale，视觉 x = innerX + (layoutX - innerX) * scale。
+// offsetLeft 是布局值、不受 transform 影响，实测反推，杜绝任何居中/坐标假设漂移。
+function computeNaturalVisual(span, scale) {
+  const inner = span.parentElement.parentElement
+  const innerX = inner.offsetLeft + inner.offsetWidth / 2
+  return innerX + (span.offsetLeft - innerX) * scale
+}
+
+// 测试行在视觉上是否完整容纳（不需跑马灯）。
+// 注意必须按视觉宽度（布局宽 × scale）判定：活跃行被 inner scale 放大，
+// 布局放得下但视觉放不下时若不启动跑马灯，首尾会被 overflow 硬裁切断
+function marqueeFitsVisually(span, scale) {
+  const S = span.scrollWidth
+  const vw = span.offsetParent.clientWidth
+  const visLeft = computeNaturalVisual(span, scale)
+  return visLeft >= -2 && visLeft + S * scale <= vw + 2
+}
+
+// 测量溢出（布局 px）。scale 必须传该行的实际视觉缩放（见 marqueeScaleFor）
+function measureMarqueeSpan(p, scale) {
   const span = p.querySelector('.dl-line__text')
   if (!span) return null
-  const S = span.scrollWidth
-  const Wp = p.clientWidth
-  if (S <= Wp + 2) {
+  if (marqueeFitsVisually(span, scale)) {
     span.style.transform = ''
     return null
   }
+  const S = span.scrollWidth
+  const Wp = p.clientWidth
   return {
     span,
     overflow: S - Wp,
-    scale: (desktopSettings.value.activeScale || 100) / 100,
-    width: S
+    scale,
+    width: S,
+    naturalVisual: computeNaturalVisual(span, scale)
   }
 }
 
-// 可视对齐范围（布局 px）：行首对齐“左缘+pad” → 行尾对齐“右缘-pad”。
-// 文本起点视觉 x = VW/2 - S*scale/2 + off*scale（VW 为可视区布局宽，p 占满视口）
+// 可视对齐范围（布局 px）：行首对齐“左缘+HOLD_PAD” → 行尾对齐“右缘-HOLD_PAD”。
+// 基于实测 naturalVisual：静止时行首贴左、无左羽化（用户要求的"居左"），
+// 滚动后左侧动态羽化由 applyMarqueeMask 按实际裁剪量给出
+const HOLD_PAD = 6
+const HINT_TOP_MARGIN = 14  // 三点行顶对齐视口顶部的留白
 function marqueeRange(item) {
-  const { scale, width: S } = item
-  const Wp = item.span.parentElement.clientWidth
-  const pad = 10  // 视觉边距 px，避免字符贴边
+  const vw = item.span.offsetParent.clientWidth
+  const visLeft = item.naturalVisual
+  const visW = item.width * item.scale
   return {
-    offStart: (pad - Wp / 2 + S * scale / 2) / scale,
-    offEnd: (Wp / 2 - pad - S * scale / 2) / scale
+    offStart: (HOLD_PAD - visLeft) / item.scale,
+    offEnd: (vw - HOLD_PAD - visLeft - visW) / item.scale
   }
 }
 
@@ -475,8 +555,7 @@ function marqueeOffset(progress, rng) {
   return rng.offStart + (rng.offEnd - rng.offStart) * ((progress - 0.12) / 0.76)
 }
 
-// 动态羽化：按各行的当前裁剪量写入视口 mask（对齐端裁剪量为 0 → 零羽化）。
-// 文本起点视觉 x = VW/2 - S*scale/2 + off*scale，据此求左右视觉裁剪量
+// 动态羽化：按各行的当前视觉裁剪量写入视口 mask（对齐端裁剪量为 0 → 零羽化）
 function applyMarqueeMask(items) {
   const vp = scrollRef.value?.parentElement
   if (!vp) return
@@ -485,9 +564,10 @@ function applyMarqueeMask(items) {
   let cL = 0
   let cR = 0
   for (const it of items) {
-    const halfSpan = it.width * it.scale / 2 - vw / 2
-    cL = Math.max(cL, Math.max(0, halfSpan - it.off * it.scale))
-    cR = Math.max(cR, Math.max(0, halfSpan + it.off * it.scale))
+    const visLeft = it.naturalVisual + it.off * it.scale
+    const visRight = visLeft + it.width * it.scale
+    cL = Math.max(cL, Math.max(0, -visLeft))
+    cR = Math.max(cR, Math.max(0, visRight - vw))
   }
   const fL = Math.min(FADE, cL)
   const fR = Math.min(FADE, cR)
@@ -510,11 +590,12 @@ function startActiveMarquee() {
   if (!lineEl) return
 
   const duration = lineDuration(idx)
+  const mqScale = marqueeScaleFor(idx)
   const items = []
   for (const sel of ['.dl-line__original', '.dl-line__translation']) {
     const p = lineEl.querySelector(sel)
     if (!p) continue
-    const item = measureMarqueeSpan(p)
+    const item = measureMarqueeSpan(p, mqScale)
     if (item) {
       item.rng = marqueeRange(item)
       items.push(item)
@@ -527,17 +608,18 @@ function startActiveMarquee() {
 
   // 窗口宽度实时重测：更新溢出量/对齐范围，保持滚动进度；不再溢出的行退出滚动
   _activeRemeasure = () => {
+    const scale = marqueeScaleFor(idx)
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i]
-      const S = it.span.scrollWidth
-      const Wp = it.span.parentElement.clientWidth
-      if (S <= Wp + 2) {
+      if (marqueeFitsVisually(it.span, scale)) {
         it.span.style.transform = ''
         items.splice(i, 1)
         continue
       }
-      it.width = S
-      it.overflow = S - Wp
+      it.width = it.span.scrollWidth
+      it.scale = scale
+      it.overflow = it.width - it.span.parentElement.clientWidth
+      it.naturalVisual = computeNaturalVisual(it.span, scale)
       it.rng = marqueeRange(it)
     }
     if (!items.length) {
@@ -551,6 +633,8 @@ function startActiveMarquee() {
     }
     applyMarqueeMask(items)
   }
+  // 行位缩放（inner 0.5s 过渡）稳定后自校准一次
+  _calTimer = setTimeout(() => _activeRemeasure?.(), 600)
 
   // 立即定位到行首对齐位，避免居中裁剪状态的闪烁
   for (const it of items) {
@@ -560,7 +644,8 @@ function startActiveMarquee() {
   applyMarqueeMask(items)
 
   function tick(now) {
-    if (currentLineIndex.value !== idx) {
+    // 三点出现时当前行转入隐藏列，停止跑马灯（由三点编排接管滚动）
+    if (upcoming.value.visible || currentLineIndex.value !== idx) {
       cancelMarquee()
       return
     }
@@ -627,6 +712,10 @@ function stopKaraokeLoop() {
     cancelAnimationFrame(karaokeRafId)
     karaokeRafId = null
   }
+  if (_calTimer) {
+    clearTimeout(_calTimer)
+    _calTimer = null
+  }
   _karaEntries = null
   _activeRemeasure = null
 }
@@ -649,28 +738,46 @@ function startKaraokeLoop(activeIndex) {
   let mqItem = null
   const p = lineRefs.value[activeIndex]?.querySelector('.dl-line__original.word-level')
   if (p) {
-    mqItem = measureMarqueeSpan(p)
+    mqItem = measureMarqueeSpan(p, marqueeScaleFor(activeIndex))
   }
-  const mqRng = mqItem ? marqueeRange(mqItem) : null
+  const mqRng = mqItem ? marqueeRange(mqItem) : { offStart: 0, offEnd: 0 }
   const mqAnchor = 0.35
-  let mqOff = mqItem ? mqRng.offStart : 0  // 起始：行首对齐左缘+pad
+  let mqOff = mqItem ? mqRng.offStart : 0  // 起始：行首对齐左缘+HOLD_PAD
   // 逐字行文字布局与视口宽无关（word 位置不变），宽度变化只需更新溢出量与对齐范围
   _activeRemeasure = () => {
-    if (!mqItem) return
+    // p 可能已随结构/行切换失效，先守卫再测量
+    if (!p) return
+    // 此前未溢出（无跑马灯）：拖窄后现场测量，溢出则启动滚动
+    if (!mqItem) {
+      mqItem = measureMarqueeSpan(p, marqueeScaleFor(activeIndex))
+      if (!mqItem) return
+      const r = marqueeRange(mqItem)
+      mqRng.offStart = r.offStart
+      mqRng.offEnd = r.offEnd
+      mqOff = mqRng.offStart
+      mqItem.off = mqOff
+      mqItem.span.style.transform = `translateX(${mqOff.toFixed(1)}px)`
+      applyMarqueeMask([mqItem])
+      return
+    }
     const S = mqItem.span.scrollWidth
     const Wp = p.clientWidth
-    if (S <= Wp + 2) {
+    if (marqueeFitsVisually(mqItem.span, marqueeScaleFor(activeIndex))) {
       // 拖宽后不再溢出：停止滚动，复位位移与羽化（卡拉OK高亮继续）
       mqItem.span.style.transform = ''
       mqItem = null
       resetMarqueeMask()
       return
     }
+    mqItem.scale = marqueeScaleFor(activeIndex)
     mqItem.overflow = S - Wp
+    mqItem.naturalVisual = computeNaturalVisual(mqItem.span, mqItem.scale)
     const rng = marqueeRange(mqItem)
     mqRng.offStart = rng.offStart
     mqRng.offEnd = rng.offEnd
   }
+  // 行位缩放（inner 0.5s 过渡）稳定后自校准一次
+  _calTimer = setTimeout(() => _activeRemeasure?.(), 600)
 
   // 一次性查询 DOM，构建预计算数组（避免每帧 querySelectorAll + parseInt）
   _karaEntries = []
@@ -703,7 +810,8 @@ function startKaraokeLoop(activeIndex) {
   _karaFrameSkip = 0
 
   function tick() {
-    if (currentLineIndex.value !== activeIndex) {
+    // 三点出现时当前行转入隐藏列，停止卡拉OK（由三点编排接管滚动）
+    if (upcoming.value.visible || currentLineIndex.value !== activeIndex) {
       stopKaraokeLoop()
       return
     }
@@ -715,9 +823,9 @@ function startKaraokeLoop(activeIndex) {
       return
     }
 
-    // 滚动跟随演唱点：文本起点视觉 x = VW/2 - S*scale/2 + off*scale，
-    // 锚定条件 (起点x + bx*scale) = anchor*VW，解出 off 并 clamp 到对齐范围
-    if (mqItem) {
+    // 滚动跟随演唱点：演唱点视觉位置 = naturalVisual + (bx + off)*scale 锚定在
+    // anchor*VW 处，解出 off 并 clamp 到行首/行尾对齐范围
+    if (mqItem && p) {
       const nowSong = estimatedSongTime()
       let bx = 0  // 演唱点 x（布局 px，相对文本起点）
       for (const e of _karaEntries) {
@@ -729,7 +837,7 @@ function startKaraokeLoop(activeIndex) {
         }
       }
       const VW = p.clientWidth
-      const target = (mqAnchor - 0.5) * VW / mqItem.scale + mqItem.width / 2 - bx
+      const target = (mqAnchor * VW - mqItem.naturalVisual) / mqItem.scale - bx
       const clamped = Math.max(mqRng.offEnd, Math.min(mqRng.offStart, target))
       mqOff += (clamped - mqOff) * 0.25  // 平滑跟随，柔化逐字跳变
       mqItem.off = mqOff
@@ -766,6 +874,30 @@ if (window.electronAPI) {
         const rem = Number(data.remaining) || 0
         upcoming.value = { ...upcoming.value, remaining: rem }
       }
+      // 三点锚点实时校正：state 可能滞后于行推进，tick 心跳兜底刷新锚位，
+      // 防止三点滞留旧 DOM 位置被后续滚动拽出视口
+      const tu = data.upcoming
+      if (upcoming.value.visible && tu) {
+        const prev = tu.prevIndex ?? -1
+        const prevChanged = prev !== (upcoming.value.prevIndex ?? -1)
+        const infoChanged = !!tu.hasSongInfo !== !!upcoming.value.hasSongInfo
+        if (prevChanged || infoChanged) {
+          upcoming.value = {
+            ...upcoming.value,
+            prevIndex: prev,
+            nextIndex: tu.nextIndex ?? prev + 1,
+            hasSongInfo: !!tu.hasSongInfo
+          }
+          hintAnchor.value = { prevIndex: prev, hasSongInfo: !!tu.hasSongInfo }
+          nextTick(() => {
+            if (prev < 0) {
+              if (hintStage.value >= 1) scrollToHintTop(true)
+            } else if (upcomingNext.value >= 0) {
+              scrollToHintTop(true)
+            }
+          })
+        }
+      }
       return
     }
 
@@ -783,7 +915,10 @@ if (window.electronAPI) {
       const prevVisible = hintVisible.value
       upcoming.value = data.upcoming
       if (upcoming.value.visible) {
+        // 三点出现：停止上一行的行内效果（其已转入隐藏列），
         // 记录位置快照，保持三点行在 DOM 中稳定
+        cancelMarquee()
+        stopKaraokeLoop()
         hintAnchor.value = {
           prevIndex: data.upcoming.prevIndex ?? -1,
           hasSongInfo: !!data.upcoming.hasSongInfo
@@ -796,16 +931,30 @@ if (window.electronAPI) {
           const el = scrollRef.value?.querySelector('.dl-hint-line')
           _hintH = el ? el.offsetHeight : 0
         })
+        // 三点行较高：窗口高度按"三点行+下一句"增长，否则三点/下一句会被挤出视口
+        requestResize(true)
       } else if (prevVisible) {
         // 消失只做透明度过渡，延迟移除，布局保持稳定
         hintLeaving.value = true
         _hintOffset = _hintH
         if (_hintOffsetTimer) clearTimeout(_hintOffsetTimer)
-        _hintOffsetTimer = setTimeout(() => { _hintOffset = 0 }, 900)
+        _hintOffsetTimer = setTimeout(() => {
+          // 三点行移除后恢复窗口到正常行数高度（_hintOffset 已于 600ms 移除补偿时清零）
+          requestResize(true)
+        }, 900)
         if (_hintLeaveTimer) clearTimeout(_hintLeaveTimer)
         _hintLeaveTimer = setTimeout(() => {
           hintVisible.value = false
           hintLeaving.value = false
+          // 三点行此刻真正从 DOM 移除：其上方内容整体上移 _hintOffset，
+          // 无动画反向补偿滚动量，保持视觉位置不变；补偿完即清零，后续滚动不再受影响
+          if (_hintOffset && scrollRef.value) {
+            currentScrollTarget = Math.max(0, currentScrollTarget - _hintOffset)
+            scrollRef.value.style.transition = 'none'
+            scrollRef.value.style.transform = `translate3d(0, ${-currentScrollTarget}px, 0)`
+            currentScrollY = -currentScrollTarget
+            _hintOffset = 0
+          }
         }, 600)
       }
     }
@@ -829,6 +978,10 @@ if (window.electronAPI) {
 
     // 结构变化（含首帧）：先定位，无动画
     if (data?.type === 'structure' || lyricsChanged) {
+      // 切歌时若旧三点仍在显示/离场流程中：先复位旧三点离场状态再定位，
+      // 防止残留 _hintOffset 被 scrollToLine 计入滚动目标、把新歌词推偏出视口；
+      // 新结构自身带三点时保留其显隐（由前面的 upcoming 块重新锚定）
+      resetHintForStructure(data?.upcoming?.visible === true)
       currentLineIndex.value = newIndex
       if (newIndex >= 0 && newIndex < parsedLyrics.value.length) {
         const activeLine = parsedLyrics.value[newIndex]
@@ -838,6 +991,8 @@ if (window.electronAPI) {
         requestResize(true)
         if (upcoming.value.visible && upcomingPrev.value < 0) {
           syncFirstHint()
+        } else if (upcoming.value.visible) {
+          nextTick(() => scrollToHintTop(false))
         } else {
           nextTick(() => scrollToLine(newIndex, false))
         }
@@ -862,11 +1017,11 @@ if (window.electronAPI) {
       }
     }
 
-    // 长间奏：滚动到下一句位置，让三点（位于上句之后）贴近可视中心
+    // 长间奏：三点行顶对齐（窗口已按三点高度增长，顶对齐保证三点完整可见）
     if (upcoming.value.visible && upcomingPrev.value < 0) {
       syncFirstHint()
     } else if (upcoming.value.visible && upcomingNext.value >= 0) {
-      nextTick(() => scrollToLine(upcomingNext.value, true))
+      nextTick(() => scrollToHintTop(true))
     } else if (!upcoming.value.visible) {
       clearHintTimer()
       hintStage.value = 0

@@ -23,6 +23,9 @@ const isInLyricsWindow = computed(() => window.location.hash === '#/desktop-lyri
 
 const currentLineIndex = ref(-1)
 const overlapLines = ref([])
+// 切歌瞬间 currentTime 仍是上一首的时间：以旧时间计算新歌词的间奏提示
+// 会得出一段指向歌词中后部的假三点/假锚位，抑制到播放时间归零后再恢复
+const switchingTrack = ref(false)
 
 const parsedLyrics = computed(() => {
   const raw = currentTrack.value?.lyrics
@@ -53,7 +56,11 @@ const upcomingRemaining = computed(() => {
   return next - now
 })
 const showUpcomingHint = computed(() => {
+  if (switchingTrack.value) return false
   if (!parsedLyrics.value.length) return false
+  // 与全屏页同口径：三点只出现在真实空区（无活跃行）。
+  // 活跃期间即使句间隔很长也不显示——无结束时间戳的行全程活跃填缝（全屏拍板行为）
+  if (computeActiveSet(parsedLyrics.value, currentTime.value).activeIndexes.length > 0) return false
   if (/纯音乐/.test(currentTrack.value?.lyrics || '')) return false
   if (upcomingRemaining.value <= 0) return false
   const list = parsedLyrics.value
@@ -77,11 +84,11 @@ function buildSettings() {
 // 构建完整歌词行结构
 function buildLines() {
   const idx = currentLineIndex.value
-  const total = parsedLyrics.value.length
   const track = currentTrack.value
 
-  // 首个时间戳到达前，把歌曲信息作为一条合成歌词行插入队列开头
-  const needsSongInfo = track && (total === 0 || idx < 0)
+  // 歌曲信息合成行在整首歌期间常驻行首（仅切歌时移除）：
+  // 若在首个真实歌词行激活时移除，结构替换会令桌面歌词"两行骤变一行"且无过渡动画
+  const needsSongInfo = !!track
   const lines = parsedLyrics.value.map(line => ({
     time: line.time,
     end: line.end ?? null,
@@ -121,7 +128,7 @@ function buildStructurePayload() {
       remaining: upcomingRemaining.value,
       prevIndex: hintPrevIndex.value,
       nextIndex: hintPrevIndex.value + 1,
-      hasSongInfo: !!currentTrack.value && (parsedLyrics.value.length === 0 || currentLineIndex.value < 0)
+      hasSongInfo: !!currentTrack.value
     },
     settings: buildSettings()
   }
@@ -143,7 +150,7 @@ function buildStatePayload() {
       remaining: upcomingRemaining.value,
       prevIndex: hintPrevIndex.value,
       nextIndex: hintPrevIndex.value + 1,
-      hasSongInfo: !!currentTrack.value && (parsedLyrics.value.length === 0 || currentLineIndex.value < 0)
+      hasSongInfo: !!currentTrack.value
     },
     settings: buildSettings()
   }
@@ -173,7 +180,14 @@ function startTick() {
         type: 'tick',
         time: player.getLiveTime(),
         playing: player.isPlaying,
-        remaining: showUpcomingHint.value ? upcomingRemaining.value : 0
+        remaining: showUpcomingHint.value ? upcomingRemaining.value : 0,
+        // 三点锚点随心跳实时校正：行切换的 state 可能与间奏判定存在时序差，
+        // 接收端据此修正三点 DOM 锚位，避免三点滞留旧位置被滚出视口
+        upcoming: showUpcomingHint.value ? {
+          prevIndex: hintPrevIndex.value,
+          nextIndex: hintPrevIndex.value + 1,
+          hasSongInfo: !!currentTrack.value
+        } : null
       })
     } catch {
       stopTick()
@@ -255,6 +269,7 @@ watch(() => currentTrack.value?.path, () => {
   _structureAcked = false
   currentLineIndex.value = -1
   overlapLines.value = []
+  switchingTrack.value = true
   if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
     startStructureResend()
     send(buildStructurePayload())
@@ -270,6 +285,8 @@ watch([desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale,
 
 // 当前播放时刻：更新主行与重叠附加行（独立窗口据此推进）
 watch(currentTime, (time) => {
+  // 播放时间归零说明新歌已开始：解除切歌间隙的三点抑制
+  if (switchingTrack.value && time < 1) switchingTrack.value = false
   const list = parsedLyrics.value
   if (!list.length) {
     if (currentLineIndex.value !== -1) currentLineIndex.value = -1
