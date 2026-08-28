@@ -36,8 +36,10 @@
                   <!-- 活跃行 + 逐字数据：拆分 word-seg 供 rAF 逐字填充 -->
                 <p v-if="index === currentLineIndex && line.wordLevel && line.segments && line.segments.length >= 2"
                    class="dl-line__original word-level">
-                  <span v-for="(seg, si) in line.segments" :key="si"
-                        class="word-seg" :data-i="si" :data-text="seg.text">{{ seg.text.replace(/ /g, '\u00A0') }}</span>
+                  <span class="dl-line__text">
+                    <span v-for="(seg, si) in line.segments" :key="si"
+                          class="word-seg" :data-i="si" :data-text="seg.text">{{ seg.text.replace(/ /g, '\u00A0') }}</span>
+                  </span>
                 </p>
                   <!-- 普通行 / 活跃但无逐字数据 -->
                   <p v-else class="dl-line__original"><span class="dl-line__text">{{ line.original }}</span></p>
@@ -397,11 +399,188 @@ function resetScroll() {
 }
 
 // ===== 活跃行跑马灯 =====
-let marqueeAnims = []
+// 注意：视口 mask 会冻结 WAAPI/合成器驱动的 transform 动画（只渲染首帧），
+// 因此跑马灯改用 rAF 主循环直接写 style.transform，强制 masked 内容逐帧重绘。
+let _mqRafId = null
+let _mqFrameSkip = 0
+let _lastMask = ''
+let _activeRemeasure = null  // 当前跑马灯的实时重测函数（窗口宽度变化时调用）
+
+// 复位动态羽化
+function resetMarqueeMask() {
+  const vp = scrollRef.value?.parentElement
+  if (vp && _lastMask) {
+    _lastMask = ''
+    vp.style.webkitMaskImage = ''
+    vp.style.maskImage = ''
+  }
+}
 
 function cancelMarquee() {
-  marqueeAnims.forEach(a => { try { a.cancel() } catch (_) { /* noop */ } })
-  marqueeAnims = []
+  if (_mqRafId) {
+    cancelAnimationFrame(_mqRafId)
+    _mqRafId = null
+  }
+  _activeRemeasure = null
+  // 复位循环写入的位移（仅活跃行会有值）
+  document.querySelectorAll('.dl-line__text').forEach(s => { s.style.transform = '' })
+  resetMarqueeMask()
+}
+
+// 窗口宽度变化（用户拖拽）：rAF 节流后重测当前跑马灯，滚动进度保持不变
+let _vpResizeRafId = null
+function handleViewportResize() {
+  if (_vpResizeRafId) return
+  _vpResizeRafId = requestAnimationFrame(() => {
+    _vpResizeRafId = null
+    _activeRemeasure?.()
+  })
+}
+
+// 测量溢出（布局 px）。注意：活跃行 font-size 恒为基础字号（变大纯靠 inner 的
+// transform: scale，不影响布局测量），scrollWidth/clientWidth 无过渡问题，可直接用。
+function measureMarqueeSpan(p) {
+  const span = p.querySelector('.dl-line__text')
+  if (!span) return null
+  const S = span.scrollWidth
+  const Wp = p.clientWidth
+  if (S <= Wp + 2) {
+    span.style.transform = ''
+    return null
+  }
+  return {
+    span,
+    overflow: S - Wp,
+    scale: (desktopSettings.value.activeScale || 100) / 100,
+    width: S
+  }
+}
+
+// 可视对齐范围（布局 px）：行首对齐“左缘+pad” → 行尾对齐“右缘-pad”。
+// 文本起点视觉 x = VW/2 - S*scale/2 + off*scale（VW 为可视区布局宽，p 占满视口）
+function marqueeRange(item) {
+  const { scale, width: S } = item
+  const Wp = item.span.parentElement.clientWidth
+  const pad = 10  // 视觉边距 px，避免字符贴边
+  return {
+    offStart: (pad - Wp / 2 + S * scale / 2) / scale,
+    offEnd: (Wp / 2 - pad - S * scale / 2) / scale
+  }
+}
+
+// 跑马灯位移（layout px）：行首对齐 → 行尾对齐，两端各停留 12% 保证首末可读
+function marqueeOffset(progress, rng) {
+  if (progress <= 0.12) return rng.offStart
+  if (progress >= 0.88) return rng.offEnd
+  return rng.offStart + (rng.offEnd - rng.offStart) * ((progress - 0.12) / 0.76)
+}
+
+// 动态羽化：按各行的当前裁剪量写入视口 mask（对齐端裁剪量为 0 → 零羽化）。
+// 文本起点视觉 x = VW/2 - S*scale/2 + off*scale，据此求左右视觉裁剪量
+function applyMarqueeMask(items) {
+  const vp = scrollRef.value?.parentElement
+  if (!vp) return
+  const vw = vp.clientWidth
+  const FADE = vw * 0.08
+  let cL = 0
+  let cR = 0
+  for (const it of items) {
+    const halfSpan = it.width * it.scale / 2 - vw / 2
+    cL = Math.max(cL, Math.max(0, halfSpan - it.off * it.scale))
+    cR = Math.max(cR, Math.max(0, halfSpan + it.off * it.scale))
+  }
+  const fL = Math.min(FADE, cL)
+  const fR = Math.min(FADE, cR)
+  let img = 'none'
+  if (fL >= 1 || fR >= 1) {
+    img = `linear-gradient(90deg, transparent 0px, #000 ${fL.toFixed(1)}px, #000 ${(vw - fR).toFixed(1)}px, transparent 100%)`
+  }
+  if (img !== _lastMask) {
+    _lastMask = img
+    vp.style.webkitMaskImage = img
+    vp.style.maskImage = img
+  }
+}
+
+function startActiveMarquee() {
+  cancelMarquee()
+  const idx = currentLineIndex.value
+  if (idx < 0) return
+  const lineEl = lineRefs.value[idx]
+  if (!lineEl) return
+
+  const duration = lineDuration(idx)
+  const items = []
+  for (const sel of ['.dl-line__original', '.dl-line__translation']) {
+    const p = lineEl.querySelector(sel)
+    if (!p) continue
+    const item = measureMarqueeSpan(p)
+    if (item) {
+      item.rng = marqueeRange(item)
+      items.push(item)
+    }
+  }
+  if (!items.length) return
+
+  const start = performance.now()
+  const progressOf = (now) => Math.min(1, (now - start) / duration)
+
+  // 窗口宽度实时重测：更新溢出量/对齐范围，保持滚动进度；不再溢出的行退出滚动
+  _activeRemeasure = () => {
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i]
+      const S = it.span.scrollWidth
+      const Wp = it.span.parentElement.clientWidth
+      if (S <= Wp + 2) {
+        it.span.style.transform = ''
+        items.splice(i, 1)
+        continue
+      }
+      it.width = S
+      it.overflow = S - Wp
+      it.rng = marqueeRange(it)
+    }
+    if (!items.length) {
+      cancelMarquee()
+      return
+    }
+    const progress = progressOf(performance.now())
+    for (const it of items) {
+      it.off = marqueeOffset(progress, it.rng)
+      it.span.style.transform = `translateX(${it.off.toFixed(1)}px)`
+    }
+    applyMarqueeMask(items)
+  }
+
+  // 立即定位到行首对齐位，避免居中裁剪状态的闪烁
+  for (const it of items) {
+    it.off = it.rng.offStart
+    it.span.style.transform = `translateX(${it.off.toFixed(1)}px)`
+  }
+  applyMarqueeMask(items)
+
+  function tick(now) {
+    if (currentLineIndex.value !== idx) {
+      cancelMarquee()
+      return
+    }
+    // 跳帧至 ~30fps：慢速横滚肉眼无差，减半 masked 重绘开销
+    _mqFrameSkip ^= 1
+    const progress = progressOf(now)
+    if (_mqFrameSkip && progress < 1) {
+      _mqRafId = requestAnimationFrame(tick)
+      return
+    }
+    for (const it of items) {
+      it.off = marqueeOffset(progress, it.rng)
+      it.span.style.transform = `translateX(${it.off.toFixed(1)}px)`
+    }
+    applyMarqueeMask(items)
+    if (progress < 1) {
+      _mqRafId = requestAnimationFrame(tick)
+    }
+  }
+  _mqRafId = requestAnimationFrame(tick)
 }
 
 function lineDuration(index) {
@@ -418,82 +597,11 @@ function lineDuration(index) {
 }
 
 function afterScrollEffect(index) {
-  updateClipFade(index)
   const line = parsedLyrics.value[index]
   if (line?.wordLevel && line?.segments && line.segments.length >= 2) {
     startKaraokeLoop(index)
   } else {
     startActiveMarquee()
-  }
-}
-
-// 仅横向超出的行才需要羽化边缘
-function updateClipFade(index) {
-  const lineEl = lineRefs.value[index]
-  if (!lineEl) return
-  // 布局完成后检测，避免宽高尚未稳定时误判
-  requestAnimationFrame(() => {
-    for (const sel of ['.dl-line__original', '.dl-line__translation']) {
-      const p = lineEl.querySelector(sel)
-      if (!p) continue
-      const span = p.querySelector('.dl-line__text')
-      const overflow = span
-        ? span.scrollWidth > p.clientWidth + 2
-        : p.scrollWidth > p.clientWidth + 2
-      p.classList.toggle('dl-clip-fade', overflow)
-      if (overflow) {
-        console.log('[dl-fade]', sel,
-          'pW=' + p.clientWidth,
-          'sW=' + (span ? span.scrollWidth : p.scrollWidth),
-          'mask=' + (getComputedStyle(p).webkitMaskImage || getComputedStyle(p).maskImage))
-      } else {
-        console.log('[dl-fade] skip', sel, 'pW=' + p.clientWidth, 'sW=' + (span ? span.scrollWidth : p.scrollWidth))
-      }
-    }
-  })
-}
-
-function startActiveMarquee() {
-  cancelMarquee()
-  const idx = currentLineIndex.value
-  if (idx < 0) return
-  const lineEl = lineRefs.value[idx]
-  if (!lineEl) return
-
-  const duration = lineDuration(idx)
-
-  // 跑原文
-  const origP = lineEl.querySelector('.dl-line__original')
-  if (origP) {
-    const span = origP.querySelector('.dl-line__text')
-    if (span && span.scrollWidth > origP.clientWidth + 2) {
-      const overflow = span.scrollWidth - origP.clientWidth
-      const anim = span.animate([
-        { transform: 'translateX(0)', offset: 0 },
-        { transform: 'translateX(0)', offset: 0.12 },
-        { transform: `translateX(${-overflow}px)`, offset: 0.88 },
-        { transform: `translateX(${-overflow}px)`, offset: 1 }
-      ], { duration, easing: 'linear', fill: 'forwards' })
-      marqueeAnims.push(anim)
-    }
-  }
-
-  // 跑翻译
-  const transP = lineEl.querySelector('.dl-line__translation')
-  if (transP) {
-    const span = transP.querySelector('.dl-line__text')
-    if (span && span.scrollWidth > transP.clientWidth + 2) {
-      const overflow = span.scrollWidth - transP.clientWidth
-      const anim = span.animate([
-        { transform: 'translateX(0)', offset: 0 },
-        { transform: 'translateX(0)', offset: 0.12 },
-        { transform: `translateX(${-overflow}px)`, offset: 0.88 },
-        { transform: `translateX(${-overflow}px)`, offset: 1 }
-      ], { duration, easing: 'linear', fill: 'forwards' })
-      marqueeAnims.push(anim)
-    } else if (span) {
-      span.style.transform = 'translateX(0)'
-    }
   }
 }
 
@@ -520,6 +628,7 @@ function stopKaraokeLoop() {
     karaokeRafId = null
   }
   _karaEntries = null
+  _activeRemeasure = null
 }
 
 let _karaEntries = null  // [{ span, wordStart, wordEnd }]
@@ -535,6 +644,34 @@ function startKaraokeLoop(activeIndex) {
   const nextLineTime = line.end != null ? line.end
     : (activeIndex + 1 < parsedLyrics.value.length ? parsedLyrics.value[activeIndex + 1].time : line.time + 5)
 
+  // 超长逐字行：滚动位置跟随逐字演唱位置（演唱点锚定在可视区 anchor 处），
+  // 唱到哪滚到哪；起止仍对齐行首/行尾，句切换逻辑不变
+  let mqItem = null
+  const p = lineRefs.value[activeIndex]?.querySelector('.dl-line__original.word-level')
+  if (p) {
+    mqItem = measureMarqueeSpan(p)
+  }
+  const mqRng = mqItem ? marqueeRange(mqItem) : null
+  const mqAnchor = 0.35
+  let mqOff = mqItem ? mqRng.offStart : 0  // 起始：行首对齐左缘+pad
+  // 逐字行文字布局与视口宽无关（word 位置不变），宽度变化只需更新溢出量与对齐范围
+  _activeRemeasure = () => {
+    if (!mqItem) return
+    const S = mqItem.span.scrollWidth
+    const Wp = p.clientWidth
+    if (S <= Wp + 2) {
+      // 拖宽后不再溢出：停止滚动，复位位移与羽化（卡拉OK高亮继续）
+      mqItem.span.style.transform = ''
+      mqItem = null
+      resetMarqueeMask()
+      return
+    }
+    mqItem.overflow = S - Wp
+    const rng = marqueeRange(mqItem)
+    mqRng.offStart = rng.offStart
+    mqRng.offEnd = rng.offEnd
+  }
+
   // 一次性查询 DOM，构建预计算数组（避免每帧 querySelectorAll + parseInt）
   _karaEntries = []
   const spans = document.querySelectorAll('.word-seg')
@@ -543,6 +680,24 @@ function startKaraokeLoop(activeIndex) {
     if (isNaN(i) || i >= segs.length) continue
     const wordEnd = i + 1 < segs.length ? segs[i + 1].time : nextLineTime
     _karaEntries.push({ span, wordStart: segs[i].time, wordEnd, dur: wordEnd - segs[i].time })
+  }
+
+  // 逐字 span 相对文本起点的横向位置（布局 px，offsetLeft/offsetWidth 为
+  // 精确布局值，不受 inner 的 transform scale 影响）
+  if (mqItem && _karaEntries.length) {
+    const wrapper = p.querySelector('.dl-line__text')
+    const wLeft = wrapper.offsetLeft
+    for (const e of _karaEntries) {
+      e.left = e.span.offsetLeft - wLeft
+      e.width = e.span.offsetWidth
+    }
+  }
+
+  // 立即定位到行首对齐位，避免居中裁剪状态的闪烁
+  if (mqItem && mqRng) {
+    mqItem.off = mqRng.offStart
+    mqItem.span.style.transform = `translateX(${mqRng.offStart.toFixed(1)}px)`
+    applyMarqueeMask([mqItem])
   }
 
   _karaFrameSkip = 0
@@ -558,6 +713,28 @@ function startKaraokeLoop(activeIndex) {
     if (_karaFrameSkip) {
       karaokeRafId = requestAnimationFrame(tick)
       return
+    }
+
+    // 滚动跟随演唱点：文本起点视觉 x = VW/2 - S*scale/2 + off*scale，
+    // 锚定条件 (起点x + bx*scale) = anchor*VW，解出 off 并 clamp 到对齐范围
+    if (mqItem) {
+      const nowSong = estimatedSongTime()
+      let bx = 0  // 演唱点 x（布局 px，相对文本起点）
+      for (const e of _karaEntries) {
+        if (e.wordStart <= nowSong) {
+          const fill = e.dur > 0 ? Math.min(1, (nowSong - e.wordStart) / e.dur) : 1
+          bx = e.left + e.width * fill
+        } else {
+          break
+        }
+      }
+      const VW = p.clientWidth
+      const target = (mqAnchor - 0.5) * VW / mqItem.scale + mqItem.width / 2 - bx
+      const clamped = Math.max(mqRng.offEnd, Math.min(mqRng.offStart, target))
+      mqOff += (clamped - mqOff) * 0.25  // 平滑跟随，柔化逐字跳变
+      mqItem.off = mqOff
+      mqItem.span.style.transform = `translateX(${mqOff.toFixed(1)}px)`
+      applyMarqueeMask([mqItem])
     }
 
     const now = estimatedSongTime()
@@ -699,6 +876,7 @@ if (window.electronAPI) {
 
 // ===== 挂载后调整窗口尺寸 =====
 onMounted(() => {
+  window.addEventListener('resize', handleViewportResize)
   if (window.electronAPI) {
     requestResize()
   }
@@ -724,6 +902,11 @@ onUnmounted(() => {
   stopKaraokeLoop()
   cancelMarquee()
   clearHintTimer()
+  window.removeEventListener('resize', handleViewportResize)
+  if (_vpResizeRafId) {
+    cancelAnimationFrame(_vpResizeRafId)
+    _vpResizeRafId = null
+  }
 })
 </script>
 
@@ -768,6 +951,10 @@ html, body {
   overflow: hidden;
   min-height: 0;
   position: relative;
+  /* 横向羽化由 JS 动态写入（见 applyMarqueeMask）：
+     mask 必须挂在 transform 滚动容器之外（合成层内部的 mask 在本窗口不渲染），
+     且羽化宽度需跟随跑马灯位移——对齐端零羽化保证首末字符完整可见，
+     裁剪端按裁剪量羽化，避免常驻渐变区吃掉行首/行尾文本。 */
 }
 
 .lyrics-scroll {
@@ -881,13 +1068,6 @@ html, body {
      1px -1px 0 rgba(0, 0, 0, 0.3),
     -1px  1px 0 rgba(0, 0, 0, 0.3),
      1px  1px 0 rgba(0, 0, 0, 0.3);
-}
-
-/* 仅横向超出的行：边缘羽化（JS 检测后添加） */
-.dl-line__original.dl-clip-fade,
-.dl-line__translation.dl-clip-fade {
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 8%, #000 92%, transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0%, #000 8%, #000 92%, transparent 100%);
 }
 
 /* ---- 逐字卡拉 OK ---- */

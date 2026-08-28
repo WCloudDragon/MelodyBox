@@ -1,6 +1,10 @@
 @echo off
 title MelodyBox Dev
 
+echo [0/3] Cleaning leftover dev processes...
+taskkill /f /im electron.exe >nul 2>&1
+taskkill /f /fi "WINDOWTITLE eq MelodyBox-Flask" >nul 2>&1
+
 echo [1/3] Starting Flask in parallel...
 start "MelodyBox-Flask" cmd /c "cd /d %~dp0backend && D:\Download\Tools\Python\Python313\python.exe app.py"
 

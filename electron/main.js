@@ -550,6 +550,15 @@ function createWindow() {
   ipcMain.handle('window:isMaximized', () => mainWindow.isMaximized())
   mainWindow.on('maximize', () => mainWindow.webContents.send('window:maximizeChange', true))
   mainWindow.on('unmaximize', () => mainWindow.webContents.send('window:maximizeChange', false))
+  // 主窗口关闭即整体退出：桌面歌词窗口开启时 window-all-closed 不会触发，
+  // 否则应用会带着后台歌词窗口（backgroundThrottling=false 的 rAF 循环）残留吃满 CPU
+  mainWindow.on('closed', () => {
+    mainWindow = null
+    closeLyricsWindow()
+    stopFlask()
+    stopAudioServer()
+    if (process.platform !== 'darwin') app.quit()
+  })
   ipcMain.on('window:fullscreen', () => {
     _isFullScreen = !_isFullScreen
     mainWindow.setFullScreen(_isFullScreen)
