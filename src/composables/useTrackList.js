@@ -91,6 +91,16 @@ export function useTrackList() {
           favStore.toggle(track)
           return true
         }
+        case 'goSimilar': {
+          if (track?.id) {
+            router.push({
+              path: '/recommend',
+              query: { mode: 'similar', song_id: track.id, title: track.title || '' },
+            })
+            return 'navigate'
+          }
+          return false
+        }
       }
       return false
     }
@@ -139,6 +149,10 @@ export function useTrackList() {
     }
     if (showGoArtist) {
       items.push({ label: '跳转到艺术家', action: 'goArtist', hasSubmenu: hasGoArtistSub })
+    }
+    // 相似推荐：仅本地歌曲可用（后端 song_id 指向 songs 表）
+    if (track && track.id != null && track.source !== 'cloud') {
+      items.push({ label: '相似推荐', action: 'goSimilar' })
     }
     items.push(
       '-',

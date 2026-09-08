@@ -21,6 +21,7 @@ def row_to_song(row):
     """将 sqlite3.Row 转换为前端期望的格式"""
     keys = row.keys()
     return {
+        'id': row['id'] if 'id' in keys else None,
         'path': row['file_path'],
         'name': os.path.basename(row['file_path']),
         'title': row['title'] or os.path.splitext(os.path.basename(row['file_path']))[0],

@@ -221,18 +221,23 @@ const ctxHandler = createCtxHandler(player, router)
 const subActionHandler = createSubActionHandler(router)
 const playerBarMenuItems = computed(() => {
   const names = (ctxMenu.value.track?.artist || '').split('/').map(s => s.trim()).filter(Boolean)
-  return [
+  const t = ctxMenu.value.track
+  const items = [
     { label: '添加到歌单', action: 'addToPlaylist' },
     '-',
     {
-      label: useFavoritesStore().isFavorite(ctxMenu.value.track) ? '取消收藏' : '收藏',
+      label: useFavoritesStore().isFavorite(t) ? '取消收藏' : '收藏',
       action: 'toggleFavorite',
     },
     { label: '跳转到专辑', action: 'goAlbum' },
     { label: '跳转到艺术家', action: 'goArtist', hasSubmenu: names.length > 1 },
-    '-',
-    { label: '音轨信息', action: 'trackInfo' }
   ]
+  // 相似推荐：仅本地歌曲可用
+  if (t && t.id != null && t.source !== 'cloud') {
+    items.push({ label: '相似推荐', action: 'goSimilar' })
+  }
+  items.push('-', { label: '音轨信息', action: 'trackInfo' })
+  return items
 })
 function onInfoContextMenu(e) {
   if (currentTrack.value) showContextMenu(e, currentTrack.value)
