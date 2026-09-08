@@ -493,7 +493,9 @@ function setLineRef(el, index) {
 
 // ==================== 封面飞行动画（独立 fixed 元素，脱离面板布局） ====================
 
-let flyerCleanup = null
+// 全局唯一飞行代理：{ wrapper, clipEl, shadowEl, rafId, resolve, cur }
+// cur 记录当前视觉状态 { l, t, w, h, br, sh }，供打断时无缝接续
+let flyer = null
 let lyricsScrollCleanup = null
 let wordAnimRaf = null
 let prevLineIndex = -1
@@ -504,13 +506,51 @@ const isUserScrolling = ref(false)   // 用户正在手动滚动歌词
 let userScrollTimer = null           // 5秒空闲定时器
 
 
-function cleanupFlyer() {
-  if (flyerCleanup) { flyerCleanup(); flyerCleanup = null }
+function removeFlyer() {
+  if (!flyer) return
+  cancelAnimationFrame(flyer.rafId)
+  if (flyer.resolve) flyer.resolve()
+  flyer.wrapper.remove()
+  flyer = null
 }
 
 const FLY_DURATION = 600
 const FLY_EASING = [0.2, 0.9, 0.3, 1.0]
 const COVER_SHADOW = { y: 20, blur: 60, opacity: 0.5 }
+
+/**
+ * 90° 圆弧上的点：以 from→to 为弦，圆心位于弦一侧的中垂线上。
+ * flip=false：圆心在弦右下侧，弧在屏幕左上侧凸起（左上四分之一圆）。
+ * flip=true ：圆心在弦左上侧，弧在屏幕右下侧凸起（右下四分之一圆）。
+ */
+function arcPoint(from, to, p, flip = false) {
+  const dx = to.left - from.left
+  const dy = to.top - from.top
+  const d = Math.hypot(dx, dy)
+  if (d < 1) {
+    // 距离过近时退化为直线，避免除零
+    return { left: from.left + dx * p, top: from.top + dy * p }
+  }
+  const cx = (from.left + to.left) / 2
+  const cy = (from.top + to.top) / 2
+  const d2 = d / 2
+  // 中垂线方向 n̂ = (dy, -dx)/d 指向左上方；90° 弧的圆心在弦中点向
+  // n̂ 的 -s·d/2 偏移处，s 取反即翻转到弧的另一侧凸起
+  const s = flip ? 1 : -1
+  const ox = cx + s * (dy / d) * d2
+  const oy = cy + s * (-dx / d) * d2
+  const R = d2 * Math.SQRT2  // 90° 弧半径 = 弦长 / √2
+  let a0 = Math.atan2(from.top - oy, from.left - ox)
+  const a1 = Math.atan2(to.top - oy, to.left - ox)
+  let da = a1 - a0
+  while (da > Math.PI) da -= Math.PI * 2
+  while (da < -Math.PI) da += Math.PI * 2
+  const a = a0 + da * p
+  return {
+    left: ox + Math.cos(a) * R,
+    top: oy + Math.sin(a) * R
+  }
+}
 
 /** cubic-bezier 缓动，与面板过渡曲线一致 */
 function easeCubicBezier(t, x1, y1, x2, y2) {
@@ -528,87 +568,112 @@ function easeCubicBezier(t, x1, y1, x2, y2) {
 }
 
 /**
- * 创建飞行分身。渲染在目标尺寸（高分辨率），通过反向缩放模拟起始的小尺寸，
- * 避免 background-size:cover 在 48px 下渲染低分辨率位图再 scale 放大导致的模糊。
+ * 飞行分身（canonical 可打断 + 弧线轨迹）。
+ * - Transform-only FLIP：wrapper 一次性渲染在"最大参考宽度"（高分辨率位图只缩不放，避免放大模糊），
+ *   动画全程只更新 transform(translate+scale) 与 opacity：纯合成器合成，零 layout / paint / 重栅格化。
+ * - 可打断：复用全局唯一 wrapper，再次调用时取消旧段 rAF 并 resolve，从当前视觉状态无缝接续到新目标，
+ *   同一帧内更新布局尺寸与 transform 起点，不重建 DOM、视觉不跳变。
+ * - 轨迹：位置沿 90° 圆弧（默认左上四分之一，arcFlip=true 时为右下四分之一，圆心在弦另一侧）；
+ *   封面中心沿弧运动，左上角随尺寸缩放自动偏移抵消，视觉路径为纯净圆弧。
+ *   尺寸/圆角/阴影仍线性过渡。圆角受 scale 等比缩放，用 borderRadius = 视觉圆角 / k 补偿。
+ * 结构分两层：clip 负责圆角裁剪图片；shadow 在 clip 之外，避免 overflow 裁掉外阴影。
  */
-function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1 } = {}) {
+function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1, arcFlip = false } = {}) {
   const coverUrl = currentTrack.value?.cover
   if (!coverUrl) return Promise.resolve()
 
   // 确保封面已解码后再启动动画，消除首次触发时 background-image 实时解码卡顿
   return _ensureCoverReady(coverUrl).then(() => {
-  const toW = toRect.width, toH = toRect.height
-  const fromW = fromRect.width
-
   const startBR = parseFloat(fromBR)
   const endBR = parseFloat(toBR)
 
-  // ---------- Transform-only FLIP 飞行 ----------
-  // wrapper 一次性渲染在“最大参考宽度”（高分辨率位图只缩不放，避免放大模糊），
-  // 动画全程只更新 transform(translate+scale) 与 opacity：
-  // 只用合成器合成，零 layout / 零 paint / 零重栅格化，主线程完全释放。
-  // 圆角受 scale 等比缩放，逐帧用 borderRadius = 目标视觉圆角 / k 补偿。
-  // 结构分两层：clip 负责圆角裁剪图片；shadow 在 clip 之外，避免 overflow 裁掉外阴影。
-  const renderW = Math.max(fromW, toW)
-  const renderH = renderW * (toH / toW)   // 保持目标封面宽高比
-  const kStart = fromW / renderW          // 起点等比缩放（宽度基准）
-  const kEnd = toW / renderW              // 终点缩放
-  const tx0 = fromRect.left - toRect.left // 起点位移；终点归零
-  const ty0 = fromRect.top - toRect.top
+  // —— 打断接续：若已有飞行段，以当前视觉状态作为新段起点 ——
+  // l/t 统一记录"封面中心"：中心沿弧运动，左上角随尺寸缩放偏移，视觉无回旋
+  const continuing = !!(flyer && flyer.rafId)
+  const startVis = continuing
+    ? { ...flyer.cur }   // { l, t, w, h, br, sh }（l/t 为中心）
+    : {
+        l: fromRect.left + fromRect.width / 2,
+        t: fromRect.top + fromRect.height / 2,
+        w: fromRect.width, h: fromRect.height,
+        br: startBR, sh: shadowFrom
+      }
+
+  const renderW = Math.max(startVis.w, toRect.width)
+  const renderH = renderW * (toRect.height / toRect.width)  // 保持目标封面宽高比
+  const kStart = startVis.w / renderW                      // 起点等比缩放（宽度基准）
+  const kEnd = toRect.width / renderW                      // 终点缩放
+  const toC = {                                             // 目标封面中心（弧终点）
+    left: toRect.left + toRect.width / 2,
+    top: toRect.top + toRect.height / 2
+  }
 
   function radiusFor(brTarget, scale) {
     return (brTarget / scale) + 'px'
   }
 
-  const wrapper = document.createElement('div')
-  Object.assign(wrapper.style, {
-    position: 'fixed', zIndex: '10000', pointerEvents: 'none',
-    left: toRect.left + 'px', top: toRect.top + 'px',
-    width: renderW + 'px', height: renderH + 'px',
-    transform: `translate3d(${tx0}px, ${ty0}px, 0) scale(${kStart})`,
-    transformOrigin: '0 0',
-    willChange: 'transform'
-  })
+  let wrapper, clipEl, shadowEl
+  if (continuing) {
+    // 打断：取消旧段 rAF、resolve 旧 Promise（让调用方继续收尾），复用 DOM 无缝转向
+    cancelAnimationFrame(flyer.rafId)
+    flyer.resolve()
+    ;({ wrapper, clipEl, shadowEl } = flyer)
+  } else {
+    wrapper = document.createElement('div')
+    Object.assign(wrapper.style, {
+      position: 'fixed', zIndex: '10000', pointerEvents: 'none',
+      transformOrigin: '0 0',
+      willChange: 'transform'
+    })
+    clipEl = document.createElement('div')
+    Object.assign(clipEl.style, {
+      position: 'absolute', inset: '0',
+      overflow: 'hidden', zIndex: '1'
+    })
+    shadowEl = document.createElement('div')
+    Object.assign(shadowEl.style, {
+      position: 'absolute', inset: '0', pointerEvents: 'none', zIndex: '2',
+      boxShadow: `0 ${COVER_SHADOW.y}px ${COVER_SHADOW.blur}px rgba(0,0,0,${COVER_SHADOW.opacity})`
+    })
+    const imgEl = document.createElement('img')
+    imgEl.src = coverUrl
+    Object.assign(imgEl.style, {
+      position: 'absolute', inset: '0',
+      width: '100%', height: '100%',
+      objectFit: 'cover', objectPosition: 'center'
+    })
+    clipEl.appendChild(imgEl)
+    wrapper.appendChild(clipEl)
+    wrapper.appendChild(shadowEl)
+    document.body.appendChild(wrapper)
+  }
 
-  const clipEl = document.createElement('div')
-  Object.assign(clipEl.style, {
-    position: 'absolute', inset: '0',
-    borderRadius: radiusFor(startBR, kStart),
-    overflow: 'hidden',
-    zIndex: '1'
-  })
-
-  const shadowEl = document.createElement('div')
-  Object.assign(shadowEl.style, {
-    position: 'absolute', inset: '0', pointerEvents: 'none',
-    borderRadius: radiusFor(startBR, kStart),
-    boxShadow: `0 ${COVER_SHADOW.y}px ${COVER_SHADOW.blur}px rgba(0,0,0,${COVER_SHADOW.opacity})`,
-    opacity: String(shadowFrom), zIndex: '2'
-  })
-
-  const imgEl = document.createElement('img')
-  imgEl.src = coverUrl
-  Object.assign(imgEl.style, {
-    position: 'absolute', inset: '0',
-    width: '100%', height: '100%',
-    objectFit: 'cover', objectPosition: 'center'
-  })
-
-  clipEl.appendChild(imgEl)
-  wrapper.appendChild(clipEl)
-  wrapper.appendChild(shadowEl)
-  document.body.appendChild(wrapper)
-  wrapper.getBoundingClientRect()
+  // 段起始布局（同一帧内同时改布局尺寸与 transform，无中间绘制 → 不闪跳）
+  // startVis.l/t 是封面中心：左上角 = 中心 − 当前视觉半尺寸
+  const tx0 = startVis.l - (kStart * renderW) / 2 - toRect.left
+  const ty0 = startVis.t - (kStart * renderH) / 2 - toRect.top
+  wrapper.style.left = toRect.left + 'px'
+  wrapper.style.top = toRect.top + 'px'
+  wrapper.style.width = renderW + 'px'
+  wrapper.style.height = renderH + 'px'
+  wrapper.style.transform = `translate3d(${tx0}px, ${ty0}px, 0) scale(${kStart})`
+  clipEl.style.borderRadius = radiusFor(startVis.br, kStart)
+  shadowEl.style.borderRadius = radiusFor(startVis.br, kStart)
+  shadowEl.style.opacity = String(startVis.sh)
 
   const [bx1, by1, bx2, by2] = FLY_EASING
 
   return new Promise(resolve => {
     const startTime = performance.now()
-    let rafId
+    let rafId = null
+    const cur = { ...startVis }
+    // 记录当前视觉状态供打断衔接；resolve 挂在代理上供打断时调用
+    flyer = { wrapper, clipEl, shadowEl, rafId, resolve, cur }
 
     const finish = () => {
-      cancelAnimationFrame(rafId)
+      if (rafId) cancelAnimationFrame(rafId)
       wrapper.remove()
+      flyer = null
       resolve()
     }
 
@@ -617,13 +682,32 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
       const t = Math.min(elapsed / FLY_DURATION, 1)
       const p = easeCubicBezier(t, bx1, by1, bx2, by2)
 
+      // 尺寸/圆角/阴影线性过渡；位置沿 90° 圆弧（方向由 arcFlip 决定）
       const k = kStart + (kEnd - kStart) * p
-      const br = (startBR + (endBR - startBR) * p) / k
+      const pos = arcPoint(
+        { left: startVis.l, top: startVis.t },
+        toC,
+        p,
+        arcFlip
+      )
+      const brVis = startVis.br + (endBR - startVis.br) * p
+      const sh = startVis.sh + (shadowTo - startVis.sh) * p
+      // 中心沿弧；左上角布局位移 = 弧上中心 − 当前视觉半尺寸 − 布局原点
+      const tx = pos.left - (k * renderW) / 2 - toRect.left
+      const ty = pos.top - (k * renderH) / 2 - toRect.top
 
-      wrapper.style.transform = `translate3d(${tx0 * (1 - p)}px, ${ty0 * (1 - p)}px, 0) scale(${k})`
-      clipEl.style.borderRadius = br + 'px'
-      shadowEl.style.borderRadius = br + 'px'
-      shadowEl.style.opacity = String(shadowFrom + (shadowTo - shadowFrom) * p)
+      wrapper.style.transform = `translate3d(${tx}px, ${ty}px, 0) scale(${k})`
+      clipEl.style.borderRadius = (brVis / k) + 'px'
+      shadowEl.style.borderRadius = (brVis / k) + 'px'
+      shadowEl.style.opacity = String(sh)
+
+      // 刷新当前视觉状态（打断时读取；l/t 为中心，w/h 为视觉尺寸）
+      cur.l = pos.left
+      cur.t = pos.top
+      cur.w = k * renderW
+      cur.h = k * renderH
+      cur.br = brVis
+      cur.sh = sh
 
       if (t < 1) {
         rafId = requestAnimationFrame(tick)
@@ -633,18 +717,14 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
     }
 
     rafId = requestAnimationFrame(tick)
-    flyerCleanup = () => {
-      cancelAnimationFrame(rafId)
-      wrapper.remove()
-      flyerCleanup = null
-    }
+    flyer.rafId = rafId
   })
   }) // _ensureCoverReady().then()
 }
 
 /** 面板展开：封面从播放栏飞入 */
+// 注意：不调用 removeFlyer() —— 打断接续由 flyCover 内部 continuing 分支无缝处理
 async function flyCoverIn() {
-  cleanupFlyer()
   const origin = coverOriginRect?.value
   if (!origin || !coverArtRef.value) return
 
@@ -680,17 +760,17 @@ async function flyCoverIn() {
     { left: origin.left, top: origin.top, width: origin.width, height: origin.height },
     targetRect,
     '5px',  // 播放栏封面圆角
-    '12px'  // 面板封面圆角
+    '12px', // 面板封面圆角
+    { arcFlip: true } // 飞入走右下四分之一圆弧（与飞出的左上弧形成镜像）
   )
 
   // 飞行结束：显示面板封面
   artEl.style.opacity = ''
-  flyerCleanup = null
 }
 
 /** 面板关闭：封面从面板飞回 */
+// 注意：同样不调用 removeFlyer()，由 flyCover 内部无缝接续
 async function flyCoverOut() {
-  cleanupFlyer()
   const origin = coverOriginRect?.value
   if (!origin || !coverArtRef.value) {
     emit('flyComplete')
@@ -711,7 +791,6 @@ async function flyCoverOut() {
     { shadowFrom: 1, shadowTo: 0 }
   )
 
-  flyerCleanup = null
   emit('flyComplete')
 }
 
@@ -1700,7 +1779,7 @@ onBeforeUnmount(() => {
   stopWordAnimLoop()
   stopRhythmLoop()
   stopDotsScaleLoop()
-  cleanupFlyer()
+  removeFlyer()
   if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
 })
 </script>
