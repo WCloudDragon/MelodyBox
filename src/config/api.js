@@ -57,9 +57,10 @@ export function audioUrl(filePath) {
   return `http://127.0.0.1:${audioPort}/audio?path=${encodeURIComponent(filePath)}`
 }
 
-/** 云端歌曲 → Flask 模拟网络流 */
-export function cloudStreamUrl(filePath) {
-  return apiUrl(`/api/cloud/stream?path=${encodeURIComponent(filePath)}`)
+/** 云端歌曲 → Flask 模拟网络流（Audio 元素无法带 header，token 走 query） */
+export function cloudStreamUrl(filePath, token) {
+  const tok = token ? `&token=${encodeURIComponent(token)}` : ''
+  return apiUrl(`/api/cloud/stream?path=${encodeURIComponent(filePath)}${tok}`)
 }
 
 /** 构造携带 Bearer token 的请求头 */

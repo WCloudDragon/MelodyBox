@@ -78,7 +78,7 @@ export const useLibraryStore = defineStore('library', () => {
         return
       }
       song.url = song.source === 'cloud'
-        ? cloudStreamUrl(song.path)
+        ? cloudStreamUrl(song.path, localStorage.getItem('auth-token') || '')
         : pathToUrlSync(song.path)
     }
   }

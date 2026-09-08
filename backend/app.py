@@ -575,6 +575,20 @@ def init_db(app):
         WHERE cs.status = 'online'
     ''')
 
+    # ========== 24. favorites（我的收藏：本地 + 云端歌曲）==========
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS favorites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            source TEXT NOT NULL DEFAULT 'local' CHECK(source IN ('local','cloud')),
+            song_id INTEGER NOT NULL,
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(user_id, source, song_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fav_user ON favorites(user_id)')
+
     conn.commit()
     cursor.close()
     conn.close()
@@ -655,6 +669,7 @@ def create_app():
     from routes.ai import ai_bp
     from routes.cloud import cloud_bp
     from routes.weather import weather_bp
+    from routes.favorites import fav_bp
 
     app.register_blueprint(music_bp)
     app.register_blueprint(auth_bp)
@@ -665,6 +680,7 @@ def create_app():
     app.register_blueprint(ai_bp)
     app.register_blueprint(cloud_bp)
     app.register_blueprint(weather_bp)
+    app.register_blueprint(fav_bp)
 
     # ==================== B/S 管理端静态托管 ====================
     # 管理端前端构建产物位于项目根目录 dist/（npm run build 生成 admin.html）

@@ -58,6 +58,7 @@ import { ref, computed, onMounted, onBeforeUnmount, provide, watch, nextTick } f
 import { useRoute, useRouter } from 'vue-router'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
+import { useFavoritesStore } from '@/stores/favorites'
 import { initMediaSession } from '@/utils/mediaSession'
 import TitleBar from '@/components/layout/TitleBar.vue'
 import Sidebar from '@/components/layout/Sidebar.vue'
@@ -340,6 +341,8 @@ watch(() => settingsStore.accentColor, (val) => {
 onMounted(() => {
   playerStore.loadSettings()
   initMediaSession()
+  // 预加载收藏集（登录后生效），保证右键菜单"已收藏"状态准确
+  useFavoritesStore().load()
   // 初始化主题色
   if (settingsStore.followSystemTheme) {
     fetchAndApplySystemColor()

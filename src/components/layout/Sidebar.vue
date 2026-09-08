@@ -54,6 +54,10 @@
         <el-icon><Timer /></el-icon>
         <span>播放历史</span>
       </router-link>
+      <router-link to="/favorites" class="nav-item" v-ripple :class="{ active: $route.path === '/favorites' }">
+        <el-icon><StarFilled /></el-icon>
+        <span>我的收藏</span>
+      </router-link>
       <router-link to="/top-plays" class="nav-item" v-ripple :class="{ active: $route.path === '/top-plays' }">
         <el-icon><TrendCharts /></el-icon>
         <span>播放次数</span>
@@ -117,7 +121,7 @@
 
 <script setup>
 import { ref, computed, onBeforeUnmount } from 'vue'
-import { Plus, Moon, Sunny, Monitor, UserFilled, Timer, TrendCharts, Expand, Fold, DArrowLeft, DArrowRight } from '@element-plus/icons-vue'
+import { Plus, Moon, Sunny, Monitor, UserFilled, Timer, TrendCharts, Expand, Fold, DArrowLeft, DArrowRight, StarFilled } from '@element-plus/icons-vue'
 import { usePlaylistStore } from '@/stores/playlist'
 import { useSettingsStore } from '@/stores/settings'
 import { useAuthStore } from '@/stores/auth'

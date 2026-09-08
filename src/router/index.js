@@ -75,6 +75,12 @@ const routes = [
     meta: { title: '播放历史' }
   },
   {
+    path: '/favorites',
+    name: 'favorites',
+    component: () => import('@/views/FavoritesView.vue'),
+    meta: { title: '我的收藏' }
+  },
+  {
     path: '/top-plays',
     name: 'topPlays',
     component: () => import('@/views/TopPlaysView.vue'),

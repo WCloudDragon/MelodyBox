@@ -215,6 +215,16 @@ const headerInfo = computed(() => {
     }
   }
 
+  if (mode === 'similar') {
+    const srcTitle = route.query.title
+    return {
+      title: '相似歌曲',
+      subtitle: srcTitle ? `与「${srcTitle}」风格相近` : '根据当前歌曲找相似',
+      icon: '🎯',
+      gradient: 'linear-gradient(135deg, #f59e0b, #fbbf24)',
+    }
+  }
+
   return {
     title: '每日推荐',
     subtitle: '根据你的听歌偏好',
@@ -255,6 +265,9 @@ async function fetchRecommendations() {
   let url = `${apiUrl('/api/ai/recommend')}?limit=20&mode=${mode}${seed}`
   if (lang) url += `&lang=${encodeURIComponent(lang)}`
   if (effectiveMood) url += `&mood=${encodeURIComponent(effectiveMood)}`
+  if (mode === 'similar' && route.query.song_id) {
+    url += `&song_id=${encodeURIComponent(route.query.song_id)}`
+  }
 
   isLoading.value = true
   try {

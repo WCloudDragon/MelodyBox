@@ -385,3 +385,15 @@ SELECT cs.id,
 FROM cloud_songs cs
 LEFT JOIN cloud_metadata cm ON cm.cloud_song_id = cs.id
 WHERE cs.status = 'online';
+
+-- 24. 收藏（我的收藏：本地 + 云端歌曲）
+CREATE TABLE IF NOT EXISTS favorites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    source TEXT NOT NULL DEFAULT 'local' CHECK(source IN ('local','cloud')),
+    song_id INTEGER NOT NULL,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    UNIQUE(user_id, source, song_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_fav_user ON favorites(user_id);

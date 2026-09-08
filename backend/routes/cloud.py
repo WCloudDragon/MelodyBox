@@ -7,7 +7,7 @@ import random
 import time
 import threading
 
-from routes.auth import token_required
+from routes.auth import token_required, _parse_token, _membership_ok
 
 cloud_bp = Blueprint('cloud', __name__, url_prefix='/api/cloud')
 
@@ -466,6 +466,19 @@ def cloud_stream():
         resp.headers['Access-Control-Allow-Headers'] = 'Range, Content-Type'
         resp.headers['Access-Control-Max-Age'] = '86400'
         return resp
+
+    # VIP/SVIP 会员验证：<audio> 元素无法携带 Authorization 头，
+    # token 通过 query 参数传入（免费用户服务端强制拦截，403 中断播放）
+    token = request.args.get('token', '')
+    member_ok = False
+    if token:
+        payload = _parse_token(token)
+        if payload:
+            db = get_db()
+            member_ok = _membership_ok(db, payload['user_id'], 'vip', 'svip')
+            db.close()
+    if not member_ok:
+        return jsonify({'error': '云端播放为会员专享，请先升级会员'}), 403
 
     file_path = request.args.get('path', '')
     if not file_path or not os.path.isfile(file_path):

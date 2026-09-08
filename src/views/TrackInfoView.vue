@@ -39,6 +39,12 @@
             <span class="hero-meta__item">{{ formatDuration(track.duration) }}</span>
             <span v-if="track.quality" class="quality-tag" :class="qualityClass(track.quality)">{{ track.quality }}</span>
           </div>
+          <div class="hero-actions">
+            <el-button size="small" round type="primary" plain :disabled="!track.id" @click="goSimilar">
+              <el-icon><Aim /></el-icon>
+              相似歌曲
+            </el-button>
+          </div>
         </div>
       </div>
 
@@ -153,7 +159,7 @@
 <script setup>
 defineOptions({ name: 'TrackInfoView' })
 import { ref, computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useLibraryStore } from '@/stores/library'
 import { formatDuration, qualityClass } from '@/utils/format'
 import { ElMessage } from '@/utils/toast'
@@ -215,6 +221,18 @@ function formatMtime(ts) {
 function qualityLabel(quality) {
   const map = { 'HQ': '高品质 (有损)', 'CD': 'CD 音质 (无损)', 'CD+': 'CD+ 音质 (无损)', 'Hi-Res': '高解析度 (Hi-Res)' }
   return map[quality] || quality
+}
+
+const router = useRouter()
+
+/** 跳转到相似歌曲推荐页（AI similar 模式） */
+function goSimilar() {
+  const t = track.value
+  if (!t?.id) return
+  router.push({
+    path: '/recommend',
+    query: { mode: 'similar', song_id: t.id, title: t.title || '' },
+  })
 }
 
 async function fetchTrack(path) {
@@ -283,6 +301,7 @@ watch(() => route.query.path, (p) => {
 .hero-artist { font-size: 18px; color: var(--text-secondary); margin: 0 0 4px; cursor: pointer; }
 .hero-album { font-size: 15px; color: var(--text-tertiary); margin: 0 0 16px; }
 .hero-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hero-actions { margin-top: 16px; display: flex; gap: 8px; align-items: center; }
 .hero-meta__item {
   padding: 4px 10px; font-size: 12px; border-radius: 4px;
   background: var(--bg-tertiary); color: var(--text-secondary);
