@@ -538,40 +538,65 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
   // 确保封面已解码后再启动动画，消除首次触发时 background-image 实时解码卡顿
   return _ensureCoverReady(coverUrl).then(() => {
   const toW = toRect.width, toH = toRect.height
-  const fromW = fromRect.width, fromH = fromRect.height
+  const fromW = fromRect.width
 
   const startBR = parseFloat(fromBR)
   const endBR = parseFloat(toBR)
 
-  // 窗口宽高/位置逐帧插值，内层图片保持 object-fit: cover：
-  // 窗口比例从源（方形）连续插值到目标（原图比例），cover 的可见区域
-  // 随之从中心方形扩展到完整原图，实现无缝“拉远揭示”，全程零变形。
+  // ---------- Transform-only FLIP 飞行 ----------
+  // wrapper 一次性渲染在“最大参考宽度”（高分辨率位图只缩不放，避免放大模糊），
+  // 动画全程只更新 transform(translate+scale) 与 opacity：
+  // 只用合成器合成，零 layout / 零 paint / 零重栅格化，主线程完全释放。
+  // 圆角受 scale 等比缩放，逐帧用 borderRadius = 目标视觉圆角 / k 补偿。
+  // 结构分两层：clip 负责圆角裁剪图片；shadow 在 clip 之外，避免 overflow 裁掉外阴影。
+  const renderW = Math.max(fromW, toW)
+  const renderH = renderW * (toH / toW)   // 保持目标封面宽高比
+  const kStart = fromW / renderW          // 起点等比缩放（宽度基准）
+  const kEnd = toW / renderW              // 终点缩放
+  const tx0 = fromRect.left - toRect.left // 起点位移；终点归零
+  const ty0 = fromRect.top - toRect.top
+
+  function radiusFor(brTarget, scale) {
+    return (brTarget / scale) + 'px'
+  }
+
   const wrapper = document.createElement('div')
   Object.assign(wrapper.style, {
     position: 'fixed', zIndex: '10000', pointerEvents: 'none',
-    left: fromRect.left + 'px', top: fromRect.top + 'px',
-    width: fromW + 'px', height: fromH + 'px',
-    willChange: 'left, top, width, height'
+    left: toRect.left + 'px', top: toRect.top + 'px',
+    width: renderW + 'px', height: renderH + 'px',
+    transform: `translate3d(${tx0}px, ${ty0}px, 0) scale(${kStart})`,
+    transformOrigin: '0 0',
+    willChange: 'transform'
+  })
+
+  const clipEl = document.createElement('div')
+  Object.assign(clipEl.style, {
+    position: 'absolute', inset: '0',
+    borderRadius: radiusFor(startBR, kStart),
+    overflow: 'hidden',
+    zIndex: '1'
   })
 
   const shadowEl = document.createElement('div')
   Object.assign(shadowEl.style, {
     position: 'absolute', inset: '0', pointerEvents: 'none',
-    borderRadius: `${startBR}px`, boxShadow: 'none', zIndex: '0'
+    borderRadius: radiusFor(startBR, kStart),
+    boxShadow: `0 ${COVER_SHADOW.y}px ${COVER_SHADOW.blur}px rgba(0,0,0,${COVER_SHADOW.opacity})`,
+    opacity: String(shadowFrom), zIndex: '2'
   })
 
   const imgEl = document.createElement('img')
   imgEl.src = coverUrl
   Object.assign(imgEl.style, {
-    position: 'absolute', inset: '0', zIndex: '1',
+    position: 'absolute', inset: '0',
     width: '100%', height: '100%',
-    objectFit: 'cover', objectPosition: 'center',
-    clipPath: `inset(0 round ${startBR}px)`,
-    willChange: 'clip-path'
+    objectFit: 'cover', objectPosition: 'center'
   })
 
+  clipEl.appendChild(imgEl)
+  wrapper.appendChild(clipEl)
   wrapper.appendChild(shadowEl)
-  wrapper.appendChild(imgEl)
   document.body.appendChild(wrapper)
   wrapper.getBoundingClientRect()
 
@@ -592,24 +617,13 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
       const t = Math.min(elapsed / FLY_DURATION, 1)
       const p = easeCubicBezier(t, bx1, by1, bx2, by2)
 
-      const w = fromW + (toW - fromW) * p
-      const h = fromH + (toH - fromH) * p
-      const l = fromRect.left + (toRect.left - fromRect.left) * p
-      const tp = fromRect.top + (toRect.top - fromRect.top) * p
-      const br = startBR + (endBR - startBR) * p
+      const k = kStart + (kEnd - kStart) * p
+      const br = (startBR + (endBR - startBR) * p) / k
 
-      wrapper.style.left = l + 'px'
-      wrapper.style.top = tp + 'px'
-      wrapper.style.width = w + 'px'
-      wrapper.style.height = h + 'px'
-      imgEl.style.clipPath = `inset(0 round ${br}px)`
-
-      const sh = COVER_SHADOW
-      const shadowP = shadowFrom + (shadowTo - shadowFrom) * p
-      shadowEl.style.borderRadius = `${br}px`
-      shadowEl.style.boxShadow = shadowP > 0.01
-        ? `0 ${sh.y * shadowP}px ${sh.blur * shadowP}px rgba(0,0,0,${sh.opacity * shadowP})`
-        : 'none'
+      wrapper.style.transform = `translate3d(${tx0 * (1 - p)}px, ${ty0 * (1 - p)}px, 0) scale(${k})`
+      clipEl.style.borderRadius = br + 'px'
+      shadowEl.style.borderRadius = br + 'px'
+      shadowEl.style.opacity = String(shadowFrom + (shadowTo - shadowFrom) * p)
 
       if (t < 1) {
         rafId = requestAnimationFrame(tick)
