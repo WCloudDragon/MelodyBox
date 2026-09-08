@@ -135,11 +135,14 @@ watch(panelVisible, (val) => {
 })
 
 provide('toggleNowPlaying', () => {
-  if (!panelOpen.value && playerBarRef.value?.coverEl) {
-    coverOriginRect.value = playerBarRef.value.coverEl.getBoundingClientRect()
-  }
-  if (!panelOpen.value) {
+  // 以 panelVisible（面板实际显示状态）为开关依据：
+  // panelOpen 在关闭动画期间一直为 true（控制封面隐身），不能作为开关判断，
+  // 否则关闭途中无法再次打开
+  if (!panelVisible.value) {
     // 展开：封面隐身 + 文字左移 + 面板显示 + 颜色变白
+    if (playerBarRef.value?.coverEl) {
+      coverOriginRect.value = playerBarRef.value.coverEl.getBoundingClientRect()
+    }
     panelOpen.value = true
     panelFading.value = true
     textShifted.value = true

@@ -665,15 +665,16 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
 
   return new Promise(resolve => {
     const startTime = performance.now()
-    let rafId = null
     const cur = { ...startVis }
-    // 记录当前视觉状态供打断衔接；resolve 挂在代理上供打断时调用
-    flyer = { wrapper, clipEl, shadowEl, rafId, resolve, cur }
+    // 记录当前视觉状态供打断衔接；resolve 挂在代理上供打断时调用。
+    // rafId 每帧写回代理，保证任意次打断都能取消到"当前有效帧"
+    const self = { wrapper, clipEl, shadowEl, rafId: null, resolve, cur }
+    flyer = self
 
     const finish = () => {
-      if (rafId) cancelAnimationFrame(rafId)
+      cancelAnimationFrame(self.rafId)
       wrapper.remove()
-      flyer = null
+      if (flyer === self) flyer = null
       resolve()
     }
 
@@ -710,14 +711,13 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
       cur.sh = sh
 
       if (t < 1) {
-        rafId = requestAnimationFrame(tick)
+        self.rafId = requestAnimationFrame(tick)
       } else {
         finish()
       }
     }
 
-    rafId = requestAnimationFrame(tick)
-    flyer.rafId = rafId
+    self.rafId = requestAnimationFrame(tick)
   })
   }) // _ensureCoverReady().then()
 }
@@ -773,7 +773,8 @@ async function flyCoverIn() {
 async function flyCoverOut() {
   const origin = coverOriginRect?.value
   if (!origin || !coverArtRef.value) {
-    emit('flyComplete')
+    // 面板已重新打开（打断恢复）时不发 flyComplete，避免解除封面隐身
+    if (!props.visible) emit('flyComplete')
     return
   }
 
@@ -791,7 +792,9 @@ async function flyCoverOut() {
     { shadowFrom: 1, shadowTo: 0 }
   )
 
-  emit('flyComplete')
+  // 若飞行途中面板又被重新打开（flyCover 被打断后 await 恢复），
+  // 不再 emit flyComplete，保持 panelOpen=true（播放栏封面继续隐身）
+  if (!props.visible) emit('flyComplete')
 }
 
 // ==================== 逐字歌词（RAF 驱动：卡拉 OK + 时间戳同步抬升） ====================
