@@ -218,6 +218,17 @@
         </div>
         <div class="setting-row">
           <div class="setting-label">
+            <span class="setting-title">卡拉OK模式</span>
+            <span class="setting-desc">处理歌词混排问题：逐字歌中短句缺逐字时间会自动补齐卡拉OK</span>
+          </div>
+          <el-radio-group v-model="settingsStore.lyricKaraokeMode">
+            <el-radio-button label="native">原生</el-radio-button>
+            <el-radio-button label="auto">智能（默认）</el-radio-button>
+            <el-radio-button label="always">全卡拉OK</el-radio-button>
+          </el-radio-group>
+        </div>
+        <div class="setting-row">
+          <div class="setting-label">
             <span class="setting-title">律动响应帧率</span>
             <span class="setting-desc">全屏歌词页光球随音频的更新频率（低帧更省电，视觉差异小）</span>
           </div>

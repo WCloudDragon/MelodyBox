@@ -10,7 +10,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted } from 'v
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
-import { parseLRC, computeActiveSet, LYRIC_GAP_FILL_LIMIT } from '@/utils/format'
+import { parseLRC, computeActiveSet, LYRIC_GAP_FILL_LIMIT, applyLyricKaraokeMode } from '@/utils/format'
 
 const player = usePlayerStore()
 const settings = useSettingsStore()
@@ -30,7 +30,10 @@ const switchingTrack = ref(false)
 const parsedLyrics = computed(() => {
   const raw = currentTrack.value?.lyrics
   if (!raw) return []
-  return parseLRC(raw)
+  const list = parseLRC(raw)
+  // 纯音乐等无演唱内容：不参与卡拉OK拓展，保持静态常驻
+  if (list.length && /纯音乐/.test(raw)) return list
+  return applyLyricKaraokeMode(list, settings.lyricKaraokeMode)
 })
 
 // 长间奏"即将开唱"提示（与全屏页同一判定口径）
@@ -95,7 +98,8 @@ function buildLines() {
     original: line.original,
     translation: line.translation || null,
     wordLevel: line.wordLevel || false,
-    segments: line.segments || null
+    segments: line.segments || null,
+    words: line.words || null
   }))
   let lineIndex = idx
 
@@ -272,6 +276,15 @@ watch(() => currentTrack.value?.path, () => {
   switchingTrack.value = true
   if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
     startStructureResend()
+    send(buildStructurePayload())
+  }
+})
+
+// 卡拉OK模式变更 → 歌词结构重造，立即重推桌面窗口
+watch(() => settings.lyricKaraokeMode, () => {
+  currentLineIndex.value = -1
+  overlapLines.value = []
+  if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
     send(buildStructurePayload())
   }
 })

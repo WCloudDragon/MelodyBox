@@ -170,6 +170,143 @@ export function parseLRC(lrcText) {
   return merged
 }
 
+// ==================== 卡拉OK逐字符细分 ====================
+// 统一把参与卡拉OK的行切到「单字符」粒度：
+//  - 原生逐字行：尊重原生时间块，块内再多细分到字符；
+//  - 估算行（逐句/混排补全）：整行按字符数均匀分配时间。
+// 同时产出 words 词分组：拉丁词「整词一组、组内不可断」，换行只发生在词间
+// （避免逐字符后英文单词被拦腰折断）；中日韩连续字符则每字独立成组、
+// 保持可任意断行（维持原有长行自动换行的能力）。
+
+// 中日韩文字检测：命中则允许字符级断行
+const CJK_RE = /[\u3040-\u30ff\u4e00-\u9fff\uac00-\ud7af]/
+
+// 文本 → 字符列表：空格并入前一字符（转不换行空格），行首空格丢弃
+function toCharList(text) {
+  const out = []
+  for (const ch of [...(text || '')]) {
+    if (/\s/.test(ch)) {
+      if (out.length) out[out.length - 1] += '\u00A0'
+      continue
+    }
+    out.push(ch)
+  }
+  return out
+}
+
+// 文本 → 按空格切词，词尾空格并入词内最后一个字符（转 nbsp）
+function toWordCharLists(text) {
+  const words = []
+  let cur = []
+  for (const ch of [...(text || '')]) {
+    if (/\s/.test(ch)) {
+      if (cur.length) { cur.push('\u00A0'); words.push(cur); cur = [] }
+      continue
+    }
+    cur.push(ch)
+  }
+  if (cur.length) words.push(cur)
+  return words
+}
+
+// 该词是否需要「词内不可断」：含拉丁字母且不含中日韩文字 → 断行保护
+function wordKeep(chars) {
+  const s = chars.join('')
+  return /[A-Za-z]/.test(s) && !CJK_RE.test(s)
+}
+
+// 按行切分：返回扁平 segments（逐字符，卡拉OK按序索引）+ words（词分组）
+function charSplitLine(line, lineStart, lineEnd, nativeBlocks = null) {
+  // 1) 词粒度字符表（原生：一块一词；估算：按空格切词）
+  const wordCharLists = nativeBlocks && nativeBlocks.length
+    ? nativeBlocks.map(b => toCharList(b.text))
+    : toWordCharLists(line.original || line.text || '')
+
+  // 扁平化并记录所属词
+  const flat = []
+  wordCharLists.forEach((chars, wi) => {
+    chars.forEach(ch => flat.push({ text: ch, wi }))
+  })
+  const total = flat.length
+  if (!total) return { segments: [], words: [] }
+
+  // 2) 逐字符分配时间
+  if (nativeBlocks && nativeBlocks.length) {
+    let fi = 0
+    nativeBlocks.forEach((block, bi) => {
+      const blockEnd = bi + 1 < nativeBlocks.length ? nativeBlocks[bi + 1].time : lineEnd
+      const cnt = wordCharLists[bi].length
+      if (!cnt) return
+      const step = Math.max(blockEnd - block.time, 0.05) / cnt
+      for (let k = 0; k < cnt; k++) flat[fi++].time = block.time + k * step
+    })
+  } else {
+    const step = Math.max(lineEnd - lineStart, 0.1) / total
+    flat.forEach((f, i) => { f.time = lineStart + i * step })
+  }
+
+  // 3) 组装 segments（扁平）+ words（分组）
+  const segments = flat.map((f, i) => ({ time: f.time, text: f.text, idx: i }))
+  const words = []
+  let wi = 0
+  wordCharLists.forEach((chars) => {
+    if (wordKeep(chars)) {
+      // 拉丁词：整词一组，词内不可断
+      const w = { idx: wi, chars: [] }
+      chars.forEach(() => w.chars.push(segments[wi++]))
+      words.push(w)
+    } else {
+      // 中日韩/混合：每字符独立成组，允许任意断行
+      chars.forEach(() => words.push({ idx: wi, chars: [segments[wi++]] }))
+    }
+  })
+
+  return { segments, words }
+}
+
+// 统一入口：按模式决定哪些行进卡拉OK，输出逐字符 segments + 词分组 words
+//  - native：仅原生逐字行；auto：有逐字则全曲拓展；always：全曲一律拓展
+export function applyLyricKaraokeMode(lyrics, mode) {
+  if (!lyrics || !lyrics.length) return lyrics
+
+  const hasNativeWord = lyrics.some(l => l.wordLevel && l.segments && l.segments.length >= 2)
+  const expandLineLevel = mode === 'always' || (mode === 'auto' && hasNativeWord)
+
+  return lyrics.map((line, lineIndex) => {
+    const isLastLine = lineIndex === lyrics.length - 1
+    const nativeBlocks = line.wordLevel && line.segments && line.segments.length >= 2
+      ? line.segments
+      : null
+
+    // 原生逐字行始终卡拉OK；逐句行仅 in always/auto(整曲拓展) 时参与
+    if (!nativeBlocks && !expandLineLevel) return { ...line }
+
+    const text = line.original || line.text
+    if (!text || text.trim().length === 0) return { ...line }
+
+    // 行结束基准：有原生 end 用之；否则用下一行开始；末行按长度估算
+    const lineStart = line.time
+    let lineEnd = line.end
+    if (lineEnd == null) {
+      const nextLine = lyrics[lineIndex + 1]
+      lineEnd = nextLine ? nextLine.time : lineStart + text.length * 0.2 + 1
+    }
+
+    const { segments, words } = charSplitLine(line, lineStart, lineEnd, nativeBlocks)
+
+    return {
+      ...line,
+      wordLevel: true,
+      segments,
+      words,
+      // 末尾行无结束时间戳时补估算 end：卡拉OK播完后转入"播完"状态，
+      // 与原生逐字末行一致（否则末行 end=null → effectiveEnd=Infinity，
+      // 永远保持活跃高亮，不会变暗收尾）
+      ...(isLastLine && line.end == null ? { end: lineEnd } : {})
+    }
+  })
+}
+
 // 获取当前歌词行索引
 export function getCurrentLyricIndex(lyrics, currentTime) {
   if (!lyrics || lyrics.length === 0) return -1

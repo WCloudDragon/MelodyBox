@@ -37,8 +37,10 @@
                 <p v-if="index === currentLineIndex && line.wordLevel && line.segments && line.segments.length >= 2"
                    class="dl-line__original word-level">
                   <span class="dl-line__text">
-                    <span v-for="(seg, si) in line.segments" :key="si"
-                          class="word-seg" :data-i="si" :data-text="seg.text">{{ seg.text.replace(/ /g, '\u00A0') }}</span>
+                    <span v-for="word in line.words" :key="word.idx" class="word-group">
+                      <span v-for="seg in word.chars" :key="seg.idx"
+                            class="word-seg" :data-i="seg.idx" :data-text="seg.text">{{ seg.text.replace(/ /g, '\u00A0') }}</span>
+                    </span>
                   </span>
                 </p>
                   <!-- 普通行 / 活跃但无逐字数据 -->
@@ -1231,6 +1233,11 @@ html, body {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: clip;
+}
+
+/* 词分组：桌面歌词不换行（溢出走跑马灯），分组仅保持与全屏页结构一致 */
+.word-group {
+  display: inline-block;
 }
 
 .word-seg {

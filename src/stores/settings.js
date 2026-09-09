@@ -44,6 +44,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const enableDominoScroll = ref(true)
   const enableWordLift = ref(true)
   const wordAnimFps = ref(60)
+  // 卡拉OK模式（'native' 仅原生逐字行 | 'auto' 检测到逐字则整曲拓展 | 'always' 全曲卡拉OK）。
+  // 前端本地持久化（与逐字帧率一致），不占用后端 settings 字段
+  const lyricKaraokeMode = ref(localStorage.getItem('melodybox_lyric_karaoke_mode') || 'auto')
   const showVisualizer = ref(true)
   // 律动响应帧率（30/60）；逐字动画帧率自适应（用满屏幕刷新率）
   const rhythmFps = ref(Number(localStorage.getItem('melodybox_rhythm_fps')) || 30)
@@ -269,6 +272,10 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // 律动/自适应偏好持久化到 localStorage（前端 only）
   watch([rhythmFps, fpsAdaptive, measuredRefresh], _persistPerfPrefs)
+  // 卡拉OK模式本地持久化（前端 only）
+  watch(lyricKaraokeMode, (v) => {
+    try { localStorage.setItem('melodybox_lyric_karaoke_mode', v) } catch {}
+  })
 
   /** 应用画质预设档位（low / medium / high） */
   function applyQualityPreset(preset) {
@@ -305,6 +312,7 @@ export const useSettingsStore = defineStore('settings', () => {
     lyricsTransScale, lyricsActiveScale,
     enableLyricsBlur, enableDominoScroll, enableWordLift, wordAnimFps,
     showVisualizer,
+    lyricKaraokeMode,
     rhythmFps, fpsAdaptive, measuredRefresh, effectiveWordAnimFps,
     autoScan, language,
     desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale, desktopLyricsViewLines,

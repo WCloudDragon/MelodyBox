@@ -84,13 +84,19 @@
                   @click="seekToLine(line.time)"
                 >
                   <div class="lyric-line__inner">
-                    <p v-if="line.wordLevel && line.segments && (activeIndexes.some(a => Math.abs(index - a) <= 1) || index === fadingLineIndex || (showUpcomingHint && (index === hintLineIndex || index === hintLineIndex + 1)))" class="lyric-line__original word-level">
+                    <p v-if="line.wordLevel && line.segments && (activeIndexes.some(a => Math.abs(index - a) <= 1) || index === fadingLineIndex || (showUpcomingHint && (index === hintLineIndex || index === hintLineIndex + 1)) || (!activeIndexes.length && index === hintLineIndex + 1))" class="lyric-line__original word-level">
                       <span
-                        v-for="(seg, si) in line.segments"
-                        :key="si"
-                        class="word-seg"
-                        :data-word="seg.text"
-                      >{{ seg.text }}</span>
+                        v-for="word in line.words"
+                        :key="word.idx"
+                        class="word-group"
+                      >
+                        <span
+                          v-for="seg in word.chars"
+                          :key="seg.idx"
+                          class="word-seg"
+                          :data-word="seg.text"
+                        >{{ seg.text }}</span>
+                      </span>
                     </p>
                     <p v-else class="lyric-line__original">{{ line.original }}</p>
                     <p v-if="line.translation" class="lyric-line__translation">{{ line.translation }}</p>
@@ -122,7 +128,7 @@ import { ref, computed, watch, nextTick, inject, onMounted, onBeforeUnmount } fr
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
-import { parseLRC, computeActiveSet, LYRIC_GAP_FILL_LIMIT } from '@/utils/format'
+import { parseLRC, computeActiveSet, LYRIC_GAP_FILL_LIMIT, applyLyricKaraokeMode } from '@/utils/format'
 import { extractCoverColors } from '@/utils/coverColorExtractor'
 
 const props = defineProps({
@@ -1028,7 +1034,7 @@ function lineStyle(index) {
   const opacity = isUserScrolling.value ? 1 : Math.max(0.12, 1 - t * 0.88)
 
   // Apple Music 风格模糊：越远离活跃行越模糊，用户滚动时取消模糊
-  const blurAmount = (isUserScrolling.value || !enableLyricsBlur.value) ? 0 : Math.min(absDist * 1.5, 6)
+  const blurAmount = (isUserScrolling.value || !enableLyricsBlur.value) ? 0 : Math.min(absDist * 1, 4)
   const filter = blurAmount > 0.5 ? `blur(${blurAmount}px)` : 'none'
 
   return { opacity, filter }
@@ -1041,8 +1047,10 @@ const parsedLyrics = computed(() => {
   // 纯音乐等无演唱内容：末行代表整首纯音乐，不触发“末行取短”，保持常驻显示
   if (list.length && /纯音乐/.test(raw)) {
     list[list.length - 1].end = null
+    return list
   }
-  return list
+  // 卡拉OK模式：处理逐字/逐句混排（逐字歌词里个别短句缺逐字时间戳的问题）
+  return applyLyricKaraokeMode(list, settings.lyricKaraokeMode)
 })
 
 const hasLyrics = computed(() => parsedLyrics.value.length > 0)
@@ -1757,7 +1765,9 @@ watch(() => currentTrack.value?.path, () => {
   if (scrollRef.value) { scrollRef.value.style.transform = 'translate3d(0, 0, 0)'; currentScrollY = 0 }
   // 新歌一开始就处于长空区时立即恢复三点显示：
   // 否则 showUpcomingHint 全程无翻转，三点要等播过首行再跳回才会出现
-  if (showUpcomingHint.value) {
+  // 守卫 hintLineIndex < 0：切歌瞬间 currentTime 仍是上一首的播放位置，
+  // 用旧时间对长间奏歌算出的 hintLineIndex≥0 是假锚点，会误显三点随后闪灭
+  if (showUpcomingHint.value && hintLineIndex.value < 0) {
     hintVisible.value = true
     hintLeaving.value = false
     hintAnchorIndex.value = hintLineIndex.value
@@ -2047,6 +2057,13 @@ onBeforeUnmount(() => {
 .lyric-line__original.word-level {
   display: inline-flex; flex-wrap: wrap;
   justify-content: flex-start; gap: 0; white-space: pre;
+}
+
+/* 词分组：拉丁词为不可断的整体，换行只发生在词间；
+   单词不可断由格式层把 CJK 字符拆成独立单字组实现（每字一组），
+   因此这里统一 inline-flex 即可同时满足两者 */
+.word-group {
+  display: inline-flex;
 }
 
 .word-seg {
