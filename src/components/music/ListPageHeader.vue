@@ -219,10 +219,14 @@ function _syncFrost() {
   if (!_frostEl || !headerEl.value) return
   const r = headerEl.value.getBoundingClientRect()   // 视口坐标
   if (r.height <= 0) return
-  const cbR = _cb ? _cb.getBoundingClientRect() : { top: 0, left: 0 }
+  const cbR = _cb ? _cb.getBoundingClientRect() : { top: 0, left: 0, width: window.innerWidth }
+  // 右缘直接钉到视口右边界（含 cb 坐标系换算），不再依赖滚动条区估算，
+  // 确保玻璃层盖到窗口最右，不露垂直分界线
+  const ML = 8   // 左侧冗余（页头恰好到边，8px 够）
   _frostEl.style.top = `${r.top - cbR.top}px`
-  _frostEl.style.left = `${r.left - cbR.left}px`
-  _frostEl.style.width = `${r.width}px`
+  _frostEl.style.left = `${r.left - cbR.left - ML}px`
+  _frostEl.style.right = `${(cbR.left + cbR.width) - window.innerWidth}px`
+  _frostEl.style.width = 'auto'   // left + right 撑满视口宽
   _frostEl.style.height = `${r.height + FROST_EXTEND}px`   // 下延->采样区
 }
 
@@ -234,11 +238,15 @@ function _buildFrost() {
     position: 'fixed',
     zIndex: '-1',               // 页头 context 内垫底，文字永不罩
     pointerEvents: 'none',
-    backdropFilter: 'blur(20px) saturate(150%)',
-    webkitBackdropFilter: 'blur(20px) saturate(150%)',
-    // mask: to top => 0%(底)=transparent、100%(顶)=#000 → 底部渐隐、顶部实心
-    maskImage: 'linear-gradient(to top, transparent 0%, #000 100%)',
-    WebkitMaskImage: 'linear-gradient(to top, transparent 0%, #000 100%)'
+    // 模糊半径对齐侧边栏/播放队列的 --glass-blur（24px saturate）；
+    // 无底色：加 background 会产生色差（浅色主题尤其明显），保持纯模糊
+    backdropFilter: 'var(--glass-blur)',
+    webkitBackdropFilter: 'var(--glass-blur)',
+    // mask: to top => 0%(底)透明、渐升到 100%(顶)实心；
+    // 但调整梯度：页头矩形≈玻璃层上部 50%，需整条实心模糊；
+    // 仅下延区下半段渐隐收尾（50%→0%），避免边界硬切
+    maskImage: 'linear-gradient(to top, transparent 0%, transparent 8%, rgba(0,0,0,0.65) 30%, #000 50%, #000 100%)',
+    WebkitMaskImage: 'linear-gradient(to top, transparent 0%, transparent 8%, rgba(0,0,0,0.65) 30%, #000 50%, #000 100%)'
   })
   headerEl.value.appendChild(_frostEl)
   _syncFrost()
