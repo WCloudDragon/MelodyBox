@@ -1,5 +1,5 @@
 <template>
-  <div class="list-page-header">
+  <div class="list-page-header" ref="headerEl">
     <h1 class="list-page-header__title">{{ title }}</h1>
     <span v-if="count != null" class="list-page-header__count">{{ count }}</span>
     <div class="list-page-header__spacer"></div>
@@ -100,7 +100,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 
@@ -186,12 +186,95 @@ watch(() => props.searchValue, (v) => {
 })
 watch(() => [sortOpen.value, filterOpen.value], () => closeModeMenu())
 
-const onDocClick = () => { sortOpen.value = false; filterOpen.value = false; closeModeMenu() }
-if (typeof document !== 'undefined') document.addEventListener('click', onDocClick)
-onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
+// ===== 顶栏背景模糊（页头内 fixed z-1 + cb 补偿 + 下延采样区） =====
+// 三要素齐备：
+//  1) 挂 headerEl 内 + z-index:-1 → 与文字同 stacking context，垫底不罩文字
+//  2) containing block 坐标补偿 → 精确对齐页头（fixed 基准非视口）
+//  3) 高度 = 页头高 + 60px 下延 → 下段伸出页头矩形、悬到滚动内容上，
+//     保证 backdrop 采样生效（sticky 矩形内是采样死区；这是⑤"错位才有模糊"
+//     的机制，现在用主动下延替代偶然错位）
+const headerEl = ref(null)
+let _frostEl = null
+let _onScroll = null
+let _cb = null
+const FROST_EXTEND = 60        // 页头下方伸出段：保证采样可见
+
+/** 找到 fixed 定位的 containing block（最近 transform/filter/will-change 祖先） */
+function _findCb(el) {
+  let node = el.parentElement
+  while (node && node !== document.documentElement) {
+    const cs = getComputedStyle(node)
+    const isCb =
+      (cs.transform && cs.transform !== 'none') ||
+      (cs.filter && cs.filter !== 'none') ||
+      (cs.perspective && cs.perspective !== 'none') ||
+      (cs.willChange && /transform|filter/.test(cs.willChange))
+    if (isCb) return node
+    node = node.parentElement
+  }
+  return null
+}
+
+function _syncFrost() {
+  if (!_frostEl || !headerEl.value) return
+  const r = headerEl.value.getBoundingClientRect()   // 视口坐标
+  if (r.height <= 0) return
+  const cbR = _cb ? _cb.getBoundingClientRect() : { top: 0, left: 0 }
+  _frostEl.style.top = `${r.top - cbR.top}px`
+  _frostEl.style.left = `${r.left - cbR.left}px`
+  _frostEl.style.width = `${r.width}px`
+  _frostEl.style.height = `${r.height + FROST_EXTEND}px`   // 下延->采样区
+}
+
+function _buildFrost() {
+  if (_frostEl || !headerEl.value) return
+  _cb = _findCb(headerEl.value)
+  _frostEl = document.createElement('div')
+  Object.assign(_frostEl.style, {
+    position: 'fixed',
+    zIndex: '-1',               // 页头 context 内垫底，文字永不罩
+    pointerEvents: 'none',
+    backdropFilter: 'blur(20px) saturate(150%)',
+    webkitBackdropFilter: 'blur(20px) saturate(150%)',
+    // mask: to top => 0%(底)=transparent、100%(顶)=#000 → 底部渐隐、顶部实心
+    maskImage: 'linear-gradient(to top, transparent 0%, #000 100%)',
+    WebkitMaskImage: 'linear-gradient(to top, transparent 0%, #000 100%)'
+  })
+  headerEl.value.appendChild(_frostEl)
+  _syncFrost()
+  _onScroll = _syncFrost
+  document.addEventListener('scroll', _onScroll, true)
+  window.addEventListener('resize', _onScroll)
+}
+
+function _removeFrost() {
+  if (_onScroll) {
+    document.removeEventListener('scroll', _onScroll, true)
+    window.removeEventListener('resize', _onScroll)
+    _onScroll = null
+  }
+  if (_frostEl) { _frostEl.remove(); _frostEl = null }
+  _cb = null
+}
+
+onMounted(() => {
+  const m = async () => {
+    if (document.fonts?.ready) { try { await document.fonts.ready } catch {} }
+    await nextTick()
+    _buildFrost()
+  }
+  m()
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocClick)
+  _removeFrost()
+})
 </script>
 
 <style scoped>
+/* 页头本体完全透明。注：此环境的 Chromium 中 sticky 容器矩形内的
+   backdrop-filter 采样不可靠（多轮实测），未使用毛玻璃背景方案。 */
 .list-page-header {
   position: sticky;
   top: 0;
@@ -199,13 +282,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
-  margin-bottom: 12px;
-  border-radius: 12px;
-  background: rgba(30, 30, 40, 0.55);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  border: 1px solid var(--border-color);
+  padding: 14px 16px 10px;
+  margin-bottom: 10px;
+  background: transparent;
 }
 .list-page-header__title { font-size: 20px; font-weight: 700; margin: 0; white-space: nowrap; }
 .list-page-header__count { font-size: 13px; color: var(--text-tertiary); }
