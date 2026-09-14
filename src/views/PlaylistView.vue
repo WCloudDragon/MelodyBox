@@ -28,8 +28,11 @@
               <el-icon><Select /></el-icon>
               {{ multiSelectMode ? '退出多选' : '多选' }}
             </el-button>
-            <el-button @click="showRenameDialog">重命名</el-button>
-            <el-button type="danger" plain @click="handleDelete">删除歌单</el-button>
+            <!-- 系统歌单（我的收藏）不可重命名/删除 -->
+            <template v-if="!playlistStore.isSystemPlaylist(playlist.id)">
+              <el-button @click="showRenameDialog">重命名</el-button>
+              <el-button type="danger" plain @click="handleDelete">删除歌单</el-button>
+            </template>
           </div>
         </div>
       </div>
@@ -104,7 +107,7 @@
       <div v-else class="empty-state">
         <el-icon size="48"><Folder /></el-icon>
         <p>歌单为空</p>
-        <p class="hint">在音乐库中右键歌曲可以添加到歌单</p>
+        <p class="hint">{{ playlistStore.isSystemPlaylist(playlist.id) ? '在音乐库右键歌曲，选择「添加到歌单」→「我的收藏」' : '在音乐库中右键歌曲可以添加到歌单' }}</p>
       </div>
     </div>
 

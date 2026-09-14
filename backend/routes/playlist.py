@@ -46,7 +46,7 @@ def list_playlists():
             LEFT JOIN playlist_song ps ON p.id = ps.playlist_id
             WHERE p.user_id = 1
             GROUP BY p.id
-            ORDER BY p.created_at DESC
+            ORDER BY p.is_system DESC, p.created_at DESC
         ''')
         rows = cursor.fetchall()
         cursor.close()
@@ -58,6 +58,7 @@ def list_playlists():
             'description': r['description'],
             'cover_url': r['cover_url'],
             'is_public': bool(r['is_public']),
+            'is_system': bool(r['is_system']),
             'track_count': r['track_count'],
             'created_at': r['created_at'],
             'updated_at': r['updated_at'],
@@ -100,6 +101,7 @@ def create_playlist():
             'description': row['description'],
             'cover_url': row['cover_url'],
             'is_public': bool(row['is_public']),
+            'is_system': bool(row['is_system']),
             'track_count': 0,
             'created_at': row['created_at'],
             'updated_at': row['updated_at'],
@@ -110,17 +112,24 @@ def create_playlist():
 
 @playlist_bp.route('/<int:id>', methods=['DELETE'])
 def delete_playlist(id):
-    """删除歌单（级联删除关联歌曲）"""
+    """删除歌单（级联删除关联歌曲）；系统歌单（收藏）不可删除"""
     try:
         db = get_db()
         cursor = db.cursor()
 
         # 检查歌单是否存在
-        cursor.execute('SELECT id FROM playlists WHERE id = ? AND user_id = 1', (id,))
-        if not cursor.fetchone():
+        cursor.execute('SELECT id, is_system FROM playlists WHERE id = ? AND user_id = 1', (id,))
+        row = cursor.fetchone()
+        if not row:
             cursor.close()
             db.close()
             return jsonify({'error': '歌单不存在'}), 404
+
+        # 系统歌单（我的收藏）不可删除
+        if row['is_system']:
+            cursor.close()
+            db.close()
+            return jsonify({'error': '系统歌单不可删除'}), 400
 
         # 先删除关联的歌曲记录
         cursor.execute('DELETE FROM playlist_song WHERE playlist_id = ?', (id,))
@@ -158,12 +167,17 @@ def update_playlist(id):
         db = get_db()
         cursor = db.cursor()
 
-        # 检查歌单是否存在
-        cursor.execute('SELECT id FROM playlists WHERE id = ? AND user_id = 1', (id,))
-        if not cursor.fetchone():
+        # 检查歌单是否存在（系统歌单不可重命名/改描述）
+        cursor.execute('SELECT id, is_system FROM playlists WHERE id = ? AND user_id = 1', (id,))
+        row = cursor.fetchone()
+        if not row:
             cursor.close()
             db.close()
             return jsonify({'error': '歌单不存在'}), 404
+        if row['is_system']:
+            cursor.close()
+            db.close()
+            return jsonify({'error': '系统歌单不可修改'}), 400
 
         # 动态构建更新语句
         fields = []
@@ -198,6 +212,7 @@ def update_playlist(id):
             'description': row['description'],
             'cover_url': row['cover_url'],
             'is_public': bool(row['is_public']),
+            'is_system': bool(row['is_system']),
             'track_count': track_count,
             'created_at': row['created_at'],
             'updated_at': row['updated_at'],

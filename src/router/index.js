@@ -9,6 +9,11 @@ const routes = [
     meta: { title: '首页' }
   },
   {
+    // 收藏已并入系统歌单（侧边栏歌单区"我的收藏"），旧地址重定向回首页
+    path: '/favorites',
+    redirect: '/'
+  },
+  {
     path: '/library',
     name: 'library',
     component: () => import('@/views/LibraryView.vue'),
@@ -73,12 +78,6 @@ const routes = [
     name: 'history',
     component: () => import('@/views/HistoryView.vue'),
     meta: { title: '播放历史' }
-  },
-  {
-    path: '/favorites',
-    name: 'favorites',
-    component: () => import('@/views/FavoritesView.vue'),
-    meta: { title: '我的收藏' }
   },
   {
     path: '/top-plays',

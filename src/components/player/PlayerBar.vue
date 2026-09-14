@@ -140,7 +140,6 @@ import { ref, computed, inject, watch, nextTick, onMounted, onBeforeUnmount } fr
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
-import { useFavoritesStore } from '@/stores/favorites'
 import { formatDuration } from '@/utils/format'
 import QueuePanel from '@/components/player/QueuePanel.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
@@ -225,10 +224,6 @@ const playerBarMenuItems = computed(() => {
   const items = [
     { label: '添加到歌单', action: 'addToPlaylist' },
     '-',
-    {
-      label: useFavoritesStore().isFavorite(t) ? '取消收藏' : '收藏',
-      action: 'toggleFavorite',
-    },
     { label: '跳转到专辑', action: 'goAlbum' },
     { label: '跳转到艺术家', action: 'goArtist', hasSubmenu: names.length > 1 },
   ]

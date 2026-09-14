@@ -74,11 +74,13 @@ export const usePlaylistStore = defineStore('playlist', () => {
     } catch { return null }
   }
 
-  // 删除歌单
+  // 删除歌单（系统歌单不可删除）
   async function deletePlaylist(id) {
+    const pl = playlists.value.find(p => p.id === id)
+    if (pl?.is_system) return false   // 系统歌单（收藏）保护
     try {
       const res = await fetch(apiUrl(`/api/playlists/${id}`), { method: 'DELETE' })
-      if (!res.ok) return
+      if (!res.ok) return false
       const idx = playlists.value.findIndex(p => p.id === id)
       if (idx !== -1) {
         playlists.value.splice(idx, 1)
@@ -86,23 +88,27 @@ export const usePlaylistStore = defineStore('playlist', () => {
         loadedPlaylists.delete(id)
         triggerRef(playlists)
       }
-    } catch {}
+      return true
+    } catch { return false }
   }
 
-  // 重命名歌单
+  // 重命名歌单（系统歌单不可重命名）
   async function renamePlaylist(id, name) {
+    const pl = playlists.value.find(p => p.id === id)
+    if (pl?.is_system) return false
     try {
-      await fetch(apiUrl(`/api/playlists/${id}`), {
+      const res = await fetch(apiUrl(`/api/playlists/${id}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name })
       })
-      const playlist = playlists.value.find(p => p.id === id)
-      if (playlist) {
-        playlist.name = name
+      if (!res.ok) return false
+      if (pl) {
+        pl.name = name
         triggerRef(playlists)
       }
-    } catch {}
+      return true
+    } catch { return false }
   }
 
   // 添加歌曲到歌单
@@ -158,6 +164,15 @@ export const usePlaylistStore = defineStore('playlist', () => {
     return playlists.value.find(p => p.id == id)
   }
 
+  // 系统收藏歌单（"我的收藏"，is_system=1）—— 收藏入口统一走歌单
+  const favoritesPlaylist = computed(() =>
+    playlists.value.find(p => p.is_system) || null
+  )
+  function isSystemPlaylist(id) {
+    const pl = playlists.value.find(p => p.id == id)
+    return !!pl?.is_system
+  }
+
   const totalTracks = computed(() => {
     return playlists.value.reduce((sum, p) => sum + (p.trackCount || 0), 0)
   })
@@ -171,6 +186,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
 
   return {
     playlists, totalTracks, isLoaded,
+    favoritesPlaylist, isSystemPlaylist,
     createPlaylist, deletePlaylist, renamePlaylist,
     addToPlaylist, removeFromPlaylist, getPlaylist,
     ensureTracksLoaded, loadPlaylistTracks, savePlaylists

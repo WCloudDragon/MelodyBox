@@ -54,10 +54,6 @@
         <el-icon><Timer /></el-icon>
         <span>播放历史</span>
       </router-link>
-      <router-link to="/favorites" class="nav-item" v-ripple :class="{ active: $route.path === '/favorites' }">
-        <el-icon><StarFilled /></el-icon>
-        <span>我的收藏</span>
-      </router-link>
       <router-link to="/top-plays" class="nav-item" v-ripple :class="{ active: $route.path === '/top-plays' }">
         <el-icon><TrendCharts /></el-icon>
         <span>播放次数</span>
@@ -80,7 +76,8 @@
           :class="{ active: $route.params.id === pl.id }"
           @mouseenter="playlistStore.ensureTracksLoaded(pl.id)"
         >
-          <img v-if="pl.cover_url" :src="pl.cover_url" class="nav-item__cover" />
+          <el-icon v-if="pl.is_system"><StarFilled /></el-icon>
+          <img v-else-if="pl.cover_url" :src="pl.cover_url" class="nav-item__cover" />
           <el-icon v-else><Document /></el-icon>
           <span class="truncate">{{ pl.name }}</span>
           <span class="count">{{ pl.trackCount || pl.tracks.length }}</span>

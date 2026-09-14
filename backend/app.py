@@ -235,6 +235,7 @@ def init_db(app):
             description TEXT DEFAULT '',
             cover_url TEXT DEFAULT '',
             is_public INTEGER DEFAULT 0,
+            is_system INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -242,6 +243,12 @@ def init_db(app):
     ''')
 
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_pl_user ON playlists(user_id)')
+
+    # 老库迁移：补 is_system 列（系统歌单标记）
+    try:
+        conn.executescript('ALTER TABLE playlists ADD COLUMN is_system INTEGER DEFAULT 0')
+    except Exception:
+        pass
 
     # ========== 10. playlist_song ==========
     cursor.execute('''
@@ -589,6 +596,26 @@ def init_db(app):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_fav_user ON favorites(user_id)')
 
+    # ========== 25. 系统收藏歌单（初始化 + 老收藏迁移）==========
+    # "我的收藏"（is_system=1）不可删除、置顶歌单区；旧 favorites 表的本地收藏迁移进来。
+    cursor.execute('SELECT id FROM playlists WHERE is_system = 1 AND user_id = 1 LIMIT 1')
+    sys_row = cursor.fetchone()
+    if sys_row is None:
+        cursor.execute(
+            "INSERT INTO playlists (user_id, name, description, is_system) "
+            "VALUES (1, '我的收藏', '收藏的歌曲会出现在这里', 1)"
+        )
+        sys_playlist_id = cursor.lastrowid
+        # 迁移旧收藏：仅本地歌曲（云端歌曲无 songs.id 对应，舍弃）
+        cur_fav = conn.execute(
+            "SELECT song_id FROM favorites WHERE user_id = 1 AND source = 'local' ORDER BY id DESC"
+        )
+        fav_ids = [r[0] for r in cur_fav.fetchall()]
+        for sid in fav_ids:
+            cursor.execute(
+                'INSERT OR IGNORE INTO playlist_song (playlist_id, song_id) VALUES (?, ?)',
+                (sys_playlist_id, sid)
+            )
     conn.commit()
     cursor.close()
     conn.close()
@@ -669,7 +696,6 @@ def create_app():
     from routes.ai import ai_bp
     from routes.cloud import cloud_bp
     from routes.weather import weather_bp
-    from routes.favorites import fav_bp
 
     app.register_blueprint(music_bp)
     app.register_blueprint(auth_bp)
@@ -680,7 +706,6 @@ def create_app():
     app.register_blueprint(ai_bp)
     app.register_blueprint(cloud_bp)
     app.register_blueprint(weather_bp)
-    app.register_blueprint(fav_bp)
 
     # ==================== B/S 管理端静态托管 ====================
     # 管理端前端构建产物位于项目根目录 dist/（npm run build 生成 admin.html）

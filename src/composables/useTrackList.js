@@ -2,7 +2,6 @@ import { ref, h } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { ElMessage } from '@/utils/toast'
 import { usePlaylistStore } from '@/stores/playlist'
-import { useFavoritesStore } from '@/stores/favorites'
 
 /**
  * 共享的曲目列表交互逻辑：右键菜单 + 多选
@@ -86,11 +85,6 @@ export function useTrackList() {
         case 'trackInfo':
           router.push('/track-info?path=' + encodeURIComponent(track.path))
           return 'navigate'
-        case 'toggleFavorite': {
-          const favStore = useFavoritesStore()
-          favStore.toggle(track)
-          return true
-        }
         case 'goSimilar': {
           if (track?.id) {
             router.push({
@@ -156,10 +150,6 @@ export function useTrackList() {
     }
     items.push(
       '-',
-      {
-        label: useFavoritesStore().isFavorite(track) ? '取消收藏' : '收藏',
-        action: 'toggleFavorite',
-      },
       { label: '音轨信息', action: 'trackInfo' }
     )
     return items

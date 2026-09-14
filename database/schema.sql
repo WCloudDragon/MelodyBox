@@ -132,7 +132,7 @@ CREATE INDEX IF NOT EXISTS idx_ph_song ON play_history(song_id);
 CREATE INDEX IF NOT EXISTS idx_ph_time ON play_history(played_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ph_fp ON play_history(fingerprint);
 
--- 9. 歌单
+-- 9. 歌单（is_system=1 为系统歌单"我的收藏"，不可删除/重命名）
 CREATE TABLE IF NOT EXISTS playlists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER DEFAULT 1,
@@ -140,6 +140,7 @@ CREATE TABLE IF NOT EXISTS playlists (
     description TEXT DEFAULT '',
     cover_url TEXT DEFAULT '',
     is_public INTEGER DEFAULT 0,
+    is_system INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now','localtime')),
     updated_at TEXT DEFAULT (datetime('now','localtime')),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
