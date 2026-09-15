@@ -241,7 +241,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocClick)
   _removeFrost()
 })
 </script>
