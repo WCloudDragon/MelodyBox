@@ -20,7 +20,9 @@
     <Teleport to="body">
       <Transition name="gs-panel">
         <div v-if="open" class="global-search__panel" @mousedown.prevent>
-          <div class="global-search__scroll">
+          <div ref="scrollRef" class="global-search__scroll" :style="panelHeight != null ? { height: panelHeight + 'px' } : null">
+            <Transition name="gs-content" mode="out-in" appear @enter="onContentEnter">
+            <div class="global-search__scroll-inner" :key="contentKey">
             <!-- 有输入：分组结果 -->
             <template v-if="query.trim()">
               <template v-if="groups.length">
@@ -80,6 +82,8 @@
                 <p class="gs-empty__hint">输入关键词，跨歌曲 / 专辑 / 艺术家 / 歌单 / 历史记录检索</p>
               </div>
             </template>
+            </div>
+            </Transition>
           </div>
           <div class="global-search__footer">
             <span>↑↓ 选择 · Enter 确认 · Esc 关闭</span>
@@ -326,6 +330,42 @@ function onDocClick(e) {
 watch(query, () => { selIdx.value = -1 })
 watch(() => route.fullPath, () => close())
 
+// ==================== 面板高度动画与内容模糊切换 ====================
+// 高度动画：JS 只负责写入目标高度，插值交给 CSS transition（统一曲线），
+// 避免手写 rAF 求解 cubic-bezier。打开瞬间 height 直接到位 → 纯模糊渐显，无缩放感。
+const scrollRef = ref(null)
+const panelHeight = ref(null) // null = height auto（面板刚挂载时不参与过渡）
+const PANEL_HEIGHT_LIMIT = 440
+
+// 内容标识：关键词或空态内容（历史/热门条数）变化 → 内容模糊切换 + 高度重测
+const contentKey = computed(() => {
+  const q = query.value.trim()
+  if (q) return 'q:' + q.toLowerCase()
+  return 'idle:' + history.value.length + ':' + hotItems.value.length
+})
+
+function measurePanelHeight() {
+  nextTick(() => {
+    const inner = scrollRef.value?.querySelector('.global-search__scroll-inner')
+    if (!inner) return
+    const target = Math.min(inner.offsetHeight, PANEL_HEIGHT_LIMIT)
+    if (panelHeight.value !== target) {
+      panelHeight.value = target
+      // 内容切换后滚动归位，避免残留滚动量
+      if (scrollRef.value) scrollRef.value.scrollTop = 0
+    }
+  })
+}
+
+// mode="out-in"：新内容插入 DOM 后才触发（离场完成后），此刻测量高度才准确
+function onContentEnter() {
+  measurePanelHeight()
+}
+
+watch(open, (v) => {
+  if (v) panelHeight.value = null // 重新打开时高度直接到位，不播放收缩过渡
+})
+
 onMounted(() => {
   document.addEventListener('click', onDocClick)
   document.addEventListener('keydown', onGlobalKeydown)
@@ -411,14 +451,41 @@ onUnmounted(() => {
   z-index: 3000;
   overflow: hidden;
 }
-.gs-panel-enter-active, .gs-panel-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
-.gs-panel-enter-from, .gs-panel-leave-to { opacity: 0; transform: translateX(-50%) translateY(-6px); }
-
-.global-search__scroll {
-  max-height: 440px;
-  overflow-y: auto;
-  padding: 6px;
+/* 面板开合：纯模糊渐隐渐显（与全局右键菜单同语言，无缩放/位移/回弹） */
+.gs-panel-enter-active {
+  transition: opacity 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
+.gs-panel-leave-active {
+  transition: opacity 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.gs-panel-enter-from, .gs-panel-leave-to {
+  opacity: 0;
+  filter: blur(6px);
+}
+
+/* 内容切换（关键词/空态变化）：模糊渐隐 → 模糊渐显（out-in 串行） */
+.gs-content-enter-active {
+  transition: opacity 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.gs-content-leave-active {
+  transition: opacity 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.gs-content-enter-from, .gs-content-leave-to {
+  opacity: 0;
+  filter: blur(6px);
+}
+
+/* 高度平滑过渡：JS 只写目标高度，插值交给统一曲线 */
+.global-search__scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  transition: height 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.global-search__scroll-inner { padding: 6px; }
 .global-search__scroll::-webkit-scrollbar { width: 6px; }
 .global-search__scroll::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
 
