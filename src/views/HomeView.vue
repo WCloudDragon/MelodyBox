@@ -614,17 +614,25 @@ function onWeatherCardClick() {
 // 推荐卡片分页
 const recEntriesRef = ref(null)
 const recPage = ref(0)
-const recCardsPerPage = ref(5)
 const REC_CARD_MIN = 160
+const REC_CARD_MAX = 220
 const REC_GAP = 12
 
-function updateCardsPerPage() {
-  const w = recEntriesRef.value?.clientWidth || 0
-  if (!w) return
+// 容器宽度必须存为响应式 ref：computed 依赖它后，任何宽度变化（哪怕 1px）
+// 都会触发重算。此前直接在 computed 里读 clientWidth（非响应式依赖），
+// 每页张数不变时 computed 不重算，导致 resize 后卡片宽度不更新
+const recWrapW = ref(0)
+
+const recLayout = computed(() => {
+  const w = recWrapW.value
+  if (!w) return { per: 5, cardW: 200 }
+  // 卡宽 ≥ MIN 时一页能容纳的最大张数
   const per = Math.max(1, Math.floor((w + REC_GAP) / (REC_CARD_MIN + REC_GAP)))
-  recCardsPerPage.value = per
-  if (recPage.value > recMaxPage.value) recPage.value = recMaxPage.value
-}
+  let cardW = (w - (per - 1) * REC_GAP) / per
+  // 窗口偏窄时均分宽会超出上限：把卡宽压到 MAX，行尾留白（等宽约束下无更优解）
+  if (cardW > REC_CARD_MAX) cardW = REC_CARD_MAX
+  return { per, cardW }
+})
 
 const recTotalCards = computed(() => {
   // daily + hidden_gem + weather + moods（天气卡常显）
@@ -632,13 +640,16 @@ const recTotalCards = computed(() => {
 })
 
 const recMaxPage = computed(() => {
-  return Math.max(0, Math.ceil(recTotalCards.value / recCardsPerPage.value) - 1)
+  return Math.max(0, Math.ceil(recTotalCards.value / recLayout.value.per) - 1)
+})
+
+// 每页张数变化（窗口 resize）时收拢越界页码
+watch(recMaxPage, (m) => {
+  if (recPage.value > m) recPage.value = m
 })
 
 const recTrackStyle = computed(() => {
-  const w = recEntriesRef.value?.clientWidth || 0
-  const per = recCardsPerPage.value
-  const cardW = w > 0 ? (w - (per - 1) * REC_GAP) / per : 200
+  const { per, cardW } = recLayout.value
   const offset = recPage.value * per * (cardW + REC_GAP)
   return {
     transform: `translateX(-${offset}px)`,
@@ -668,9 +679,9 @@ const homeStyle = computed(() => ({
 let resizeObserver = null
 let homeResizeObserver = null
 onMounted(() => {
-  updateCardsPerPage()
-  updateHomeGrid()
-  resizeObserver = new ResizeObserver(updateCardsPerPage)
+  resizeObserver = new ResizeObserver(entries => {
+    for (const e of entries) recWrapW.value = e.contentRect.width
+  })
   if (recEntriesRef.value) resizeObserver.observe(recEntriesRef.value)
   homeResizeObserver = new ResizeObserver(updateHomeGrid)
   if (homeRef.value) homeResizeObserver.observe(homeRef.value)

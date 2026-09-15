@@ -770,8 +770,10 @@ async function flyCoverIn() {
     { arcFlip: true } // 飞入走右下四分之一圆弧（与飞出的左上弧形成镜像）
   )
 
-  // 飞行结束：显示面板封面
-  artEl.style.opacity = ''
+  // 飞行结束：显示面板封面。
+  // 快速开闭时本次飞行会被 flyCoverOut 打断接续（flyer 已指向关闭段），
+  // 此时不能恢复面板封面显示，否则真封面会跟随正在下滑的面板一起露出（视觉双封面）
+  if (props.visible && !flyer) artEl.style.opacity = ''
 }
 
 /** 面板关闭：封面从面板飞回 */
