@@ -7,9 +7,12 @@
       <span class="title-bar__name">MelodyBox</span>
     </div>
     <div class="title-bar__drag"></div>
-    <!-- 全局搜索（no-drag；沉浸态/全屏歌词模式下隐藏） -->
-    <GlobalSearch v-if="!immersive && !lyricsVisible" />
-    <div class="title-bar__drag"></div>
+    <!-- 全局搜索（no-drag；沉浸态/全屏歌词模式下隐藏）。
+         绝对定位窗口真居中：flex 两侧 drag 均分会被品牌区宽度挤偏，
+         且下拉面板(Teleport 到 body)是窗口居中，输入框必须与之一致 -->
+    <div v-if="!immersive && !lyricsVisible" class="title-bar__search">
+      <GlobalSearch />
+    </div>
     <div class="title-bar__controls" :class="{ 'title-bar__controls--lyrics': lyricsVisible }">
       <button class="title-btn" v-ripple @click="onFullscreen" :title="isFs ? '退出全屏' : '全屏'">
         <svg v-if="!isFs" width="12" height="12" viewBox="0 0 12 12">
@@ -74,6 +77,7 @@ function onClose() { window.electronAPI?.close() }
 
 <style scoped>
 .title-bar {
+  position: relative;
   display: flex;
   align-items: center;
   height: 36px;
@@ -81,6 +85,17 @@ function onClose() { window.electronAPI?.close() }
   -webkit-app-region: drag;
   user-select: none;
   flex-shrink: 0;
+}
+/* 搜索框绝对居中容器：不参与 flex 流，不受品牌区/窗控宽度影响 */
+.title-bar__search {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  z-index: 1100;
 }
 .title-bar__brand {
   display: flex;
