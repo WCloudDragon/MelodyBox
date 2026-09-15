@@ -40,23 +40,6 @@
       <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h12v1H2V3zm0 5h12v1H2V8zm0 5h12v1H2v-1z"/></svg>
     </button>
 
-    <!-- 搜索（点击展开输入框） -->
-    <button v-if="showSearch && !searchOpen" class="lph-btn" title="搜索" @click="searchOpen = true">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
-    </button>
-    <div v-else-if="showSearch && searchOpen" class="lph-search">
-      <input
-        ref="searchInput"
-        v-model="searchValueLocal"
-        type="text"
-        placeholder="搜索..."
-        @keydown.esc="closeSearch"
-      />
-      <button class="lph-search__close" title="关闭" @click="closeSearch">
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M9.5 2.5L2.5 9.5M2.5 2.5l7 7" stroke="currentColor" stroke-width="1.4"/></svg>
-      </button>
-    </div>
-
     <!-- 排序面板 -->
     <div v-if="sortOpen" class="lph-panel" @click.stop>
       <div class="lph-panel__title">排序</div>
@@ -108,7 +91,6 @@ const props = defineProps({
   title: { type: String, required: true },
   count: { type: [String, Number], default: null },
   showPlayMode: { type: Boolean, default: true },
-  showSearch: { type: Boolean, default: false },
   showSort: { type: Boolean, default: false },
   showFilter: { type: Boolean, default: false },
   showMultiSelect: { type: Boolean, default: false },
@@ -119,20 +101,16 @@ const props = defineProps({
   sortKey: { type: String, default: '' },
   sortOrder: { type: String, default: 'asc' },
   filterGroups: { type: Array, default: () => [] },
-  filterValues: { type: Object, default: () => ({}) },
-  searchValue: { type: String, default: '' }
+  filterValues: { type: Object, default: () => ({}) }
 })
-const emit = defineEmits(['sort', 'filter', 'viewChange', 'toggleMultiSelect', 'update:searchValue'])
+const emit = defineEmits(['sort', 'filter', 'viewChange', 'toggleMultiSelect'])
 
 const player = usePlayerStore()
 const { playMode } = storeToRefs(player)
 
-const searchOpen = ref(false)
 const sortOpen = ref(false)
 const filterOpen = ref(false)
 const modeMenu = ref({ visible: false, x: 0, y: 0 })
-const searchInput = ref(null)
-const searchValueLocal = ref(props.searchValue)
 
 const playModeLabel = computed(() => ({
   sequential: '顺序',
@@ -159,12 +137,6 @@ function setPlayMode(m) {
   closeModeMenu()
 }
 
-function closeSearch() {
-  searchOpen.value = false
-  searchValueLocal.value = ''
-  if (props.searchValue) emit('update:searchValue', '')
-}
-
 function chooseSort(key) {
   emit('sort', { key, order: props.sortOrder })
   sortOpen.value = false
@@ -178,12 +150,6 @@ function chooseFilter(key, value) {
   filterOpen.value = false
 }
 
-watch(searchOpen, async (v) => {
-  if (v) { await nextTick(); searchInput.value?.focus() }
-})
-watch(() => props.searchValue, (v) => {
-  if (v !== searchValueLocal.value) searchValueLocal.value = v
-})
 watch(() => [sortOpen.value, filterOpen.value], () => closeModeMenu())
 
 // ===== 顶栏背景模糊（页头内 fixed z-1 + cb 补偿 + 下延采样区） =====
@@ -317,34 +283,6 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border-color);
   font-size: 13px;
 }
-
-.lph-search {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 34px;
-  padding: 0 6px 0 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border-color);
-  background: rgba(0, 0, 0, 0.25);
-}
-.lph-search input {
-  width: 180px;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 14px;
-}
-.lph-search__close {
-  border: none;
-  background: none;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  padding: 6px;
-  border-radius: 6px;
-}
-.lph-search__close:hover { color: var(--text-primary); }
 
 .lph-panel {
   position: absolute;

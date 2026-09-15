@@ -3,15 +3,12 @@
     <ListPageHeader
       title="播放次数"
       :count="filtered.length"
-      show-search
       show-sort
       :show-multi-select="true"
       :multi-select-active="multiSelectMode"
       :sort-options="sortOptionsList"
       :sort-key="sortKey"
       :sort-order="sortOrder"
-      :search-value="searchQuery"
-      @update:search-value="searchQuery = $event"
       @sort="onSort"
       @toggle-multi-select="toggleSelectMode"
     >
@@ -135,7 +132,6 @@ const menuItems = computed(() => buildMenuItems('default', ctxMenu.value.track))
 
 const list = ref([])
 const loading = ref(false)
-const searchQuery = ref('')
 const sortKey = ref('play_count')
 const sortOrder = ref('desc')
 const sortOptionsList = [
@@ -164,14 +160,6 @@ function rankIcon(index) {
 
 const filtered = computed(() => {
   let arr = [...list.value]
-  const q = searchQuery.value.trim().toLowerCase()
-  if (q) {
-    arr = arr.filter(t =>
-      (t.title || '').toLowerCase().includes(q) ||
-      (t.artist || '').toLowerCase().includes(q) ||
-      (t.album || '').toLowerCase().includes(q)
-    )
-  }
   arr.sort((a, b) => {
     let va = a[sortKey.value] ?? '', vb = b[sortKey.value] ?? ''
     if (sortKey.value === 'play_count') {

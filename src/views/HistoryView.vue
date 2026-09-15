@@ -3,15 +3,12 @@
     <ListPageHeader
       title="播放历史"
       :count="filtered.length"
-      show-search
       show-sort
       :show-multi-select="true"
       :multi-select-active="multiSelectMode"
       :sort-options="sortOptionsList"
       :sort-key="sortKey"
       :sort-order="sortOrder"
-      :search-value="searchQuery"
-      @update:search-value="searchQuery = $event"
       @sort="onSort"
       @toggle-multi-select="toggleSelectMode"
     >
@@ -109,7 +106,6 @@ import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useVirtualList } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { Search } from '@element-plus/icons-vue'
 import { usePlayerStore } from '@/stores/player'
 import { useLibraryStore } from '@/stores/library'
 import { useTrackList } from '@/composables/useTrackList'
@@ -134,7 +130,6 @@ const menuItems = computed(() => buildMenuItems('default', ctxMenu.value.track))
 
 const list = ref([])
 const loading = ref(false)
-const searchQuery = ref('')
 const sortKey = ref('played_at')
 const sortOrder = ref('desc')
 const sortOptionsList = [
@@ -180,14 +175,6 @@ function formatAbsoluteTime(raw) {
 
 const filtered = computed(() => {
   let arr = [...list.value]
-  const q = searchQuery.value.trim().toLowerCase()
-  if (q) {
-    arr = arr.filter(t =>
-      (t.title || '').toLowerCase().includes(q) ||
-      (t.artist || '').toLowerCase().includes(q) ||
-      (t.album || '').toLowerCase().includes(q)
-    )
-  }
   arr.sort((a, b) => {
     let va = a[sortKey.value] ?? '', vb = b[sortKey.value] ?? ''
     if (sortKey.value === 'played_at') {

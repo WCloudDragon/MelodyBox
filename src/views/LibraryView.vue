@@ -3,7 +3,6 @@
     <ListPageHeader
       title="音乐库"
       :count="libraryStore.filteredTracks.length"
-      show-search
       show-sort
       show-filter
       :show-multi-select="true"
@@ -13,8 +12,6 @@
       :sort-order="libraryStore.sortOrder"
       :filter-groups="filterGroups"
       :filter-values="{ source: sourceFilter, genre: libraryStore.filterGenre }"
-      :search-value="libraryStore.searchQuery"
-      @update:search-value="libraryStore.searchQuery = $event"
       @sort="onSort"
       @filter="onFilter"
       @toggle-multi-select="toggleSelectMode"

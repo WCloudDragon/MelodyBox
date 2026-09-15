@@ -7,6 +7,9 @@
       <span class="title-bar__name">MelodyBox</span>
     </div>
     <div class="title-bar__drag"></div>
+    <!-- 全局搜索（no-drag；沉浸态/全屏歌词模式下隐藏） -->
+    <GlobalSearch v-if="!immersive && !lyricsVisible" />
+    <div class="title-bar__drag"></div>
     <div class="title-bar__controls" :class="{ 'title-bar__controls--lyrics': lyricsVisible }">
       <button class="title-btn" v-ripple @click="onFullscreen" :title="isFs ? '退出全屏' : '全屏'">
         <svg v-if="!isFs" width="12" height="12" viewBox="0 0 12 12">
@@ -44,6 +47,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import GlobalSearch from './GlobalSearch.vue'
 
 const props = defineProps({
   lyricsVisible: { type: Boolean, default: false },

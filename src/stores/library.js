@@ -18,7 +18,6 @@ export const useLibraryStore = defineStore('library', () => {
   const cloudTracks = ref([])
   const scanDirs = ref([])
   const isLoading = ref(false)
-  const searchQuery = ref('')
   const sortKey = ref('title')
   const sortOrder = ref('asc')
   const viewMode = ref('list')
@@ -290,15 +289,6 @@ export const useLibraryStore = defineStore('library', () => {
   const filteredTracks = computed(() => {
     let result = [...allTracks.value]
 
-    if (searchQuery.value) {
-      const q = searchQuery.value.toLowerCase()
-      result = result.filter(t =>
-        t.title.toLowerCase().includes(q) ||
-        (t.artist && t.artist.toLowerCase().includes(q)) ||
-        (t.album && t.album.toLowerCase().includes(q))
-      )
-    }
-
     if (filterGenre.value) {
       result = result.filter(t => t.genre === filterGenre.value)
     }
@@ -345,7 +335,7 @@ export const useLibraryStore = defineStore('library', () => {
 
   return {
     tracks, cloudTracks, allTracks, scanDirs, isLoading,
-    searchQuery, sortKey, sortOrder,
+    sortKey, sortOrder,
     viewMode, filterGenre, filterArtist, sourceFilter,
     albums, artists, genres, filteredTracks, totalDuration,
     isScanning, scanProgress,
