@@ -451,28 +451,39 @@ onUnmounted(() => {
   z-index: 3000;
   overflow: hidden;
 }
-/* 面板开合：纯模糊渐隐渐显（与全局右键菜单同语言，无缩放/位移/回弹） */
+/* 面板开合：模糊渐隐渐显 + 缩放（与全局右键菜单同语言）。
+   入：从较大尺寸收缩到位；出：从现尺寸放大消失。
+   transform 与 opacity/filter 同曲线同帧插值，三种变化一体的呼吸感 */
 .gs-panel-enter-active {
-  transition: opacity 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              filter 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: opacity 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              transform 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .gs-panel-leave-active {
-  transition: opacity 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              filter 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: opacity 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-.gs-panel-enter-from, .gs-panel-leave-to {
+.gs-panel-enter-from {
   opacity: 0;
-  filter: blur(6px);
+  filter: blur(10px);
+  transform: translateX(-50%) scale(1.12);
+}
+.gs-panel-leave-to {
+  opacity: 0;
+  filter: blur(10px);
+  transform: translateX(-50%) scale(1.12);
 }
 
-/* 内容切换（关键词/空态变化）：模糊渐隐 → 模糊渐显（out-in 串行） */
+/* 内容切换（关键词/空态变化）：模糊渐隐 → 模糊渐显（out-in 串行）。
+   打字高频触发，节奏比开合稍快以免跟不上输入 */
 .gs-content-enter-active {
-  transition: opacity 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              filter 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: opacity 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .gs-content-leave-active {
-  transition: opacity 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              filter 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: opacity 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .gs-content-enter-from, .gs-content-leave-to {
   opacity: 0;
@@ -483,7 +494,7 @@ onUnmounted(() => {
 .global-search__scroll {
   overflow-y: auto;
   overflow-x: hidden;
-  transition: height 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  transition: height 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .global-search__scroll-inner { padding: 6px; }
 .global-search__scroll::-webkit-scrollbar { width: 6px; }

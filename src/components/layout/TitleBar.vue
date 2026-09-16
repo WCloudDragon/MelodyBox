@@ -7,10 +7,10 @@
       <span class="title-bar__name">MelodyBox</span>
     </div>
     <div class="title-bar__drag"></div>
-    <!-- 全局搜索（no-drag；沉浸态/全屏歌词模式下隐藏）。
+    <!-- 全局搜索（no-drag；沉浸态隐藏，全屏歌词模式保留）。
          绝对定位窗口真居中：flex 两侧 drag 均分会被品牌区宽度挤偏，
          且下拉面板(Teleport 到 body)是窗口居中，输入框必须与之一致 -->
-    <div v-if="!immersive && !lyricsVisible" class="title-bar__search">
+    <div v-if="!immersive" class="title-bar__search">
       <GlobalSearch />
     </div>
     <div class="title-bar__controls" :class="{ 'title-bar__controls--lyrics': lyricsVisible }">

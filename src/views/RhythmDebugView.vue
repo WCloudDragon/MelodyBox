@@ -174,7 +174,6 @@ html, body { margin: 0; padding: 0; overflow: hidden; }
   height: 100vh;
   background: #1a1a2e;
   color: #e2e8f0;
-  font-family: 'MiSans VF', 'PingFang SC', system-ui, sans-serif;
   font-size: 12px;
   padding: 10px 14px;
   overflow-y: auto;
