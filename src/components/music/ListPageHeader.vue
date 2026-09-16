@@ -7,7 +7,7 @@
     <!-- 页面自定义右侧操作（导入/刷新/播放全部等） -->
     <slot />
 
-    <!-- 播放模式：左键循环切换，右键弹菜单 -->
+    <!-- 播放模式：左键循环切换，右键弹菜单（复用全局右键菜单组件样式/动效/防出屏） -->
     <button
       v-if="showPlayMode"
       class="lph-btn lph-btn--playmode"
@@ -70,15 +70,16 @@
       </div>
     </div>
 
-    <!-- 播放模式二级菜单 -->
-    <Teleport to="body">
-      <Transition name="lph-menu">
-        <div v-if="modeMenu.visible" class="lph-mode-menu" :style="{ left: modeMenu.x + 'px', top: modeMenu.y + 'px' }" @click.stop>
-          <div class="lph-panel__title">播放模式</div>
-          <button v-for="m in modeOptions" :key="m.value" class="lph-panel__item" :class="{ active: playMode === m.value }" @click="setPlayMode(m.value)">{{ m.label }}</button>
-        </div>
-      </Transition>
-    </Teleport>
+    <!-- 播放模式右键菜单：复用全局右键菜单（样式/动效/防出屏与列表项一致） -->
+    <ContextMenu
+      :visible="modeMenu.visible"
+      :x="modeMenu.x"
+      :y="modeMenu.y"
+      :items="modeMenuItems"
+      :animated="true"
+      @close="modeMenu.visible = false"
+      @action="setPlayMode"
+    />
   </div>
 </template>
 
@@ -86,6 +87,7 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
+import ContextMenu from '@/components/music/ContextMenu.vue'
 
 const props = defineProps({
   title: { type: String, required: true },
@@ -126,10 +128,17 @@ const modeOptions = [
   { value: 'shuffle', label: '随机播放' }
 ]
 
+// 右键菜单项（复用列表项菜单的样式/动效/防出屏；当前模式高亮由 ContextMenu 的 active 语义一致化处理）
+const modeMenuItems = computed(() =>
+  modeOptions.map(m => ({
+    label: m.label + (playMode.value === m.value ? ' ✓' : ''),
+    action: m.value
+  }))
+)
+
 function openModeMenu(e) {
-  const x = Math.min(e.clientX, window.innerWidth - 180)
-  const y = Math.min(e.clientY, window.innerHeight - 220)
-  modeMenu.value = { visible: true, x, y }
+  // 坐标原样传入；防出屏由 ContextMenu 渲染后实测尺寸自行修正
+  modeMenu.value = { visible: true, x: e.clientX, y: e.clientY }
 }
 function closeModeMenu() { modeMenu.value.visible = false }
 function setPlayMode(m) {
@@ -320,20 +329,4 @@ onBeforeUnmount(() => {
 .lph-panel__row { display: flex; gap: 6px; }
 .lph-panel__dir { justify-content: center; }
 .lph-panel__opt { width: auto; }
-
-.lph-mode-menu {
-  position: fixed;
-  min-width: 170px;
-  padding: 8px;
-  border-radius: 12px;
-  background: var(--glass-bg-strong, rgba(30, 30, 38, 0.92));
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
-  border: 1px solid var(--border-color);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  z-index: 200;
-}
-.lph-mode-menu .lph-panel__item { width: 100%; }
-.lph-menu-enter-active, .lph-menu-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
-.lph-menu-enter-from, .lph-menu-leave-to { opacity: 0; transform: translateY(-6px); }
 </style>

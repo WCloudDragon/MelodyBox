@@ -216,6 +216,13 @@ html, body {
 
 /* ==================== Element Plus 主题覆盖 ==================== */
 
+/* EP 组件字体统一：EP 在 :root 自带 --el-font-family（Helvetica/YaHei 栈），
+   所有 el-* 组件直接引用该变量导致绕过 MiSans；重定义回全局字体栈 */
+:root {
+  --el-font-family: 'MiSans VF', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
 /* 按钮 - 默认 */
 .el-button {
   --el-button-bg-color: var(--bg-tertiary);

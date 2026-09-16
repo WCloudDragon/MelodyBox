@@ -1,7 +1,7 @@
 <template>
   <teleport to="body">
     <Transition :name="menuAnimName">
-      <div v-if="visible" class="ctx-menu" :style="{ left: x + 'px', top: y + 'px' }" @click.stop>
+      <div v-if="visible" ref="menuEl" class="ctx-menu" :style="{ left: x + 'px', top: y + 'px' }" @click.stop>
         <template v-for="(item, i) in items" :key="i">
           <div v-if="item === '-'" class="ctx-menu-divider" />
           <div
@@ -52,7 +52,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 
 defineOptions({ name: 'ContextMenu' })
 const props = defineProps({
@@ -67,6 +67,29 @@ const emit = defineEmits(['close', 'action', 'sub-action', 'hover-submenu'])
 
 const menuAnimName = computed(() => props.animated ? 'ctx-menu-blur' : 'ctx-menu-none')
 const backdropAnimName = computed(() => props.animated ? 'ctx-menu-backdrop' : 'ctx-menu-none')
+
+const menuEl = ref(null)
+// 防出屏修正后的实际坐标（初始等于传入坐标，渲染后按实测尺寸修正）
+const pos = ref({ x: props.x, y: props.y })
+const x = computed(() => pos.value.x)
+const y = computed(() => pos.value.y)
+
+// 菜单渲染后按实测尺寸防出屏：不再依赖调用方估算宽高（内容条数可变，估算必失准）
+watch(() => props.visible, async (v) => {
+  if (v) {
+    pos.value = { x: props.x, y: props.y }
+    await nextTick()
+    const el = menuEl.value
+    if (!el) return
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    let nx = props.x
+    let ny = props.y
+    if (nx + w > window.innerWidth - 8) nx = Math.max(8, window.innerWidth - w - 8)
+    if (ny + h > window.innerHeight - 8) ny = Math.max(8, window.innerHeight - h - 8)
+    pos.value = { x: nx, y: ny }
+  }
+})
 
 const submenuOpen = ref(false)
 const submenuSide = ref('right')

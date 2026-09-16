@@ -49,8 +49,8 @@ export const usePlayerStore = defineStore('player', () => {
     setTimeout(_warmupAudioPipeline, 1500)
   }
 
-  // 播放模式: 'sequential' | 'repeat' | 'repeat-one' | 'shuffle'
-  const playMode = ref('sequential')
+  // 播放模式: 'sequential' | 'repeat' | 'repeat-one' | 'shuffle'（默认列表循环）
+  const playMode = ref('repeat')
 
   // 桌面歌词开关
   const showDesktopLyrics = ref(false)
