@@ -450,10 +450,12 @@ onUnmounted(() => {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
   z-index: 3000;
   overflow: hidden;
+  /* 缩放锚点=顶部中心：面板顶边贴搜索框下方，入场向下生长、出场缩回 */
+  transform-origin: top center;
 }
 /* 面板开合：模糊渐隐渐显 + 缩放（与全局右键菜单同语言）。
-   入：从较大尺寸收缩到位；出：从现尺寸放大消失。
-   transform 与 opacity/filter 同曲线同帧插值，三种变化一体的呼吸感 */
+   入：从略小尺寸（0.88）生长到位——顶边锚定搜索框下方，从源头"长出来"；
+   出：反向缩回搜索框。锚顶边 + 缩小态不产生上溢，顶边全程稳定不裁切 */
 .gs-panel-enter-active {
   transition: opacity 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               filter 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.0),
@@ -467,12 +469,12 @@ onUnmounted(() => {
 .gs-panel-enter-from {
   opacity: 0;
   filter: blur(10px);
-  transform: translateX(-50%) scale(1.12);
+  transform: translateX(-50%) scale(0.88);
 }
 .gs-panel-leave-to {
   opacity: 0;
   filter: blur(10px);
-  transform: translateX(-50%) scale(1.12);
+  transform: translateX(-50%) scale(0.88);
 }
 
 /* 内容切换（关键词/空态变化）：模糊渐隐 → 模糊渐显（out-in 串行）。
