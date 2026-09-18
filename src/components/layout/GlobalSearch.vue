@@ -284,7 +284,7 @@ function close() {
 function clearQuery() {
   query.value = ''
   selIdx.value = -1
-  inputRef.value?.focus()
+  inputRef.value?.focus()  // 保持焦点，面板切换回历史/热门空态页
 }
 
 function onKeydown(e) {
@@ -321,6 +321,9 @@ function onGlobalKeydown(e) {
   }
 }
 function onDocClick(e) {
+  // 目标元素在事件派发途中被移除（如点叉号清词后 v-if 卸载按钮），
+  // 此时 target 已游离：contains/closest 都会误判为"外部点击"，直接忽略该事件
+  if (!e.target.isConnected) return
   // 面板 Teleport 到 body，点击面板内部不算外部
   if (rootRef.value?.contains(e.target)) return
   if (e.target.closest?.('.global-search__panel')) return
@@ -348,7 +351,10 @@ function measurePanelHeight() {
   nextTick(() => {
     const inner = scrollRef.value?.querySelector('.global-search__scroll-inner')
     if (!inner) return
-    const target = Math.min(inner.offsetHeight, PANEL_HEIGHT_LIMIT)
+    // offsetHeight 是取整值：高 DPI 缩放下内容实高常为小数，取整后偏低零点几像素
+    // 即触发亚像素溢出 → 滚动条占位压窄内容 → 标签换行 → 溢出放大 → 滚动条常驻。
+    // 改用小数精度实测并向上取整，保证设高 ≥ 内容实高（入场动画仅 opacity/filter，不影响测量）
+    const target = Math.min(Math.ceil(inner.getBoundingClientRect().height), PANEL_HEIGHT_LIMIT)
     if (panelHeight.value !== target) {
       panelHeight.value = target
       // 内容切换后滚动归位，避免残留滚动量
@@ -398,6 +404,9 @@ onUnmounted(() => {
   border-color: var(--accent-color);
   background: rgba(0, 0, 0, 0.32);
 }
+/* 浅色模式：黑色叠加在浅色顶栏上观感过深，减淡内陷感（深色保持原值） */
+[data-theme='light'] .global-search__box { background: rgba(0, 0, 0, 0.06); }
+[data-theme='light'] .global-search__box.focused { background: rgba(0, 0, 0, 0.1); }
 .global-search__icon { color: var(--text-tertiary); flex-shrink: 0; }
 .global-search__box input {
   flex: 1;

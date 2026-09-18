@@ -214,6 +214,13 @@ html, body {
   height: 100%;
 }
 
+/* 表单控件恢复字体继承：Chrome UA 给 button/input 写死 Arial 且不从父级继承，
+   切断上面的全局 MiSans 继承链（侧边栏主题按钮、搜索框/历史标签等均中招）。
+   仅恢复 font-family，不动 font-size 以免布局回归 */
+button, input, textarea, select, optgroup, option {
+  font-family: inherit;
+}
+
 /* ==================== Element Plus 主题覆盖 ==================== */
 
 /* EP 组件字体统一：EP 在 :root 自带 --el-font-family（Helvetica/YaHei 栈），

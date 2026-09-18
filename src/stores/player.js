@@ -451,6 +451,27 @@ export const usePlayerStore = defineStore('player', () => {
     }
 
     playMode.value = nextMode
+    // 模式切换即按新模式起播当前队列（无队列则静默跳过，等待下一次播放全部）
+    if (queue.value.length > 0) {
+      play(Math.max(0, currentIndex.value))
+    }
+  }
+
+  // 直接设定播放模式（右键菜单选中）：切换后按新模式起播当前队列
+  function setPlayMode(mode) {
+    if (!['sequential', 'repeat', 'repeat-one', 'shuffle'].includes(mode) || mode === playMode.value) return
+    playMode.value = mode
+    if (mode === 'shuffle' && originalQueue.value.length === 0) {
+      originalQueue.value = cloneQueue(queue.value)
+      shuffle(queue.value)
+      if (queue.value.length) currentIndex.value = 0
+    } else if (mode !== 'shuffle' && originalQueue.value.length > 0) {
+      queue.value = cloneQueue(originalQueue.value)
+      originalQueue.value = []
+    }
+    if (queue.value.length > 0) {
+      play(Math.max(0, currentIndex.value))
+    }
   }
 
   // 添加到队尾
@@ -690,7 +711,7 @@ export const usePlayerStore = defineStore('player', () => {
     songChangeDirection, audioCtx, analyserNode,
     currentTrack, progress, hasNext, hasPrev,
     initAudio, play, pause, resume, togglePlay,
-    next, prev, seek, setVolume, toggleMute, togglePlayMode, toggleDesktopLyrics,
+    next, prev, seek, setVolume, toggleMute, togglePlayMode, setPlayMode, toggleDesktopLyrics,
     addToQueue, addToQueueNext, removeFromQueue, clearQueue, moveInQueue, moveToNext, playAll,
     saveSettings, loadSettings, saveProgress, restoreProgress,
     getLiveTime

@@ -142,7 +142,8 @@ function openModeMenu(e) {
 }
 function closeModeMenu() { modeMenu.value.visible = false }
 function setPlayMode(m) {
-  player.playMode = m
+  // 右键菜单选中：直接按所选模式起播当前队列（store 内处理切换与起播）
+  player.setPlayMode(m)
   closeModeMenu()
 }
 
