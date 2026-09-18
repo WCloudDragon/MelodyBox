@@ -349,7 +349,7 @@ function batchAddQueueNext(tracks) {
 
 /* 列表视图 */
 .tracks-list { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.tracks-list-body { flex: 1; overflow-y: auto; min-height: 0; transform: translateZ(0); }
+.tracks-list-body { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; transform: translateZ(0); }
 .tracks-list-body::-webkit-scrollbar { width: 6px; }
 .tracks-list-body::-webkit-scrollbar-track { background: transparent; }
 .tracks-list-body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
@@ -359,7 +359,8 @@ function batchAddQueueNext(tracks) {
   display: grid;
   grid-template-columns: 40px 1fr 1fr 52px 60px 40px;
   align-items: center;
-  padding: 0 12px; border-radius: 6px;
+  /* 内容落在 --page-pad-x 基准线；hover 背景天然从基准线左一个 pad 处开始（呼吸感） */
+  padding: 0 var(--page-pad-x, 12px); border-radius: 6px;
   height: 64px; transition: background 0.15s; cursor: default;
 }
 .track-row:hover, .track-row--ctx-active { background: var(--hover-bg); }

@@ -451,10 +451,11 @@ export const usePlayerStore = defineStore('player', () => {
     }
 
     playMode.value = nextMode
-    // 模式切换即按新模式起播当前队列（无队列则静默跳过，等待下一次播放全部）
-    if (queue.value.length > 0) {
-      play(Math.max(0, currentIndex.value))
-    }
+  }
+
+  // 按当前播放模式起播当前队列（列表顶栏播放模式按钮左键：只起播，不切换模式）
+  function playCurrentQueue() {
+    if (queue.value.length > 0) play(Math.max(0, currentIndex.value))
   }
 
   // 直接设定播放模式（右键菜单选中）：切换后按新模式起播当前队列
@@ -711,7 +712,7 @@ export const usePlayerStore = defineStore('player', () => {
     songChangeDirection, audioCtx, analyserNode,
     currentTrack, progress, hasNext, hasPrev,
     initAudio, play, pause, resume, togglePlay,
-    next, prev, seek, setVolume, toggleMute, togglePlayMode, setPlayMode, toggleDesktopLyrics,
+    next, prev, seek, setVolume, toggleMute, togglePlayMode, setPlayMode, playCurrentQueue, toggleDesktopLyrics,
     addToQueue, addToQueueNext, removeFromQueue, clearQueue, moveInQueue, moveToNext, playAll,
     saveSettings, loadSettings, saveProgress, restoreProgress,
     getLiveTime

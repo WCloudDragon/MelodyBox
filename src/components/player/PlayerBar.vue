@@ -19,7 +19,7 @@
       <div class="player-bar__left" ref="leftRef" :style="{ '--center-shift-x': centerShiftX + 'px' }" v-ripple @click="toggleNowPlaying" @contextmenu.prevent="onInfoContextMenu" title="点击查看歌词">
         <div class="now-playing">
           <Transition :name="coverAnimName">
-            <img v-if="displayCover" :key="currentTrack?.path" :src="displayCover" class="cover" ref="coverRef" :style="coverStyle" @load="onCoverLoad" />
+            <img v-if="currentTrack?.cover" :key="currentTrack?.path" :src="currentTrack.cover" class="cover" ref="coverRef" :style="coverStyle" />
             <div v-else :key="'empty'" class="cover cover--empty" ref="coverRef">
               <el-icon size="22"><Headset /></el-icon>
             </div>
@@ -145,7 +145,7 @@ import QueuePanel from '@/components/player/QueuePanel.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
 import { useTrackList } from '@/composables/useTrackList'
 import { closeOverlays } from '@/utils/overlays'
-import { getTrimmedCover } from '@/utils/coverTrim'
+import { getTrimmedCover, viewBoxStyle } from '@/utils/coverTrim'
 
 const props = defineProps({
   panelOpen: { type: Boolean, default: false },
@@ -165,27 +165,26 @@ const barRef = ref(null)
 const leftRef = ref(null)
 const centerShiftX = ref(0)
 
-// ==================== 封面显示源（黑边裁剪版，与全屏歌词页共用 coverTrim 模块） ====================
-// 飞行动画分身/面板均显示裁剪版；播放栏若用原图，分身落位瞬间会内容跳变（裁剪版 → 原图带黑边）
-const displayCover = ref('')
+// ==================== 封面显示窗口（黑边检测，与全屏歌词页共用 coverTrim 模块） ====================
+// 原图始终完整，黑边仅通过 CSS object-view-box 在显示层开窗规避——与全屏页/飞行动画一致，
+// 落位零跳变；比例以 trim 检测结论为准（img 原图 load 的天然比例会在有黑边时覆盖窗口比例）
+const coverBox = ref(null)
+const coverRatio = ref(1)
 watch(() => currentTrack.value?.cover, async (url) => {
-  displayCover.value = url || ''
+  coverBox.value = null
+  coverRatio.value = 1
   if (!url) return
   const t = await getTrimmedCover(url)
   if (currentTrack.value?.cover !== url) return // 竞态：封面已再切
-  if (t?.src) displayCover.value = t.src
+  coverBox.value = t?.box || null
+  coverRatio.value = t?.ratio || 1
 }, { immediate: true })
-
-// 封面比例：48px 包络内按原比例 contain 显示（竖版收窄、横版压低，最长边贴边），
-// 与全屏歌词页同一套比例语义 → 飞行动画两端同比例，无任何形变
-const coverRatio = ref(1)
-function onCoverLoad(e) {
-  const img = e.target
-  if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
-    coverRatio.value = img.naturalWidth / img.naturalHeight
-  }
-}
-const coverStyle = computed(() => ({ '--cover-ratio': coverRatio.value }))
+const coverStyle = computed(() => {
+  const s = { '--cover-ratio': coverRatio.value }
+  const vb = viewBoxStyle(coverBox.value)
+  if (vb) s.objectViewBox = vb
+  return s
+})
 
 function updateCenterShift() {
   if (!props.immersive || !barRef.value || !leftRef.value) {

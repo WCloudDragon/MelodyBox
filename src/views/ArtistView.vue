@@ -28,8 +28,19 @@
         </div>
       </div>
 
-      <!-- 多选工具栏 -->
-      <div v-if="multiSelectMode && selected.size > 0" class="batch-toolbar">
+      <!-- 类别 tab（与搜索页同款语言）：歌曲 / 专辑 -->
+      <div class="artist-tabs">
+        <button
+          v-for="t in artistTabs"
+          :key="t.key"
+          class="artist-tab"
+          :class="{ active: activeTab === t.key }"
+          @click="activeTab = t.key"
+        >{{ t.label }}<span class="artist-tab__count">{{ t.count }}</span></button>
+      </div>
+
+      <!-- 多选工具栏（歌曲 tab） -->
+      <div v-if="activeTab === 'songs' && multiSelectMode && selected.size > 0" class="batch-toolbar">
         <span>已选 <span class="batch-toolbar__count">{{ selected.size }}</span> 首</span>
         <span class="batch-toolbar__actions">
           <el-button size="small" @click="batchPlay(artist.tracks.filter(t => selected.has(t.path)))">播放选中</el-button>
@@ -40,7 +51,8 @@
         </span>
       </div>
 
-      <div class="tracks-list">
+      <!-- 歌曲列表 -->
+      <div v-if="activeTab === 'songs'" class="tracks-list">
         <div
           v-for="(track, index) in artist.tracks"
           :key="track.path"
@@ -80,6 +92,26 @@
             </span>
         </div>
       </div>
+
+      <!-- 专辑网格（从该歌手曲目聚合） -->
+      <div v-else class="artist-albums">
+        <div
+          v-for="al in artistAlbums"
+          :key="al.name"
+          class="album-card"
+          v-ripple
+          @click="$router.push(`/album/${encodeURIComponent(al.name)}`)"
+        >
+          <div class="album-card__cover">
+            <LazyCover v-if="al.cover" :src="al.cover" :thumb-size="200" />
+            <div v-else class="cover-placeholder">
+              <el-icon size="28"><Folder /></el-icon>
+            </div>
+          </div>
+          <div class="album-card__name truncate">{{ al.name }}</div>
+          <div class="album-card__meta">{{ al.count }} 首</div>
+        </div>
+      </div>
     </div>
 
     <div v-else class="empty-state">
@@ -103,7 +135,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useLibraryStore } from '@/stores/library'
@@ -132,6 +164,23 @@ const artist = computed(() => {
   if (!name) return null
   return libraryStore.getArtist(decodeURIComponent(name))
 })
+
+// ==================== 类别 tab：歌曲 / 专辑 ====================
+const activeTab = ref('songs')
+const artistAlbums = computed(() => {
+  if (!artist.value) return []
+  const map = new Map()
+  for (const t of artist.value.tracks) {
+    const name = t.album || '未知专辑'
+    if (!map.has(name)) map.set(name, { name, cover: t.cover, count: 0 })
+    map.get(name).count++
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count)
+})
+const artistTabs = computed(() => [
+  { key: 'songs', label: '歌曲', count: artist.value?.tracks.length || 0 },
+  { key: 'albums', label: '专辑', count: artistAlbums.value.length }
+])
 
 function playTrack(track) {
   if (!artist.value) return
@@ -173,10 +222,58 @@ function batchAddQueueNext(tracks) {
 
 <style scoped>
 .artist-view { padding-bottom: 100px; }
-.back-link { margin-bottom: 20px; }
+.back-link { margin-bottom: 20px; padding-left: var(--page-pad-x, 12px); }
+
+/* 类别 tab（与搜索页 search-tabs 同款语言；按钮内边距即基准缩进） */
+.artist-tabs {
+  display: flex; align-items: center; gap: 4px;
+  margin-bottom: 16px;
+}
+.artist-tab {
+  position: relative;
+  padding: 6px 12px;
+  border: none; background: none;
+  font-size: 14px; color: var(--text-secondary);
+  cursor: pointer; border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+.artist-tab:hover { color: var(--text-primary); background: var(--hover-bg); }
+.artist-tab.active { color: var(--accent-color); font-weight: 600; }
+.artist-tab.active::after {
+  content: '';
+  position: absolute; left: 50%; bottom: 0;
+  transform: translateX(-50%);
+  width: 18px; height: 3px; border-radius: 2px;
+  background: var(--accent-color);
+}
+.artist-tab__count { margin-left: 4px; font-size: 12px; font-weight: 400; color: var(--text-tertiary); }
+.artist-tab.active .artist-tab__count { color: var(--accent-color); }
+
+/* 专辑网格（卡片自带 12px 内边距，封面/文字落在基准线） */
+.artist-albums { display: flex; flex-wrap: wrap; gap: 8px; }
+.album-card {
+  width: 170px; cursor: pointer; border-radius: 10px;
+  padding: 12px; transition: background 0.2s;
+}
+.album-card:hover { background: var(--hover-bg); }
+.album-card__cover {
+  width: 100%; aspect-ratio: 1; border-radius: 8px;
+  overflow: hidden; margin-bottom: 10px;
+  background: var(--bg-tertiary);
+}
+.album-card__cover :deep(img) { width: 100%; height: 100%; object-fit: cover; }
+.cover-placeholder {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-tertiary);
+}
+.album-card__name { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+.album-card__meta { font-size: 12px; color: var(--text-tertiary); }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .artist-header {
   display: flex; align-items: center; gap: 24px;
+  padding-left: var(--page-pad-x, 12px);
   margin-bottom: 32px;
 }
 .artist-avatar {

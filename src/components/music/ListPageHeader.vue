@@ -12,7 +12,7 @@
       v-if="showPlayMode"
       class="lph-btn lph-btn--playmode"
       :title="playModeLabel"
-      @click="player.togglePlayMode()"
+      @click="player.playCurrentQueue()"
       @contextmenu.prevent.stop="openModeMenu($event)"
     >
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h2v10H2V3zm4 0h8v2H6V3zm0 4h6v2H6V7zm0 4h8v2H6v-2z"/></svg>
@@ -265,7 +265,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 16px 10px;
+  padding: 14px var(--page-pad-x, 12px) 10px;
   margin-bottom: 10px;
   background: transparent;
 }

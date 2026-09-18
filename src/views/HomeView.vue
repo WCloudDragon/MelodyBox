@@ -217,7 +217,7 @@
           >›</button>
         </div>
 
-        <!-- 语言推荐入口（横排） -->
+        <!-- 语言推荐入口（横排；独立于推荐卡容器，自行对齐基准线） -->
         <div v-if="aiStore.embeddingStatus.pending === 0 && topLangs.length > 0" class="rec-lang-row">
           <div
             v-for="l in topLangs"
@@ -845,7 +845,7 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
 
 <style scoped>
 .home-view { padding-bottom: 120px; }
-.home-view__header { margin-bottom: 32px; }
+.home-view__header { margin-bottom: 32px; padding-left: var(--page-pad-x, 12px); }
 .home-view__header h1 { font-size: 28px; font-weight: 700; margin: 0 0 4px; }
 .subtitle { font-size: 14px; color: var(--text-tertiary); margin: 0; }
 
@@ -863,6 +863,7 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
 .section { margin-bottom: 36px; }
 .section__header {
   display: flex; align-items: center; justify-content: space-between;
+  padding-left: var(--page-pad-x, 12px);
   margin-bottom: 16px;
 }
 .section__header h3 { font-size: 18px; font-weight: 600; margin: 0; }
@@ -962,7 +963,7 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
 .rec-entries-wrap {
   position: relative;
   margin-bottom: 16px;
-  padding: 0 20px;
+  padding: 0 var(--page-pad-x, 12px);
 }
 .rec-entries {
   overflow: hidden;
@@ -1133,6 +1134,7 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
   gap: 8px;
   margin-bottom: 16px;
   flex-wrap: wrap;
+  padding-left: var(--page-pad-x, 12px);
 }
 .rec-lang-chip {
   padding: 6px 16px;

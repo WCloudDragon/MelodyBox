@@ -1,12 +1,22 @@
 /**
- * 封面黑边裁剪：检测近黑边缘并裁剪（动画 OST 常见「方形画布印竖版海报、两侧留黑」）。
- * 模块级 LRU 缓存（dataURL 体积大，限 40 张）；裁剪版供「全屏歌词页 ↔ 播放栏」
- * 飞行动画链路统一显示，落位前后内容零跳变。
- * 像素检测要求 canvas 未污染：封面跨域（file:// 打包 → http 后端）时需后端 CORS 头，
- * 项目后端 CORS(app) 已全局开启；检测失败静默回落原图（src=null）。
+ * 封面黑边检测（显示窗口化，不做数据裁剪）：
+ * 检测「几乎全黑」的边缘行列，返回内容区窗口 box（inset 比例）与内容比例。
+ * 消费方用 CSS object-view-box 按窗口显示原图 —— 原图数据零丢失，
+ * bbox 错误只影响显示参数（调检测即修），随时可去掉窗口回到完整原图。
+ * （动画 OST 常见「方形画布印竖版海报、两侧纯黑」→ 窗口取竖版内容区撑满显示）
+ *
+ * 缓存检测结论（窗口极小）；仅「图都加载不了」的失败不缓存，下次调用自动重检。
+ * 像素检测要求 canvas 未污染：跨域需后端 CORS 头（项目后端 CORS(app) 已全局开启）。
  */
 const trimCache = new Map()
 const TRIM_CACHE_MAX = 40
+
+/** box（比例 inset）→ CSS object-view-box 值 */
+export function viewBoxStyle(box) {
+  if (!box) return ''
+  const p = v => (v * 100).toFixed(4).replace(/\.?0+$/, '')
+  return `inset(${p(box.t)}% ${p(box.r)}% ${p(box.b)}% ${p(box.l)}%)`
+}
 
 export async function getTrimmedCover(url) {
   if (!url) return null
@@ -15,7 +25,7 @@ export async function getTrimmedCover(url) {
     trimCache.delete(url); trimCache.set(url, hit) // LRU 触达置新
     return hit
   }
-  let result = { src: null, ratio: null, failed: true }
+  let result = { box: null, ratio: null, failed: true }
   try {
     // 必须带 crossOrigin 加载：canvas 像素检测要求图未污染（跨域需后端 CORS 头配合）
     const img = await new Promise(resolve => {
@@ -27,7 +37,7 @@ export async function getTrimmedCover(url) {
     })
     if (img && img.naturalWidth > 0) {
       const w = img.naturalWidth, h = img.naturalHeight
-      // 缩小到最长边 96px 检测内容包围盒，避免全尺寸像素遍历
+      // 缩小到最长边 96px 检测，避免全尺寸像素遍历
       const S = 96
       const sw = h >= w ? S : Math.max(1, Math.round(S * w / h))
       const sh = w > h ? S : Math.max(1, Math.round(S * h / w))
@@ -36,43 +46,57 @@ export async function getTrimmedCover(url) {
       const ctx = c.getContext('2d', { willReadFrequently: true })
       ctx.drawImage(img, 0, 0, sw, sh)
       const d = ctx.getImageData(0, 0, sw, sh).data
-      let minX = sw, minY = sh, maxX = -1, maxY = -1
+      // 逐列/行统计非黑像素占比：只有「几乎全黑」的边缘行列才算黑边。
+      // 封面自身的暗色艺术设计（暗角、黑底文字/图案）边缘列非黑占比必超阈值，不会被误裁。
+      const BLACK_RATIO = 0.02 // 边缘行列非黑像素占比 ≤2% 视为黑边（容忍压缩噪声亮点）
+      const colNonBlack = new Array(sw).fill(0)
+      const rowNonBlack = new Array(sh).fill(0)
       for (let y = 0; y < sh; y++) {
         for (let x = 0; x < sw; x++) {
           const i = (y * sw + x) * 4
-          // 近黑像素视为背景（阈值容纳 JPEG 压缩噪声）
           if (d[i] > 24 || d[i + 1] > 24 || d[i + 2] > 24) {
-            if (x < minX) minX = x
-            if (x > maxX) maxX = x
-            if (y < minY) minY = y
-            if (y > maxY) maxY = y
+            colNonBlack[x]++
+            rowNonBlack[y]++
           }
         }
       }
-      // 内容占满（裁剪收益过小）→ 不裁剪，避免正常封面被误缩
-      if (maxX >= 0) {
-        const cw = (maxX + 1 - minX) / sw
-        const ch = (maxY + 1 - minY) / sh
+      const isBlackCol = x => colNonBlack[x] <= sh * BLACK_RATIO
+      const isBlackRow = y => rowNonBlack[y] <= sw * BLACK_RATIO
+      // 从四边向内收缩，跳过近全黑的边缘行列，得到保守的内容窗口
+      let minX = 0, maxX = sw - 1, minY = 0, maxY = sh - 1
+      while (minX < maxX && isBlackCol(minX)) minX++
+      while (maxX > minX && isBlackCol(maxX)) maxX--
+      while (minY < maxY && isBlackRow(minY)) minY--
+      while (maxY > minY && isBlackRow(maxY)) maxY--
+      const hasContent = maxX > minX || maxY > minY
+      if (hasContent) {
+        const cw = (maxX - minX + 1) / sw
+        const ch = (maxY - minY + 1) / sh
         if (cw < 0.98 || ch < 0.98) {
-          const sx = Math.floor(minX / sw * w)
-          const sy = Math.floor(minY / sh * h)
-          const ex = Math.ceil((maxX + 1) / sw * w)
-          const ey = Math.ceil((maxY + 1) / sh * h)
-          const tw = Math.min(w, ex - sx), th = Math.min(h, ey - sy)
-          if (tw > 0 && th > 0) {
-            const c2 = document.createElement('canvas')
-            c2.width = tw; c2.height = th
-            c2.getContext('2d').drawImage(img, sx, sy, tw, th, 0, 0, tw, th)
-            result = { src: c2.toDataURL('image/jpeg', 0.92), ratio: tw / th, failed: false }
+          // 面积保护：窗口不足原图 55% 说明疑似把大面积内容当黑边（如全黑背景封面），拒绝开窗
+          if (cw * ch >= 0.55) {
+            result = {
+              box: {
+                l: minX / sw,
+                t: minY / sh,
+                r: 1 - (maxX + 1) / sw,
+                b: 1 - (maxY + 1) / sh
+              },
+              ratio: cw / ch,
+              failed: false
+            }
+          } else {
+            // 拒绝开窗：按原图比例完整显示
+            result = { box: null, ratio: w / h, failed: false }
           }
         } else {
-          // 无黑边：返回原图比例（消费方按原比例显示，与有黑边时的框体逻辑统一）
-          result = { src: null, ratio: w / h, failed: false }
+          // 无黑边：不开窗，按原图比例显示
+          result = { box: null, ratio: w / h, failed: false }
         }
       }
     }
   } catch { /* 检测失败回落原图 */ }
-  // 检测完成（无论是否裁剪）的结果都缓存——比例是确定的；
+  // 检测完成（无论是否开窗）的结论都缓存——比例是确定的；
   // 仅「图都加载不了」的失败不缓存，下次调用自动重检（避免后端未就绪时固化失败）
   if (!result.failed) {
     trimCache.set(url, result)

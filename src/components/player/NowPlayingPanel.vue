@@ -41,7 +41,7 @@
           <div class="np-layout__cover">
             <Transition :name="coverAnimName">
               <div class="cover-artwork" :key="currentTrack?.path" ref="coverArtRef" :style="coverArtStyle">
-                <img v-if="displayCover" :src="displayCover" class="cover-artwork__img" decoding="async" @load="onCoverLoad" />
+                <img v-if="currentTrack?.cover" :src="currentTrack.cover" class="cover-artwork__img" decoding="async" />
                 <div v-else class="cover-artwork__empty">
                   <el-icon size="64"><Headset /></el-icon>
                 </div>
@@ -130,7 +130,7 @@ import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
 import { parseLRC, computeActiveSet, LYRIC_GAP_FILL_LIMIT, applyLyricKaraokeMode } from '@/utils/format'
 import { extractCoverColors } from '@/utils/coverColorExtractor'
-import { getTrimmedCover } from '@/utils/coverTrim'
+import { getTrimmedCover, viewBoxStyle } from '@/utils/coverTrim'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -169,26 +169,25 @@ const coverArtRef = ref(null)
 // 封面原始宽高比（w/h），用于全屏页按原比例显示与飞入动画的连续形变
 const coverAspect = ref(null)
 const coverArtStyle = computed(() => {
-  return coverAspect.value ? { '--cover-ratio': coverAspect.value } : {}
+  const s = coverAspect.value ? { '--cover-ratio': coverAspect.value } : {}
+  const vb = viewBoxStyle(coverBox.value)
+  if (vb) s.objectViewBox = vb
+  return s
 })
-function onCoverLoad(e) {
-  const img = e.target
-  if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
-    coverAspect.value = img.naturalWidth / img.naturalHeight
-  }
-}
 
-// ==================== 封面显示源（黑边裁剪版，与播放栏共用 coverTrim 模块） ====================
-const displayCover = ref('')
-// 封面切换：先显示原图保证即时性，黑边裁剪就绪后替换为裁剪版；
-// 容器比例由 img 的 load 事件（onCoverLoad）随显示源自动更新
+// ==================== 封面显示窗口（黑边检测，与播放栏共用 coverTrim 模块） ====================
+// 原图始终完整（零数据丢失），黑边仅通过 CSS object-view-box 在显示层开窗规避
+const coverBox = ref(null)
+// 窗口比例驱动容器宽高（coverAspect）；比例一律以 trim 检测结论为准，
+// 不用 img 原图 load 的天然比例——有黑边时原图 1:1 会覆盖内容比例（0.75）
 watch(() => currentTrack.value?.cover, async (url) => {
-  displayCover.value = url || ''
+  coverBox.value = null
   coverAspect.value = null
   if (!url) return
   const t = await getTrimmedCover(url)
   if (currentTrack.value?.cover !== url) return // 竞态：封面已再切
-  if (t?.src) displayCover.value = t.src
+  coverBox.value = t?.box || null
+  coverAspect.value = t?.ratio ?? null
 }, { immediate: true })
 
 // ==================== 动态流光背景（封面主色驱动渐变流动） ====================
@@ -611,8 +610,7 @@ function applyFlyerRect(wrapper, clipEl, shadowEl, { l, t, w, h, br, sh }) {
  * 结构分两层：clip 负责圆角裁剪图片；shadow 在 clip 之外，避免 overflow 裁掉外阴影。
  */
 function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1, arcFlip = false } = {}) {
-  // 动画分身用与面板一致的显示源（黑边裁剪版），否则飞行途中与落位后视觉不一致
-  const coverUrl = displayCover.value || currentTrack.value?.cover
+  const coverUrl = currentTrack.value?.cover
   if (!coverUrl) return Promise.resolve()
 
   // 确保封面已解码后再启动动画，消除首次触发时实时解码卡顿
@@ -661,6 +659,9 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
     })
     const imgEl = document.createElement('img')
     imgEl.src = coverUrl
+    // 与面板同窗口：黑边图在飞行分身上同样只显示内容区
+    const vb = viewBoxStyle(coverBox.value)
+    if (vb) imgEl.style.objectViewBox = vb
     Object.assign(imgEl.style, {
       position: 'absolute', inset: '0',
       width: '100%', height: '100%',
@@ -741,14 +742,14 @@ async function flyCoverIn() {
   const origin = coverOriginRect?.value
   if (!origin || !coverArtRef.value) return
 
-  // 等待封面解码 + 黑边裁剪检测完成，按最终显示源的比例设置容器，
-  // 再测量目标矩形（宽图/长图/裁剪图飞到最终比例，不再依赖封面 <img> 二次加载）
+  // 等待封面解码 + 黑边检测完成，按最终窗口的比例设置容器，
+  // 再测量目标矩形（宽图/长图/开窗图飞到最终比例，不再依赖封面 <img> 二次加载）
   const coverUrl = currentTrack.value?.cover
   if (coverUrl) {
     try {
       const trimmed = await getTrimmedCover(coverUrl)
       if (currentTrack.value?.cover !== coverUrl) return // 等待期间已切歌，中断本次飞入
-      if (trimmed?.src) displayCover.value = trimmed.src
+      coverBox.value = trimmed?.box || null
       coverAspect.value = trimmed?.ratio ?? null
     } catch { /* 忽略 */ }
   }

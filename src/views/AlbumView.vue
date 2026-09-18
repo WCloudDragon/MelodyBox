@@ -183,10 +183,11 @@ function batchAddQueueNext(tracks) {
 
 <style scoped>
 .album-view { padding-bottom: 100px; }
-.back-link { margin-bottom: 20px; }
+.back-link { margin-bottom: 20px; padding-left: var(--page-pad-x, 12px); }
 
 .album-header {
   display: flex; align-items: flex-end; gap: 24px;
+  padding-left: var(--page-pad-x, 12px);
   margin-bottom: 32px;
 }
 .album-cover {

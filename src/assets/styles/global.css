@@ -135,6 +135,9 @@
   --bg-primary: #272727;
   --bg-secondary: #202020;
   --bg-tertiary: #242424;
+  /* 页面内容左缘基准：标题/卡片封面/列表行内容的统一视觉左线
+     （main-content 32px padding 之上再缩进 12px） */
+  --page-pad-x: 12px;
   --border-color: rgba(255, 255, 255, 0.1);
   --text-primary: #f5f5f5;
   --text-secondary: #c0c0c0;

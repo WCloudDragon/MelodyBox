@@ -296,15 +296,15 @@ function fmtRel(raw) {
 <style scoped>
 .search-view { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 
-/* 类别 tab（网易云式：文字 + 底部指示条） */
+/* 类别 tab（网易云式：文字 + 底部指示条）。
+   容器无 padding，按钮自带 12px 水平内边距 → 首个文字恰落 --page-pad-x 基准线 */
 .search-tabs {
   display: flex; align-items: center; gap: 4px;
-  padding: 0 12px; margin-bottom: 4px;
   flex-shrink: 0;
 }
 .search-tab {
   position: relative;
-  padding: 6px 10px;
+  padding: 6px 12px;
   border: none; background: none;
   font-size: 14px; color: var(--text-secondary);
   cursor: pointer; border-radius: 6px;
@@ -323,6 +323,7 @@ function fmtRel(raw) {
 .search-view__scroll {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   min-height: 0;
   padding-bottom: 24px;
   transform: translateZ(0);
@@ -346,10 +347,11 @@ function fmtRel(raw) {
 }
 .search-section__count { font-size: 12px; font-weight: 500; color: var(--text-tertiary); }
 
-/* 曲目行（与列表页 track-row 同语言） */
+/* 曲目行（与列表页 track-row 同语言；内容落 --page-pad-x 基准线） */
 .track-row {
   display: flex; align-items: center; gap: 12px;
-  height: 56px; padding: 0 12px; border-radius: 6px;
+  height: 56px;
+  padding: 0 var(--page-pad-x, 12px); border-radius: 6px;
   transition: background 0.15s; cursor: default;
 }
 .track-row:hover, .track-row--ctx-active { background: var(--hover-bg); }
@@ -370,8 +372,8 @@ function fmtRel(raw) {
 }
 .track-row:hover .track-row__play { opacity: 1; pointer-events: auto; }
 
-/* 卡片网格（与专辑页卡片同语言） */
-.card-grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 4px; }
+/* 卡片网格（与专辑页卡片同语言；卡片自带 12px 内边距，封面/文字落在基准线） */
+.card-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 .entity-card {
   flex: 1 1 150px; max-width: 190px; min-width: 140px;
   display: flex; flex-direction: column; align-items: center;

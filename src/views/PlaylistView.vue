@@ -256,12 +256,13 @@ function batchAddQueueNext(tracks) {
 
 <style scoped>
 .playlist-view { display: flex; flex-direction: column; height: 100%; overflow: hidden; padding-bottom: 100px; }
-.back-link { margin-bottom: 20px; flex-shrink: 0; }
+.back-link { margin-bottom: 20px; padding-left: var(--page-pad-x, 12px); flex-shrink: 0; }
 
 .playlist-content { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
 .playlist-header {
   display: flex; align-items: flex-end; gap: 24px;
+  padding-left: var(--page-pad-x, 12px);
   margin-bottom: 24px; flex-shrink: 0;
 }
 .playlist-cover {
