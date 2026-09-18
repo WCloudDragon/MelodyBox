@@ -86,7 +86,8 @@ function onClose() { window.electronAPI?.close() }
   user-select: none;
   flex-shrink: 0;
 }
-/* 搜索框绝对居中容器：不参与 flex 流，不受品牌区/窗控宽度影响 */
+/* 搜索框绝对居中容器：不参与 flex 流，不受品牌区/窗控宽度影响。
+   层级低于全屏播放面板（1000）：全屏页内搜索框应被覆盖（窗控 1001 仍可点） */
 .title-bar__search {
   position: absolute;
   left: 50%;
@@ -95,7 +96,7 @@ function onClose() { window.electronAPI?.close() }
   height: 100%;
   display: flex;
   align-items: center;
-  z-index: 1100;
+  z-index: 900;
 }
 .title-bar__brand {
   display: flex;

@@ -14,13 +14,17 @@
       <button v-if="query" class="global-search__clear" title="清除" @mousedown.prevent @click="clearQuery">
         <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9.5 2.5L2.5 9.5M2.5 2.5l7 7"/></svg>
       </button>
-      <span v-else class="global-search__kbd">Ctrl K</span>
+      <!-- 跳转搜索结果页（与 Ctrl+Enter 同行为），仅有关键词时出现 -->
+      <button v-if="query.trim()" class="global-search__go" title="查看全部结果（Ctrl+Enter）" @mousedown.prevent @click="goSearchPage">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8h10"/><path d="M9 4l4 4-4 4"/></svg>
+      </button>
+      <span v-if="!query" class="global-search__kbd">Ctrl K</span>
     </div>
 
     <Teleport to="body">
       <Transition name="gs-panel">
         <div v-if="open" class="global-search__panel" @mousedown.prevent>
-          <div ref="scrollRef" class="global-search__scroll" :style="panelHeight != null ? { height: panelHeight + 'px' } : null">
+          <div ref="scrollRef" class="global-search__scroll" :style="panelHeight != null ? { height: panelHeight + 'px', overflowY: scrollable ? 'auto' : 'hidden' } : null">
             <Transition name="gs-content" mode="out-in" appear @enter="onContentEnter">
             <div class="global-search__scroll-inner" :key="contentKey">
             <!-- 有输入：分组结果 -->
@@ -86,7 +90,7 @@
             </Transition>
           </div>
           <div class="global-search__footer">
-            <span>↑↓ 选择 · Enter 确认 · Esc 关闭</span>
+            <span>↑↓ 选择 · Enter 直达 · Ctrl+Enter 查看全部 · Esc 关闭</span>
             <span v-if="flat.length">{{ flat.length }} 条结果</span>
           </div>
         </div>
@@ -271,6 +275,15 @@ function choose(it) {
   if (it.route) router.push(it.route)
 }
 
+// 回车（未选中项）：跳转独立搜索结果页查看全部分组结果
+function goSearchPage() {
+  const kw = query.value.trim()
+  if (!kw) return
+  addHistory(kw)
+  close()
+  router.push({ path: '/search', query: { q: kw } })
+}
+
 // ==================== 面板开关与键盘 ====================
 function onOpen() {
   open.value = true
@@ -307,6 +320,9 @@ function onKeydown(e) {
     selIdx.value = selIdx.value <= 0 ? total - 1 : selIdx.value - 1
   } else if (e.key === 'Enter') {
     e.preventDefault()
+    // Ctrl/Cmd+Enter：跳转独立搜索结果页查看全部分组结果
+    if (e.ctrlKey || e.metaKey) { goSearchPage(); return }
+    // Enter：单项直达（无选中时执行第一项，即最相关结果）
     const it = selIdx.value >= 0 ? flat.value[selIdx.value] : flat.value[0]
     if (it) choose(it)
   }
@@ -338,6 +354,7 @@ watch(() => route.fullPath, () => close())
 // 避免手写 rAF 求解 cubic-bezier。打开瞬间 height 直接到位 → 纯模糊渐显，无缩放感。
 const scrollRef = ref(null)
 const panelHeight = ref(null) // null = height auto（面板刚挂载时不参与过渡）
+const scrollable = ref(false) // 仅内容真正超过高度上限才允许滚动，短内容一律 hidden（杜绝任何来源的微小溢出弹出滚动条）
 const PANEL_HEIGHT_LIMIT = 440
 
 // 内容标识：关键词或空态内容（历史/热门条数）变化 → 内容模糊切换 + 高度重测
@@ -351,10 +368,11 @@ function measurePanelHeight() {
   nextTick(() => {
     const inner = scrollRef.value?.querySelector('.global-search__scroll-inner')
     if (!inner) return
-    // offsetHeight 是取整值：高 DPI 缩放下内容实高常为小数，取整后偏低零点几像素
-    // 即触发亚像素溢出 → 滚动条占位压窄内容 → 标签换行 → 溢出放大 → 滚动条常驻。
-    // 改用小数精度实测并向上取整，保证设高 ≥ 内容实高（入场动画仅 opacity/filter，不影响测量）
-    const target = Math.min(Math.ceil(inner.getBoundingClientRect().height), PANEL_HEIGHT_LIMIT)
+    // 测高必须用 offsetHeight（布局值）：面板入场动画 scale(0.88)→1 期间
+    // getBoundingClientRect 会被缩放污染（测得 ≈ 实高 × 0.88 → 设高偏小 → 溢出出条）
+    const layoutH = inner.offsetHeight
+    scrollable.value = layoutH > PANEL_HEIGHT_LIMIT
+    const target = Math.min(layoutH, PANEL_HEIGHT_LIMIT)
     if (panelHeight.value !== target) {
       panelHeight.value = target
       // 内容切换后滚动归位，避免残留滚动量
@@ -432,6 +450,23 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .global-search__clear:hover { color: var(--text-primary); }
+/* 跳转搜索结果页：hover 右移微动效呼应箭头语义 */
+.global-search__go {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.global-search__go:hover { color: var(--accent-color); }
 .global-search__kbd {
   font-size: 10px;
   color: var(--text-tertiary);

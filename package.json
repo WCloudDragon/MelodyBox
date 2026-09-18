@@ -42,7 +42,7 @@
       }
     ],
     "win": {
-      "target": "nsis",
+      "target": "dir",
       "icon": "public/icon.png"
     },
     "nsis": {

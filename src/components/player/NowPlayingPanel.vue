@@ -41,7 +41,7 @@
           <div class="np-layout__cover">
             <Transition :name="coverAnimName">
               <div class="cover-artwork" :key="currentTrack?.path" ref="coverArtRef" :style="coverArtStyle">
-                <img v-if="currentTrack?.cover" :src="currentTrack.cover" class="cover-artwork__img" decoding="async" @load="onCoverLoad" />
+                <img v-if="displayCover" :src="displayCover" class="cover-artwork__img" decoding="async" @load="onCoverLoad" />
                 <div v-else class="cover-artwork__empty">
                   <el-icon size="64"><Headset /></el-icon>
                 </div>
@@ -130,6 +130,7 @@ import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
 import { parseLRC, computeActiveSet, LYRIC_GAP_FILL_LIMIT, applyLyricKaraokeMode } from '@/utils/format'
 import { extractCoverColors } from '@/utils/coverColorExtractor'
+import { getTrimmedCover } from '@/utils/coverTrim'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -176,8 +177,19 @@ function onCoverLoad(e) {
     coverAspect.value = img.naturalWidth / img.naturalHeight
   }
 }
-// 切歌时重置封面比例，等待新封面加载后再应用
-watch(() => currentTrack.value?.cover, () => { coverAspect.value = null })
+
+// ==================== 封面显示源（黑边裁剪版，与播放栏共用 coverTrim 模块） ====================
+const displayCover = ref('')
+// 封面切换：先显示原图保证即时性，黑边裁剪就绪后替换为裁剪版；
+// 容器比例由 img 的 load 事件（onCoverLoad）随显示源自动更新
+watch(() => currentTrack.value?.cover, async (url) => {
+  displayCover.value = url || ''
+  coverAspect.value = null
+  if (!url) return
+  const t = await getTrimmedCover(url)
+  if (currentTrack.value?.cover !== url) return // 竞态：封面已再切
+  if (t?.src) displayCover.value = t.src
+}, { immediate: true })
 
 // ==================== 动态流光背景（封面主色驱动渐变流动） ====================
 const flowColors = ref(null)
@@ -574,27 +586,42 @@ function easeCubicBezier(t, x1, y1, x2, y2) {
 }
 
 /**
+ * 分身矩形应用：中心/尺寸/圆角/阴影 → wrapper 直接布局。
+ * 宽高独立插值支持起终点比例不同（竖版 ↔ 方形），img 的 cover 裁剪逐帧自然过渡
+ */
+function applyFlyerRect(wrapper, clipEl, shadowEl, { l, t, w, h, br, sh }) {
+  wrapper.style.left = (l - w / 2) + 'px'
+  wrapper.style.top = (t - h / 2) + 'px'
+  wrapper.style.width = w + 'px'
+  wrapper.style.height = h + 'px'
+  clipEl.style.borderRadius = br + 'px'
+  shadowEl.style.borderRadius = br + 'px'
+  shadowEl.style.opacity = String(sh)
+}
+
+/**
  * 飞行分身（canonical 可打断 + 弧线轨迹）。
- * - Transform-only FLIP：wrapper 一次性渲染在"最大参考宽度"（高分辨率位图只缩不放，避免放大模糊），
- *   动画全程只更新 transform(translate+scale) 与 opacity：纯合成器合成，零 layout / paint / 重栅格化。
- * - 可打断：复用全局唯一 wrapper，再次调用时取消旧段 rAF 并 resolve，从当前视觉状态无缝接续到新目标，
- *   同一帧内更新布局尺寸与 transform 起点，不重建 DOM、视觉不跳变。
- * - 轨迹：位置沿 90° 圆弧（默认左上四分之一，arcFlip=true 时为右下四分之一，圆心在弦另一侧）；
- *   封面中心沿弧运动，左上角随尺寸缩放自动偏移抵消，视觉路径为纯净圆弧。
- *   尺寸/圆角/阴影仍线性过渡。圆角受 scale 等比缩放，用 borderRadius = 视觉圆角 / k 补偿。
+ * - 矩形插值：起终点各按真实封面矩形（比例可以不同，如全屏竖版 ↔ 底栏方形），
+ *   宽/高独立渐变，img 以 object-fit: cover 逐帧自然裁剪——「全屏完整图 → 底栏中央裁剪」
+ *   正是真实 UI 的形变语义，两端视觉与真实封面完全一致，中途无比例跳变。
+ * - 可打断：复用全局唯一 wrapper，再次调用时取消旧段 rAF 并 resolve，从当前视觉状态
+ *   无缝接续到新目标，同一帧内更新布局，不重建 DOM、视觉不跳变。
+ * - 轨迹：封面中心沿 90° 圆弧运动（默认左上四分之一，arcFlip=true 时为右下四分之一，
+ *   圆心在弦另一侧）；尺寸/圆角/阴影线性过渡。
  * 结构分两层：clip 负责圆角裁剪图片；shadow 在 clip 之外，避免 overflow 裁掉外阴影。
  */
 function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1, arcFlip = false } = {}) {
-  const coverUrl = currentTrack.value?.cover
+  // 动画分身用与面板一致的显示源（黑边裁剪版），否则飞行途中与落位后视觉不一致
+  const coverUrl = displayCover.value || currentTrack.value?.cover
   if (!coverUrl) return Promise.resolve()
 
-  // 确保封面已解码后再启动动画，消除首次触发时 background-image 实时解码卡顿
+  // 确保封面已解码后再启动动画，消除首次触发时实时解码卡顿
   return _ensureCoverReady(coverUrl).then(() => {
   const startBR = parseFloat(fromBR)
   const endBR = parseFloat(toBR)
 
   // —— 打断接续：若已有飞行段，以当前视觉状态作为新段起点 ——
-  // l/t 统一记录"封面中心"：中心沿弧运动，左上角随尺寸缩放偏移，视觉无回旋
+  // l/t 统一记录"封面中心"；w/h 为当前视觉尺寸（比例可随矩形插值变化）
   const continuing = !!(flyer && flyer.rafId)
   const startVis = continuing
     ? { ...flyer.cur }   // { l, t, w, h, br, sh }（l/t 为中心）
@@ -604,18 +631,10 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
         w: fromRect.width, h: fromRect.height,
         br: startBR, sh: shadowFrom
       }
-
-  const renderW = Math.max(startVis.w, toRect.width)
-  const renderH = renderW * (toRect.height / toRect.width)  // 保持目标封面宽高比
-  const kStart = startVis.w / renderW                      // 起点等比缩放（宽度基准）
-  const kEnd = toRect.width / renderW                      // 终点缩放
-  const toC = {                                             // 目标封面中心（弧终点）
-    left: toRect.left + toRect.width / 2,
-    top: toRect.top + toRect.height / 2
-  }
-
-  function radiusFor(brTarget, scale) {
-    return (brTarget / scale) + 'px'
+  const endVis = {
+    l: toRect.left + toRect.width / 2,
+    t: toRect.top + toRect.height / 2,
+    w: toRect.width, h: toRect.height
   }
 
   let wrapper, clipEl, shadowEl
@@ -628,8 +647,7 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
     wrapper = document.createElement('div')
     Object.assign(wrapper.style, {
       position: 'fixed', zIndex: '10000', pointerEvents: 'none',
-      transformOrigin: '0 0',
-      willChange: 'transform'
+      transform: 'translateZ(0)'
     })
     clipEl = document.createElement('div')
     Object.assign(clipEl.style, {
@@ -654,18 +672,12 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
     document.body.appendChild(wrapper)
   }
 
-  // 段起始布局（同一帧内同时改布局尺寸与 transform，无中间绘制 → 不闪跳）
-  // startVis.l/t 是封面中心：左上角 = 中心 − 当前视觉半尺寸
-  const tx0 = startVis.l - (kStart * renderW) / 2 - toRect.left
-  const ty0 = startVis.t - (kStart * renderH) / 2 - toRect.top
-  wrapper.style.left = toRect.left + 'px'
-  wrapper.style.top = toRect.top + 'px'
-  wrapper.style.width = renderW + 'px'
-  wrapper.style.height = renderH + 'px'
-  wrapper.style.transform = `translate3d(${tx0}px, ${ty0}px, 0) scale(${kStart})`
-  clipEl.style.borderRadius = radiusFor(startVis.br, kStart)
-  shadowEl.style.borderRadius = radiusFor(startVis.br, kStart)
-  shadowEl.style.opacity = String(startVis.sh)
+  // 段起始布局（首帧即起点真实矩形，无中间绘制 → 不闪跳）
+  // startVis.l/t 是封面中心：left/top = 中心 − 半尺寸
+  applyFlyerRect(wrapper, clipEl, shadowEl, {
+    l: startVis.l, t: startVis.t, w: startVis.w, h: startVis.h,
+    br: startVis.br, sh: startVis.sh
+  })
 
   const [bx1, by1, bx2, by2] = FLY_EASING
 
@@ -689,30 +701,25 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
       const t = Math.min(elapsed / FLY_DURATION, 1)
       const p = easeCubicBezier(t, bx1, by1, bx2, by2)
 
-      // 尺寸/圆角/阴影线性过渡；位置沿 90° 圆弧（方向由 arcFlip 决定）
-      const k = kStart + (kEnd - kStart) * p
+      // 位置沿 90° 圆弧（方向由 arcFlip 决定）；宽/高独立渐变（起终点比例可不同）；圆角/阴影线性过渡
       const pos = arcPoint(
         { left: startVis.l, top: startVis.t },
-        toC,
+        { left: endVis.l, top: endVis.t },
         p,
         arcFlip
       )
+      const w = startVis.w + (endVis.w - startVis.w) * p
+      const h = startVis.h + (endVis.h - startVis.h) * p
       const brVis = startVis.br + (endBR - startVis.br) * p
       const sh = startVis.sh + (shadowTo - startVis.sh) * p
-      // 中心沿弧；左上角布局位移 = 弧上中心 − 当前视觉半尺寸 − 布局原点
-      const tx = pos.left - (k * renderW) / 2 - toRect.left
-      const ty = pos.top - (k * renderH) / 2 - toRect.top
 
-      wrapper.style.transform = `translate3d(${tx}px, ${ty}px, 0) scale(${k})`
-      clipEl.style.borderRadius = (brVis / k) + 'px'
-      shadowEl.style.borderRadius = (brVis / k) + 'px'
-      shadowEl.style.opacity = String(sh)
+      applyFlyerRect(wrapper, clipEl, shadowEl, { l: pos.left, t: pos.top, w, h, br: brVis, sh })
 
       // 刷新当前视觉状态（打断时读取；l/t 为中心，w/h 为视觉尺寸）
       cur.l = pos.left
       cur.t = pos.top
-      cur.w = k * renderW
-      cur.h = k * renderH
+      cur.w = w
+      cur.h = h
       cur.br = brVis
       cur.sh = sh
 
@@ -734,15 +741,15 @@ async function flyCoverIn() {
   const origin = coverOriginRect?.value
   if (!origin || !coverArtRef.value) return
 
-  // 等待封面预解码完成，直接用解码结果的原比例设置容器，
-  // 再测量目标矩形（宽图/长图飞到原比例，不再依赖封面 <img> 二次加载）
+  // 等待封面解码 + 黑边裁剪检测完成，按最终显示源的比例设置容器，
+  // 再测量目标矩形（宽图/长图/裁剪图飞到最终比例，不再依赖封面 <img> 二次加载）
   const coverUrl = currentTrack.value?.cover
   if (coverUrl) {
     try {
-      const preloaded = await _ensureCoverReady(coverUrl)
-      if (preloaded && preloaded.naturalWidth > 0 && preloaded.naturalHeight > 0) {
-        coverAspect.value = preloaded.naturalWidth / preloaded.naturalHeight
-      }
+      const trimmed = await getTrimmedCover(coverUrl)
+      if (currentTrack.value?.cover !== coverUrl) return // 等待期间已切歌，中断本次飞入
+      if (trimmed?.src) displayCover.value = trimmed.src
+      coverAspect.value = trimmed?.ratio ?? null
     } catch { /* 忽略 */ }
   }
   await nextTick()
