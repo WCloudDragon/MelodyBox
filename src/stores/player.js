@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { useAiStore } from './ai'
+import { useLibraryStore } from './library'
 import { apiUrl, audioUrl } from '@/config/api'
 import { useAuthStore } from './auth'
 import { ElMessage } from '@/utils/toast'
@@ -277,6 +278,14 @@ export const usePlayerStore = defineStore('player', () => {
 
     _seekOffset = 0
     _playTracked = false
+
+    // 切歌方向：next/prev 已显式设置则沿用；双击起播等直接播放按索引推断
+    // （index 后移=next、前移=prev、同曲重播不设方向即无切歌动画）
+    if (!songChangeDirection.value) {
+      if (index > currentIndex.value) songChangeDirection.value = 'next'
+      else if (index < currentIndex.value) songChangeDirection.value = 'prev'
+    }
+
     currentIndex.value = index
     const track = queue.value[index]
     _trackStartedAt = Date.now()
@@ -546,16 +555,28 @@ export const usePlayerStore = defineStore('player', () => {
     queue.value = next
   }
 
-  // 播放全部（替换队列）
+  // 播放全部（替换队列）。
+  // 入口兜底：歌单/收藏等来源的曲目对象可能缺 url（后端只给 path），一律先按 path
+  // 从曲库换出完整对象（含 audioUrl 音频流地址），否则 audio.src=undefined → error → 无限跳歌
   function playAll(tracks, startIndex = 0) {
+    const lib = useLibraryStore()
+    const resolved = (Array.isArray(tracks) ? tracks : []).map(t => {
+      if (t && !t.url && t.path) {
+        const full = lib.getTrackByPath(t.path)
+        if (full) return full
+      }
+      return t
+    }).filter(t => t && t.url)
+    if (!resolved.length) return
     clearQueue()
-    queue.value = [...tracks]
+    queue.value = [...resolved]
+    const startIndexTracks = resolved
     if (playMode.value === 'shuffle') {
       // 随机模式：保存原始顺序并打乱
       originalQueue.value = cloneQueue(queue.value)
       shuffle(queue.value)
       // 找到起始歌在新队列中的位置
-      const target = tracks[startIndex]
+      const target = startIndexTracks[startIndex]
       if (target) {
         const newIdx = findIndexByPath(queue.value, target)
         play(newIdx !== -1 ? newIdx : 0)
