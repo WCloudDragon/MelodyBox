@@ -94,7 +94,6 @@
                   <div v-else class="rec-entry__cover-placeholder rec-entry__cover-placeholder--weather">
                     <span>{{ weatherCardEmoji }}</span>
                   </div>
-                  <div class="rec-entry__cover-mask"></div>
                 </div>
                 <div class="rec-entry__info" :style="getCoverStyle(weatherStore.mood)">
                   <template v-if="recPreviewsLoading">
@@ -127,7 +126,6 @@
                   <div v-else class="rec-entry__cover-placeholder">
                     <span>✨</span>
                   </div>
-                  <div class="rec-entry__cover-mask"></div>
                 </div>
                 <div class="rec-entry__info" :style="getCoverStyle('daily')">
                   <template v-if="recPreviewsLoading">
@@ -160,7 +158,6 @@
                   <div v-else class="rec-entry__cover-placeholder rec-entry__cover-placeholder--gem">
                     <span>💎</span>
                   </div>
-                  <div class="rec-entry__cover-mask"></div>
                 </div>
                 <div class="rec-entry__info" :style="getCoverStyle('hidden_gem')">
                   <template v-if="recPreviewsLoading">
@@ -195,7 +192,6 @@
                   <div v-else class="rec-entry__cover-placeholder" :style="{ background: m.gradient }">
                     <span>{{ m.icon }}</span>
                   </div>
-                  <div class="rec-entry__cover-mask"></div>
                 </div>
                 <div class="rec-entry__info" :style="getCoverStyle(m.key)">
                   <template v-if="recPreviewsLoading">
@@ -678,21 +674,40 @@ const homeStyle = computed(() => ({
 
 let resizeObserver = null
 let homeResizeObserver = null
+let previewSlotTimer = null
 onMounted(() => {
+  // rec-entries 位于 v-else（曲库非空）分支内，曲库异步加载完成后才挂载——
+  // onMounted 时它可能还不存在；用 watch 捕获元素出现时机再 observe
+  // （ResizeObserver 首次 observe 会立即派发一次当前尺寸，recWrapW 随之就位）
   resizeObserver = new ResizeObserver(entries => {
     for (const e of entries) recWrapW.value = e.contentRect.width
   })
-  if (recEntriesRef.value) resizeObserver.observe(recEntriesRef.value)
+  watch(recEntriesRef, (el) => {
+    if (el) resizeObserver.observe(el)
+  }, { immediate: true })
   homeResizeObserver = new ResizeObserver(updateHomeGrid)
   if (homeRef.value) homeResizeObserver.observe(homeRef.value)
   // 首次加载推荐卡片封面。loadPreviews 内部会判断缓存是否过期：
   //  - 缓存有效 → 直接用 store 缓存的数据，不重复请求
   //  - 缓存过期/不存在 → 拉取最新 previews
   aiStore.loadPreviews()
+
+  // 半小时批次槽检查：整点/半点批次变化后自动 force 刷新推荐卡片
+  // （每日推荐按日期批次、其余类别按半小时批次，槽变化即代表后端已换新一批）
+  const SLOT_MS = 30 * 60 * 1000
+  let lastSlot = Math.floor(Date.now() / SLOT_MS)
+  previewSlotTimer = setInterval(() => {
+    const cur = Math.floor(Date.now() / SLOT_MS)
+    if (cur !== lastSlot) {
+      lastSlot = cur
+      aiStore.loadPreviews(true)
+    }
+  }, 60 * 1000)
 })
 onUnmounted(() => {
   if (resizeObserver) resizeObserver.disconnect()
   if (homeResizeObserver) homeResizeObserver.disconnect()
+  if (previewSlotTimer) clearInterval(previewSlotTimer)
 })
 
 // 推荐预览数据（单一数据源：ai store）
@@ -1023,15 +1038,6 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-.rec-entry__cover-mask {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 40%;
-  background: linear-gradient(transparent, rgba(0,0,0,0.4));
-  pointer-events: none;
 }
 .rec-entry__cover-placeholder {
   width: 100%;

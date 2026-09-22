@@ -143,7 +143,6 @@ const diffFields = computed(() => {
   border-radius: 8px;
   overflow: hidden;
   margin-bottom: 10px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
 }
 .music-card__cover img {
   width: 100%; height: 100%;

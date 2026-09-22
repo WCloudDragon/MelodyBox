@@ -65,6 +65,17 @@ export async function extractCoverColors(imageUrl, opts = {}) {
     const shadow = clusters[0]
     const mid = clusters[Math.floor(clusters.length / 2)]
 
+    // 明度归一：底栏背景直接使用 mid 色、文字常驻白色——mid 过浅（浅色/纯色封面，
+    // 感知亮度 > 0.62）时三色整体等比压暗到白字可读区间（约 0.30），
+    // 色相/饱和度与明暗相对关系保持不变，浅色封面也能保证底栏文字可读
+    const lumMid = (0.299 * mid.center.r + 0.587 * mid.center.g + 0.114 * mid.center.b) / 255
+    if (lumMid > 0.62) {
+      const k = Math.max(0.2, 0.30 / lumMid)
+      for (const c of [highlight.center, mid.center, shadow.center]) {
+        c.r *= k; c.g *= k; c.b *= k
+      }
+    }
+
     return {
       highlight: rgbToHex(highlight.center.r, highlight.center.g, highlight.center.b),
       mid: rgbToHex(mid.center.r, mid.center.g, mid.center.b),

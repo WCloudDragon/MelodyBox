@@ -6,7 +6,8 @@ import { apiUrl, audioUrl } from '@/config/api'
 const PREVIEWS_KEY = 'melodybox_ai_previews'
 const PREVIEWS_TTL = 5 * 60 * 1000
 // 封面颜色缓存
-const COLOR_CACHE_KEY = 'melodybox_cover_colors'
+// v2：取色输出增加明度归一（浅色主色压暗），升版本使旧的浅色缓存整体失效
+const COLOR_CACHE_KEY = 'melodybox_cover_colors_v2'
 
 /**
  * AI 推荐 store（重构版）

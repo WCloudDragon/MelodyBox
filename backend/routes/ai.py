@@ -503,10 +503,16 @@ def _fetch_recommendations(mode='comprehensive', limit=20, lang=None, mood=None,
     try:
         profile = get_profile(db, user_id)
         cache_mode = 'mood' if mode == 'weather' else mode
-        # 每日推荐按日期轮换（当天结果稳定，次日自动换一批）
-        day_part = time.strftime('%Y-%m-%d') if cache_mode == 'comprehensive' else ''
+        # 批次时间因子：每日推荐按日期轮换（0 点换一批、当天稳定）；
+        # 其余类别按半小时槽轮换（每个整点/半点换一批、槽内稳定）
+        now = time.localtime()
+        if cache_mode == 'comprehensive':
+            time_part = time.strftime('%Y-%m-%d', now)
+        else:
+            half = '00' if now.tm_min < 30 else '30'
+            time_part = time.strftime(f'%Y-%m-%d-%H-{half}', now)
         cache_key = (
-            f"rec:{cache_mode}:{day_part}:{lang or ''}:{mood or ''}:{song_id or ''}:{limit}:"
+            f"rec:{cache_mode}:{time_part}:{lang or ''}:{mood or ''}:{song_id or ''}:{limit}:"
             f"u{user_id}:p{profile.get('version') or 0}:v{get_vector_generation()}"
         )
         cached = cache.get(cache_key)
