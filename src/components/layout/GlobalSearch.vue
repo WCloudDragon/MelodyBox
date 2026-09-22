@@ -22,6 +22,8 @@
     </div>
 
     <Teleport to="body">
+      <!-- 透明遮罩：面板打开时拦截外部点击——仅关闭面板，不穿透到背景元素 -->
+      <div v-if="open" class="global-search__backdrop" @click="close" />
       <Transition name="gs-panel">
         <div v-if="open" class="global-search__panel" @mousedown.prevent>
           <div ref="scrollRef" class="global-search__scroll" :style="panelHeight != null ? { height: panelHeight + 'px', overflowY: scrollable ? 'auto' : 'hidden' } : null">
@@ -336,15 +338,6 @@ function onGlobalKeydown(e) {
     nextTick(() => inputRef.value?.focus())
   }
 }
-function onDocClick(e) {
-  // 目标元素在事件派发途中被移除（如点叉号清词后 v-if 卸载按钮），
-  // 此时 target 已游离：contains/closest 都会误判为"外部点击"，直接忽略该事件
-  if (!e.target.isConnected) return
-  // 面板 Teleport 到 body，点击面板内部不算外部
-  if (rootRef.value?.contains(e.target)) return
-  if (e.target.closest?.('.global-search__panel')) return
-  close()
-}
 
 watch(query, () => { selIdx.value = -1 })
 watch(() => route.fullPath, () => close())
@@ -391,11 +384,9 @@ watch(open, (v) => {
 })
 
 onMounted(() => {
-  document.addEventListener('click', onDocClick)
   document.addEventListener('keydown', onGlobalKeydown)
 })
 onUnmounted(() => {
-  document.removeEventListener('click', onDocClick)
   document.removeEventListener('keydown', onGlobalKeydown)
 })
 </script>
@@ -405,6 +396,11 @@ onUnmounted(() => {
   position: relative;
   -webkit-app-region: no-drag;
   z-index: 1100;
+}
+/* 面板透明遮罩：z 介于页面内容与窗控(1001)/搜索框(1100)之间——
+   拦截页面点击仅关闭面板；窗控与搜索框不受影响 */
+.global-search__backdrop {
+  position: fixed; inset: 0; z-index: 1000;
 }
 .global-search__box {
   display: flex;

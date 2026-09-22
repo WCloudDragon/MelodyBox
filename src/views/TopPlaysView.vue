@@ -3,6 +3,7 @@
     <ListPageHeader
       title="播放次数"
       :count="filtered.length"
+      :list-tracks="filtered"
       show-sort
       :show-multi-select="true"
       :multi-select-active="multiSelectMode"

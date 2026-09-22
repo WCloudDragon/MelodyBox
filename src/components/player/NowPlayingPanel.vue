@@ -41,7 +41,7 @@
           <div class="np-layout__cover">
             <Transition :name="coverAnimName">
               <div class="cover-artwork" :key="currentTrack?.path" ref="coverArtRef" :style="coverArtStyle">
-                <img v-if="currentTrack?.cover" :src="currentTrack.cover" class="cover-artwork__img" decoding="async" />
+                <img v-if="currentTrack?.cover" :src="currentTrack.cover" class="cover-artwork__img" decoding="async" @load="onCoverLoad" />
                 <div v-else class="cover-artwork__empty">
                   <el-icon size="64"><Headset /></el-icon>
                 </div>
@@ -130,7 +130,6 @@ import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
 import { parseLRC, computeActiveSet, LYRIC_GAP_FILL_LIMIT, applyLyricKaraokeMode } from '@/utils/format'
 import { extractCoverColors } from '@/utils/coverColorExtractor'
-import { getTrimmedCover, viewBoxStyle } from '@/utils/coverTrim'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -166,29 +165,20 @@ const jumpPending = ref(-1)
 let fadingTimer = null
 const fadingLineIndex = ref(-1)   // 远距离跳转后，旧行逐字 DOM 延后销毁，给过渡动画时间
 const coverArtRef = ref(null)
-// 封面原始宽高比（w/h），用于全屏页按原比例显示与飞入动画的连续形变
+// 封面原始宽高比（w/h），用于全屏页按图片固有比例显示与飞入动画的连续形变。
+// 不做任何黑边检测/开窗/裁剪——封面按原始比例完整显示（暗色设计也是内容的一部分）
 const coverAspect = ref(null)
 const coverArtStyle = computed(() => {
-  const s = coverAspect.value ? { '--cover-ratio': coverAspect.value } : {}
-  const vb = viewBoxStyle(coverBox.value)
-  if (vb) s.objectViewBox = vb
-  return s
+  return coverAspect.value ? { '--cover-ratio': coverAspect.value } : {}
 })
-
-// ==================== 封面显示窗口（黑边检测，与播放栏共用 coverTrim 模块） ====================
-// 原图始终完整（零数据丢失），黑边仅通过 CSS object-view-box 在显示层开窗规避
-const coverBox = ref(null)
-// 窗口比例驱动容器宽高（coverAspect）；比例一律以 trim 检测结论为准，
-// 不用 img 原图 load 的天然比例——有黑边时原图 1:1 会覆盖内容比例（0.75）
-watch(() => currentTrack.value?.cover, async (url) => {
-  coverBox.value = null
-  coverAspect.value = null
-  if (!url) return
-  const t = await getTrimmedCover(url)
-  if (currentTrack.value?.cover !== url) return // 竞态：封面已再切
-  coverBox.value = t?.box || null
-  coverAspect.value = t?.ratio ?? null
-}, { immediate: true })
+function onCoverLoad(e) {
+  const img = e.target
+  if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
+    coverAspect.value = img.naturalWidth / img.naturalHeight
+  }
+}
+// 切歌时重置比例（旧比例残留会让新封面以错误框比显示，直到 load 触发）
+watch(() => currentTrack.value?.cover, () => { coverAspect.value = null })
 
 // ==================== 动态流光背景（封面主色驱动渐变流动） ====================
 const flowColors = ref(null)
@@ -659,9 +649,6 @@ function flyCover(fromRect, toRect, fromBR, toBR, { shadowFrom = 0, shadowTo = 1
     })
     const imgEl = document.createElement('img')
     imgEl.src = coverUrl
-    // 与面板同窗口：黑边图在飞行分身上同样只显示内容区
-    const vb = viewBoxStyle(coverBox.value)
-    if (vb) imgEl.style.objectViewBox = vb
     Object.assign(imgEl.style, {
       position: 'absolute', inset: '0',
       width: '100%', height: '100%',
@@ -742,20 +729,8 @@ async function flyCoverIn() {
   const origin = coverOriginRect?.value
   if (!origin || !coverArtRef.value) return
 
-  // 等待封面解码 + 黑边检测完成，按最终窗口的比例设置容器，
-  // 再测量目标矩形（宽图/长图/开窗图飞到最终比例，不再依赖封面 <img> 二次加载）
-  const coverUrl = currentTrack.value?.cover
-  if (coverUrl) {
-    try {
-      const trimmed = await getTrimmedCover(coverUrl)
-      if (currentTrack.value?.cover !== coverUrl) return // 等待期间已切歌，中断本次飞入
-      coverBox.value = trimmed?.box || null
-      coverAspect.value = trimmed?.ratio ?? null
-    } catch { /* 忽略 */ }
-  }
-  await nextTick()
-
-  // 获取面板封面的最终视口位置（补偿面板滑动）
+  // 面板常驻、封面 <img> 随切歌加载，onCoverLoad 已把比例更新为原图固有比例；
+  // 这里直接测量目标矩形（宽图/长图飞到最终比例）
   const artEl = coverArtRef.value
   const overlayEl = artEl.closest('.np-overlay')
   const cs = getComputedStyle(overlayEl)

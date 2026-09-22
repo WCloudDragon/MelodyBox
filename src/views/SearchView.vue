@@ -35,7 +35,17 @@
       <!-- 分组结果（按 tab 过滤：全部=分组平铺，单类=仅该组） -->
       <template v-else>
         <section v-for="sec in visibleSections" :key="sec.key" class="search-section">
-          <div class="search-section__title">
+          <!-- 综合模式：组标题可点（进单类看全部，带箭头）；单类模式：纯标题 -->
+          <button
+            v-if="activeTab === 'all'"
+            class="search-section__title search-section__title--link"
+            @click="switchTab(sec.key)"
+          >
+            {{ sec.label }}
+            <span class="search-section__count">{{ sec.items.length }}</span>
+            <svg class="search-section__arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3.5L10.5 8 6 12.5"/></svg>
+          </button>
+          <div v-else class="search-section__title">
             {{ sec.label }}
             <span class="search-section__count">{{ sec.items.length }}</span>
           </div>
@@ -43,7 +53,7 @@
           <!-- 歌曲 / 历史 / 播放次数：曲目行 -->
           <div v-if="sec.type === 'tracks'" class="search-section__body">
             <div
-              v-for="(t, i) in sec.items"
+              v-for="(t, i) in sec.display"
               :key="sec.key + '-' + t.path"
               class="track-row"
               v-ripple
@@ -71,7 +81,7 @@
           <div v-else class="search-section__body">
             <div class="card-grid">
               <router-link
-                v-for="c in sec.items"
+                v-for="c in sec.display"
                 :key="sec.key + '-' + c.key"
                 :to="c.route"
                 class="entity-card"
@@ -212,16 +222,25 @@ const totalCount = computed(() => sections.value.reduce((n, s) => n + s.items.le
 // ==================== 类别 tab ====================
 const activeTab = ref('all')
 const scrollEl = ref(null)
-// 全部 + 有结果的类别（空类别不出现 tab，避免点击后全是空态）
+// 综合模式每组预览条数（超出走「>」进单类看全部）
+const TRACK_PREVIEW = 5
+const CARD_PREVIEW = 6
+// 「综合」+ 有结果的类别（空类别不出现 tab，避免点击后全是空态）
 const tabs = computed(() => [
-  { key: 'all', label: '全部' },
+  { key: 'all', label: '综合' },
   ...sections.value.map(s => ({ key: s.key, label: s.label }))
 ])
-const visibleSections = computed(() =>
-  activeTab.value === 'all'
-    ? sections.value
-    : sections.value.filter(s => s.key === activeTab.value)
-)
+const visibleSections = computed(() => {
+  if (activeTab.value === 'all') {
+    // 综合模式：每组仅预览一部分，避免单页过长（组标题「>」进单类）
+    return sections.value.map(s => ({
+      ...s,
+      display: s.type === 'tracks' ? s.items.slice(0, TRACK_PREVIEW) : s.items.slice(0, CARD_PREVIEW)
+    }))
+  }
+  // 单类模式：全量展示
+  return sections.value.map(s => ({ ...s, display: s.items }))
+})
 // 头部数量跟随当前 tab
 const headerCount = computed(() => {
   if (activeTab.value === 'all') return totalCount.value
@@ -346,6 +365,23 @@ function fmtRel(raw) {
   padding: 0 12px; margin-bottom: 8px;
 }
 .search-section__count { font-size: 12px; font-weight: 500; color: var(--text-tertiary); }
+/* 综合模式的可点组标题：hover 提亮 + 箭头右移示意进入单类 */
+.search-section__title--link {
+  width: calc(100% - 24px);
+  border: none; background: none; text-align: left;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.search-section__arrow {
+  align-self: center;
+  color: var(--text-tertiary);
+  transition: transform 0.15s, color 0.15s;
+}
+.search-section__title--link:hover { color: var(--accent-color); }
+.search-section__title--link:hover .search-section__arrow {
+  color: var(--accent-color);
+  transform: translateX(2px);
+}
 
 /* 曲目行（与列表页 track-row 同语言；内容落 --page-pad-x 基准线） */
 .track-row {

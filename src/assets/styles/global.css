@@ -10,17 +10,20 @@
 /* ==================== 全局右键菜单 ==================== */
 .ctx-menu {
   position: fixed; z-index: 9999;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
+  /* 液态玻璃：与侧边栏/搜索面板/播放队列一致的材质语言 */
+  background: var(--glass-bg-strong, rgba(30, 30, 38, 0.92));
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
   border-radius: 8px; padding: 4px 0;
   min-width: 140px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
 }
 .ctx-menu-item {
   padding: 8px 16px; font-size: 13px; cursor: pointer;
   color: var(--text-primary);
 }
-.ctx-menu-item:hover { background: var(--bg-tertiary); }
+.ctx-menu-item:hover { background: var(--hover-bg-strong); }
 .ctx-menu-item--danger { color: #f56c6c; }
 .ctx-menu-item--danger:hover { background: rgba(245,108,108,0.1); }
 .ctx-menu-item--has-submenu {
@@ -48,11 +51,13 @@
   left: 100%;
   min-width: 140px;
   max-width: 240px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
+  background: var(--glass-bg-strong, rgba(30, 30, 38, 0.92));
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
   border-radius: 8px;
   padding: 4px 0;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
 }
 .ctx-submenu--left {
   left: auto;

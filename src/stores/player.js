@@ -5,6 +5,17 @@ import { apiUrl, audioUrl } from '@/config/api'
 import { useAuthStore } from './auth'
 import { ElMessage } from '@/utils/toast'
 
+// ==================== 播放模式注册表（单一定义源） ====================
+// inList: 是否出现在「列表页顶栏」的模式菜单中——
+// 单曲循环是「对当前这首歌」的播放控制，只属于播放器（播放栏），列表菜单不提供
+export const PLAY_MODES = [
+  { key: 'sequential', label: '顺序播放', inList: true },
+  { key: 'repeat', label: '列表循环', inList: true },
+  { key: 'repeat-one', label: '单曲循环', inList: false },
+  { key: 'shuffle', label: '随机播放', inList: true }
+]
+const PLAY_MODE_KEYS = PLAY_MODES.map(m => m.key)
+
 export const usePlayerStore = defineStore('player', () => {
   // 播放队列
   const queue = ref([])
@@ -49,7 +60,7 @@ export const usePlayerStore = defineStore('player', () => {
     setTimeout(_warmupAudioPipeline, 1500)
   }
 
-  // 播放模式: 'sequential' | 'repeat' | 'repeat-one' | 'shuffle'（默认列表循环）
+  // 播放模式 key 见顶部 PLAY_MODES 注册表（默认列表循环）
   const playMode = ref('repeat')
 
   // 桌面歌词开关
@@ -159,6 +170,19 @@ export const usePlayerStore = defineStore('player', () => {
       }
       // 听完反馈（画像正样本）
       _reportComplete()
+      // 单曲循环：显式归零重播。同 src 再次赋值浏览器不重载、从末尾 resume 会立即再 ended，
+      // play(同 index) 是失效的（历史 bug：单曲循环表现为播完即停）
+      if (playMode.value === 'repeat-one') {
+        _playTracked = false
+        _trackStartedAt = Date.now()
+        _seekOffset = 0
+        currentTime.value = 0
+        if (audio.value) {
+          audio.value.currentTime = 0
+          audio.value.play().then(() => { isPlaying.value = true }).catch(() => {})
+        }
+        return
+      }
       next()
     })
     audio.value.addEventListener('error', (e) => {
@@ -287,25 +311,18 @@ export const usePlayerStore = defineStore('player', () => {
     else resume()
   }
 
-  // 下一首
+  // 下一首（手动切歌，不受模式影响；单曲循环只约束自然结束的重播行为）
   function next() {
     if (queue.value.length === 0) return
     songChangeDirection.value = 'next'
-    let nextIndex
-    switch (playMode.value) {
-      case 'repeat-one':
-        nextIndex = currentIndex.value
-        break
-      default:
-        nextIndex = currentIndex.value + 1
-        if (nextIndex >= queue.value.length) {
-          if (playMode.value === 'repeat' || playMode.value === 'shuffle') {
-            nextIndex = 0
-          } else {
-            pause()
-            return
-          }
-        }
+    let nextIndex = currentIndex.value + 1
+    if (nextIndex >= queue.value.length) {
+      if (playMode.value === 'repeat' || playMode.value === 'shuffle') {
+        nextIndex = 0
+      } else {
+        pause()
+        return
+      }
     }
     play(nextIndex)
   }
@@ -314,7 +331,6 @@ export const usePlayerStore = defineStore('player', () => {
   function prev() {
     if (queue.value.length === 0) return
     if (currentTime.value > 3) {
-      // 从头播放当前曲目：方向为 null（刷新），不做切歌动画
       // 从头播放当前曲目：直接 seek 到 0 避免 URL 未变时浏览器不重载
       if (audio.value) audio.value.currentTime = 0
       _seekOffset = 0
@@ -323,16 +339,9 @@ export const usePlayerStore = defineStore('player', () => {
       return
     }
     songChangeDirection.value = 'prev'
-    let prevIndex
-    switch (playMode.value) {
-      case 'repeat-one':
-        prevIndex = currentIndex.value
-        break
-      default:
-        prevIndex = currentIndex.value - 1
-        if (prevIndex < 0) {
-          prevIndex = playMode.value === 'repeat' || playMode.value === 'shuffle' ? queue.value.length - 1 : 0
-        }
+    let prevIndex = currentIndex.value - 1
+    if (prevIndex < 0) {
+      prevIndex = playMode.value === 'repeat' || playMode.value === 'shuffle' ? queue.value.length - 1 : 0
     }
     play(prevIndex)
   }
@@ -415,63 +424,62 @@ export const usePlayerStore = defineStore('player', () => {
     showDesktopLyrics.value = !showDesktopLyrics.value
   }
 
-  // 切换播放模式: sequential → repeat-one → shuffle → repeat → ...
+  // === 随机模式进入/退出（toggle 与 set 共用，行为统一：保持当前曲不打断） ===
+  function applyShuffleOn() {
+    // 保存原始顺序（尚未被 shuffle 过的才保存）
+    if (originalQueue.value.length === 0) {
+      originalQueue.value = cloneQueue(queue.value)
+    }
+    const cur = queue.value[currentIndex.value]
+    shuffle(queue.value)
+    // 当前歌跟随到新队列中的位置，不打断播放
+    if (cur) {
+      const newIdx = findIndexByPath(queue.value, cur)
+      if (newIdx !== -1) currentIndex.value = newIdx
+    }
+  }
+
+  function applyShuffleOff() {
+    if (originalQueue.value.length === 0) return
+    const cur = queue.value[currentIndex.value]
+    queue.value = cloneQueue(originalQueue.value)
+    originalQueue.value = []
+    if (cur) {
+      const newIdx = findIndexByPath(queue.value, cur)
+      if (newIdx !== -1) currentIndex.value = newIdx
+    }
+  }
+
+  // 循环切换播放模式（播放栏按钮）：顺序 → 列表循环 → 单曲循环 → 随机 → ...
   function togglePlayMode() {
-    const modes = ['sequential', 'repeat-one', 'shuffle', 'repeat']
-    const idx = modes.indexOf(playMode.value)
-    const nextMode = modes[(idx + 1) % modes.length]
-
-    // === 进入随机模式：打乱队列，保存原始顺序 ===
-    if (nextMode === 'shuffle' && playMode.value !== 'shuffle') {
-      const currentTrack = queue.value[currentIndex.value]
-      // 保存原始顺序（尚未被 shuffle 过的才保存）
-      if (originalQueue.value.length === 0) {
-        originalQueue.value = cloneQueue(queue.value)
-      }
-      // 打乱队列
-      shuffle(queue.value)
-      // 找到当前歌在新队列中的位置
-      if (currentTrack) {
-        const newIdx = findIndexByPath(queue.value, currentTrack)
-        if (newIdx !== -1) currentIndex.value = newIdx
-      }
-    }
-
-    // === 退出随机模式：恢复原始顺序 ===
-    if (playMode.value === 'shuffle' && nextMode !== 'shuffle') {
-      if (originalQueue.value.length > 0) {
-        const currentTrack = queue.value[currentIndex.value]
-        queue.value = cloneQueue(originalQueue.value)
-        originalQueue.value = []
-        if (currentTrack) {
-          const newIdx = findIndexByPath(queue.value, currentTrack)
-          if (newIdx !== -1) currentIndex.value = newIdx
-        }
-      }
-    }
-
+    const idx = PLAY_MODE_KEYS.indexOf(playMode.value)
+    const nextMode = PLAY_MODE_KEYS[(idx + 1) % PLAY_MODE_KEYS.length]
+    if (nextMode === 'shuffle' && playMode.value !== 'shuffle') applyShuffleOn()
+    else if (playMode.value === 'shuffle' && nextMode !== 'shuffle') applyShuffleOff()
     playMode.value = nextMode
   }
 
-  // 按当前播放模式起播当前队列（列表顶栏播放模式按钮左键：只起播，不切换模式）
-  function playCurrentQueue() {
-    if (queue.value.length > 0) play(Math.max(0, currentIndex.value))
+  // 设定播放模式（列表页右键菜单选中：仅设定偏好，起播由调用方对目标列表执行）
+  function setPlayMode(mode) {
+    if (!PLAY_MODE_KEYS.includes(mode) || mode === playMode.value) return
+    if (mode === 'shuffle' && playMode.value !== 'shuffle') applyShuffleOn()
+    else if (playMode.value === 'shuffle' && mode !== 'shuffle') applyShuffleOff()
+    playMode.value = mode
   }
 
-  // 直接设定播放模式（右键菜单选中）：切换后按新模式起播当前队列
-  function setPlayMode(mode) {
-    if (!['sequential', 'repeat', 'repeat-one', 'shuffle'].includes(mode) || mode === playMode.value) return
-    playMode.value = mode
-    if (mode === 'shuffle' && originalQueue.value.length === 0) {
-      originalQueue.value = cloneQueue(queue.value)
+  // 列表页一键起播：以当前播放模式起播传入列表的全部歌曲。
+  // 随机模式 = 打乱整个列表后从打乱序的第一首播（原序存入 originalQueue 供退出随机时恢复）
+  function playListByMode(tracks) {
+    if (!Array.isArray(tracks) || tracks.length === 0) return
+    if (playMode.value === 'shuffle') {
+      clearQueue()
+      originalQueue.value = cloneQueue(tracks)
+      queue.value = cloneQueue(tracks)
       shuffle(queue.value)
-      if (queue.value.length) currentIndex.value = 0
-    } else if (mode !== 'shuffle' && originalQueue.value.length > 0) {
-      queue.value = cloneQueue(originalQueue.value)
-      originalQueue.value = []
-    }
-    if (queue.value.length > 0) {
-      play(Math.max(0, currentIndex.value))
+      currentIndex.value = 0
+      play(0)
+    } else {
+      playAll(tracks, 0)
     }
   }
 
@@ -712,7 +720,7 @@ export const usePlayerStore = defineStore('player', () => {
     songChangeDirection, audioCtx, analyserNode,
     currentTrack, progress, hasNext, hasPrev,
     initAudio, play, pause, resume, togglePlay,
-    next, prev, seek, setVolume, toggleMute, togglePlayMode, setPlayMode, playCurrentQueue, toggleDesktopLyrics,
+    next, prev, seek, setVolume, toggleMute, togglePlayMode, setPlayMode, playListByMode, toggleDesktopLyrics,
     addToQueue, addToQueueNext, removeFromQueue, clearQueue, moveInQueue, moveToNext, playAll,
     saveSettings, loadSettings, saveProgress, restoreProgress,
     getLiveTime

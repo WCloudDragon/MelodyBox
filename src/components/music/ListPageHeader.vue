@@ -7,12 +7,12 @@
     <!-- 页面自定义右侧操作（导入/刷新/播放全部等） -->
     <slot />
 
-    <!-- 播放模式：左键循环切换，右键弹菜单（复用全局右键菜单组件样式/动效/防出屏） -->
+    <!-- 播放模式：左键以当前模式一键起播本列表，右键菜单切换模式（复用全局右键菜单样式/动效/防出屏） -->
     <button
-      v-if="showPlayMode"
+      v-if="showPlayMode && listTracks && listTracks.length"
       class="lph-btn lph-btn--playmode"
-      :title="playModeLabel"
-      @click="player.playCurrentQueue()"
+      :title="`以${playModeLabel}模式播放本列表（右键切换模式）`"
+      @click="player.playListByMode(listTracks)"
       @contextmenu.prevent.stop="openModeMenu($event)"
     >
       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h2v10H2V3zm4 0h8v2H6V3zm0 4h6v2H6V7zm0 4h8v2H6v-2z"/></svg>
@@ -40,35 +40,46 @@
       <svg v-else width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h12v1H2V3zm0 5h12v1H2V8zm0 5h12v1H2v-1z"/></svg>
     </button>
 
+    <!-- 浮层透明遮罩：打开排序/筛选时拦截外部点击——仅关闭浮层，不穿透到背景元素 -->
+    <div
+      v-if="sortOpen || filterOpen"
+      class="lph-backdrop"
+      @click="sortOpen = filterOpen = false"
+    />
+
     <!-- 排序面板 -->
-    <div v-if="sortOpen" class="lph-panel" @click.stop>
+    <Transition name="lph-panel">
+      <div v-if="sortOpen" class="lph-panel" @click.stop>
       <div class="lph-panel__title">排序</div>
       <button v-for="opt in sortOptions" :key="opt.value" class="lph-panel__item" :class="{ active: sortKey === opt.value }" @click="chooseSort(opt.value)">
         <span>{{ opt.label }}</span>
         <span v-if="sortKey === opt.value" class="lph-panel__arrow">{{ sortOrder === 'asc' ? '↑' : '↓' }}</span>
       </button>
       <div class="lph-panel__divider"></div>
-      <div class="lph-panel__row">
+        <div class="lph-panel__row">
         <button class="lph-panel__item lph-panel__dir" :class="{ active: sortOrder === 'asc' }" @click="setSortOrder('asc')">升序</button>
         <button class="lph-panel__item lph-panel__dir" :class="{ active: sortOrder === 'desc' }" @click="setSortOrder('desc')">降序</button>
       </div>
     </div>
+      </Transition>
 
     <!-- 筛选面板 -->
-    <div v-if="filterOpen" class="lph-panel lph-panel--filter" @click.stop>
-      <div v-for="group in filterGroups" :key="group.key" class="lph-panel__group">
-        <div class="lph-panel__title">{{ group.label }}</div>
-        <div class="lph-panel__options">
-          <button
-            v-for="opt in group.options"
-            :key="opt.value"
-            class="lph-panel__item lph-panel__opt"
-            :class="{ active: filterValues[group.key] === opt.value }"
-            @click="chooseFilter(group.key, opt.value)"
-          >{{ opt.label }}</button>
+    <Transition name="lph-panel">
+      <div v-if="filterOpen" class="lph-panel lph-panel--filter" @click.stop>
+        <div v-for="group in filterGroups" :key="group.key" class="lph-panel__group">
+          <div class="lph-panel__title">{{ group.label }}</div>
+          <div class="lph-panel__options">
+            <button
+              v-for="opt in group.options"
+              :key="opt.value"
+              class="lph-panel__item lph-panel__opt"
+              :class="{ active: filterValues[group.key] === opt.value }"
+              @click="chooseFilter(group.key, opt.value)"
+            >{{ opt.label }}</button>
+          </div>
         </div>
       </div>
-    </div>
+    </Transition>
 
     <!-- 播放模式右键菜单：复用全局右键菜单（样式/动效/防出屏与列表项一致） -->
     <ContextMenu
@@ -86,12 +97,14 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { storeToRefs } from 'pinia'
-import { usePlayerStore } from '@/stores/player'
+import { usePlayerStore, PLAY_MODES } from '@/stores/player'
 import ContextMenu from '@/components/music/ContextMenu.vue'
 
 const props = defineProps({
   title: { type: String, required: true },
   count: { type: [String, Number], default: null },
+  // 当前页面显示的歌曲列表：播放模式按钮以它为起播对象（专辑/艺术家等无歌曲列表的页面不传 → 按钮隐藏）
+  listTracks: { type: Array, default: null },
   showPlayMode: { type: Boolean, default: true },
   showSort: { type: Boolean, default: false },
   showFilter: { type: Boolean, default: false },
@@ -114,25 +127,17 @@ const sortOpen = ref(false)
 const filterOpen = ref(false)
 const modeMenu = ref({ visible: false, x: 0, y: 0 })
 
-const playModeLabel = computed(() => ({
-  sequential: '顺序',
-  'repeat-one': '单曲循环',
-  shuffle: '随机',
-  repeat: '列表循环'
-})[playMode.value] || '顺序')
+// 按钮短标签：注册表 label 去掉「播放」尾字（顺序播放→顺序）
+const playModeLabel = computed(() => {
+  const m = PLAY_MODES.find(m => m.key === playMode.value)
+  return (m?.label || '顺序播放').replace(/播放$/, '')
+})
 
-const modeOptions = [
-  { value: 'sequential', label: '顺序播放' },
-  { value: 'repeat', label: '列表循环' },
-  { value: 'repeat-one', label: '单曲循环' },
-  { value: 'shuffle', label: '随机播放' }
-]
-
-// 右键菜单项（复用列表项菜单的样式/动效/防出屏；当前模式高亮由 ContextMenu 的 active 语义一致化处理）
+// 列表页模式菜单：仅含 inList 模式（单曲循环属于播放器，不在列表菜单提供）
 const modeMenuItems = computed(() =>
-  modeOptions.map(m => ({
-    label: m.label + (playMode.value === m.value ? ' ✓' : ''),
-    action: m.value
+  PLAY_MODES.filter(m => m.inList).map(m => ({
+    label: m.label + (playMode.value === m.key ? ' ✓' : ''),
+    action: m.key
   }))
 )
 
@@ -142,8 +147,9 @@ function openModeMenu(e) {
 }
 function closeModeMenu() { modeMenu.value.visible = false }
 function setPlayMode(m) {
-  // 右键菜单选中：直接按所选模式起播当前队列（store 内处理切换与起播）
+  // 右键菜单选中：设定模式偏好，并立即按该模式起播本列表
   player.setPlayMode(m)
+  player.playListByMode(props.listTracks)
   closeModeMenu()
 }
 
@@ -293,6 +299,9 @@ onBeforeUnmount(() => {
   font-size: 13px;
 }
 
+.lph-backdrop {
+  position: fixed; inset: 0; z-index: 25;
+}
 .lph-panel {
   position: absolute;
   top: calc(100% + 6px);
@@ -301,11 +310,36 @@ onBeforeUnmount(() => {
   padding: 8px;
   border-radius: 12px;
   background: var(--glass-bg-strong, rgba(30, 30, 38, 0.92));
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
-  border: 1px solid var(--border-color);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
   z-index: 30;
+}
+/* 开闭动画：与右键菜单 ctx-menu-blur 同配方（弹性回弹入场 + 模糊缩小离场） */
+.lph-panel-enter-active {
+  animation: lph-panel-pop 0.38s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.lph-panel-enter-from {
+  opacity: 0;
+  filter: blur(6px);
+  transform: scale(0.85);
+}
+@keyframes lph-panel-pop {
+  0%   { transform: scale(0.85); }
+  100% { transform: scale(1); }
+}
+.lph-panel-leave-active {
+  transition: opacity 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.lph-panel-leave-to {
+  opacity: 0;
+  filter: blur(6px);
+  transform: scale(0.85);
 }
 .lph-panel--filter { min-width: 220px; right: 96px; }
 .lph-panel--filter .lph-panel__options { display: flex; flex-wrap: wrap; gap: 4px; }

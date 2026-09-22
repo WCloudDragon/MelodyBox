@@ -1,6 +1,6 @@
 <template>
   <div class="albums-view">
-    <ListPageHeader title="专辑" :count="albums.length ? `${albums.length} 张专辑` : null" show-play-mode />
+    <ListPageHeader title="专辑" :count="albums.length ? `${albums.length} 张专辑` : null" :show-play-mode="false" />
 
     <!-- 空状态 -->
     <div v-if="!hasAlbums" class="empty-state">

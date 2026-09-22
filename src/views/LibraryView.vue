@@ -3,6 +3,7 @@
     <ListPageHeader
       title="音乐库"
       :count="libraryStore.filteredTracks.length"
+      :list-tracks="libraryStore.filteredTracks"
       show-sort
       show-filter
       :show-multi-select="true"

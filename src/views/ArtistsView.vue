@@ -1,6 +1,6 @@
 <template>
   <div class="artists-view">
-    <ListPageHeader title="艺术家" :count="artists.length ? `${artists.length} 位歌手` : null" show-play-mode />
+    <ListPageHeader title="艺术家" :count="artists.length ? `${artists.length} 位歌手` : null" :show-play-mode="false" />
 
     <!-- 空状态 -->
     <div v-if="!hasArtists" class="empty-state">

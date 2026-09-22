@@ -19,7 +19,7 @@
       <div class="player-bar__left" ref="leftRef" :style="{ '--center-shift-x': centerShiftX + 'px' }" v-ripple @click="toggleNowPlaying" @contextmenu.prevent="onInfoContextMenu" title="点击查看歌词">
         <div class="now-playing">
           <Transition :name="coverAnimName">
-            <img v-if="currentTrack?.cover" :key="currentTrack?.path" :src="currentTrack.cover" class="cover" ref="coverRef" :style="coverStyle" />
+            <img v-if="currentTrack?.cover" :key="currentTrack?.path" :src="currentTrack.cover" class="cover" ref="coverRef" :style="coverStyle" @load="onCoverLoad" />
             <div v-else :key="'empty'" class="cover cover--empty" ref="coverRef">
               <el-icon size="22"><Headset /></el-icon>
             </div>
@@ -139,13 +139,12 @@
 import { ref, computed, inject, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { usePlayerStore } from '@/stores/player'
+import { usePlayerStore, PLAY_MODES } from '@/stores/player'
 import { formatDuration } from '@/utils/format'
 import QueuePanel from '@/components/player/QueuePanel.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
 import { useTrackList } from '@/composables/useTrackList'
 import { closeOverlays } from '@/utils/overlays'
-import { getTrimmedCover, viewBoxStyle } from '@/utils/coverTrim'
 
 const props = defineProps({
   panelOpen: { type: Boolean, default: false },
@@ -165,26 +164,16 @@ const barRef = ref(null)
 const leftRef = ref(null)
 const centerShiftX = ref(0)
 
-// ==================== 封面显示窗口（黑边检测，与全屏歌词页共用 coverTrim 模块） ====================
-// 原图始终完整，黑边仅通过 CSS object-view-box 在显示层开窗规避——与全屏页/飞行动画一致，
-// 落位零跳变；比例以 trim 检测结论为准（img 原图 load 的天然比例会在有黑边时覆盖窗口比例）
-const coverBox = ref(null)
+// ==================== 封面比例（原图固有比例，48px 包络内 contain） ====================
+// 不做黑边检测/开窗/裁剪——封面按原始比例完整显示（暗色设计也是内容的一部分）
 const coverRatio = ref(1)
-watch(() => currentTrack.value?.cover, async (url) => {
-  coverBox.value = null
-  coverRatio.value = 1
-  if (!url) return
-  const t = await getTrimmedCover(url)
-  if (currentTrack.value?.cover !== url) return // 竞态：封面已再切
-  coverBox.value = t?.box || null
-  coverRatio.value = t?.ratio || 1
-}, { immediate: true })
-const coverStyle = computed(() => {
-  const s = { '--cover-ratio': coverRatio.value }
-  const vb = viewBoxStyle(coverBox.value)
-  if (vb) s.objectViewBox = vb
-  return s
-})
+function onCoverLoad(e) {
+  const img = e.target
+  if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
+    coverRatio.value = img.naturalWidth / img.naturalHeight
+  }
+}
+const coverStyle = computed(() => ({ '--cover-ratio': coverRatio.value }))
 
 function updateCenterShift() {
   if (!props.immersive || !barRef.value || !leftRef.value) {
@@ -291,10 +280,9 @@ const displayCurrentTime = computed(() => {
   return currentTime.value
 })
 
-const playModeLabel = computed(() => {
-  const map = { sequential: '顺序播放', 'repeat-one': '单曲循环', shuffle: '随机播放', repeat: '列表循环' }
-  return map[playMode.value]
-})
+const playModeLabel = computed(() =>
+  PLAY_MODES.find(m => m.key === playMode.value)?.label || '顺序播放'
+)
 
 // 点击外部关闭音量弹窗
 function handleClickOutside(e) {
