@@ -1,6 +1,6 @@
 <template>
   <div class="search-view">
-    <ListPageHeader :title="`搜索「${q}」`" :count="headerCount || null" :show-play-mode="false">
+    <ListPageHeader :title="`搜索「${q}」`" :show-play-mode="false">
       <el-button v-if="playableTracks.length" @click="playAllResults">
         <el-icon><VideoPlay /></el-icon>
       </el-button>
@@ -14,7 +14,7 @@
         class="search-tab"
         :class="{ active: activeTab === t.key }"
         @click="switchTab(t.key)"
-      >{{ t.label }}</button>
+      >{{ t.label }}<span v-if="t.count != null" class="search-tab__count">{{ t.count }}</span></button>
     </div>
 
     <div class="search-view__scroll" ref="scrollEl">
@@ -45,10 +45,6 @@
             <span class="search-section__count">{{ sec.items.length }}</span>
             <svg class="search-section__arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3.5L10.5 8 6 12.5"/></svg>
           </button>
-          <div v-else class="search-section__title">
-            {{ sec.label }}
-            <span class="search-section__count">{{ sec.items.length }}</span>
-          </div>
 
           <!-- 歌曲 / 历史 / 播放次数：曲目行 -->
           <div v-if="sec.type === 'tracks'" class="search-section__body">
@@ -225,10 +221,10 @@ const scrollEl = ref(null)
 // 综合模式每组预览条数（超出走「>」进单类看全部）
 const TRACK_PREVIEW = 5
 const CARD_PREVIEW = 6
-// 「综合」+ 有结果的类别（空类别不出现 tab，避免点击后全是空态）
+// 「综合」+ 有结果的类别（空类别不出现 tab，避免点击后全是空态）；tab 带数量徽标
 const tabs = computed(() => [
-  { key: 'all', label: '综合' },
-  ...sections.value.map(s => ({ key: s.key, label: s.label }))
+  { key: 'all', label: '综合', count: null },
+  ...sections.value.map(s => ({ key: s.key, label: s.label, count: s.items.length }))
 ])
 const visibleSections = computed(() => {
   if (activeTab.value === 'all') {
@@ -238,8 +234,9 @@ const visibleSections = computed(() => {
       display: s.type === 'tracks' ? s.items.slice(0, TRACK_PREVIEW) : s.items.slice(0, CARD_PREVIEW)
     }))
   }
-  // 单类模式：全量展示
-  return sections.value.map(s => ({ ...s, display: s.items }))
+  // 单类模式：仅当前组的全量
+  const cur = sections.value.find(s => s.key === activeTab.value)
+  return cur ? [{ ...cur, display: cur.items }] : []
 })
 // 头部数量跟随当前 tab
 const headerCount = computed(() => {
@@ -338,6 +335,13 @@ function fmtRel(raw) {
   width: 18px; height: 3px; border-radius: 2px;
   background: var(--accent-color);
 }
+/* tab 数量徽标（与艺术家详情页完全同款：纯文字次级色，active 跟随强调色） */
+.search-tab__count {
+  margin-left: 4px;
+  font-size: 12px; font-weight: 400;
+  color: var(--text-tertiary);
+}
+.search-tab.active .search-tab__count { color: var(--accent-color); }
 
 .search-view__scroll {
   flex: 1;
