@@ -1385,9 +1385,14 @@ watch(currentTime, async (time) => {
 
   await nextTick()
   // 三点自然结束后：用多米诺级联滚动完成位移（含三点行移除的布局位移）
+  // 尊重设置项的多米诺开关：关闭时退回普通平滑滚动
   if (_dotsCascadePending) {
     _dotsCascadePending = false
-    runDotsCascade(nextFirst)
+    if (enableDominoScroll.value) {
+      runDotsCascade(nextFirst)
+    } else {
+      scrollToLine(nextFirst, true)
+    }
     prevLineIndex = nextFirst
     if (jumpPending.value >= 0) jumpPending.value = -1
     if (nextWord >= 0) startWordAnimLoop()
@@ -1476,20 +1481,19 @@ function runDotsCascade(nextIndex) {
   const csAfterOffset = getComputedStyle(nextEl).transform
   void csAfterOffset
 
-  // 从下一行开始向下错峰归位（与普通前进切句的多米诺节奏一致）
+  // 归位：与普通切句一致的视口波前编排（三点结束恒向下播放，由上至下扫过）
+  const viewportTop = targetScroll
+  const viewportH = Math.max(1, containerHeight)
   for (let i = 0; i < totalLines; i++) {
     const el = lineRefs.value[i]
     if (!el) continue
-    const staggerIdx = i >= nextIndex
-      ? Math.min(Math.max(0, i - nextIndex), MAX_STAGGER_LINES)
-      : Math.min(Math.max(0, nextIndex - i), MAX_STAGGER_LINES)
-    const delay = staggerIdx * STAGGER_MS / 1000
+    const rel = Math.min(Math.max((el.offsetTop - viewportTop) / viewportH, 0), 1)
+    const delay = rel * MAX_STAGGER_TOTAL
     el.style.transition = `transform ${STAGGER_DURATION}ms cubic-bezier(0.2, 0.9, 0.3, 1.0) ${delay}s, opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0), filter 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0)`
     el.style.transform = 'translate3d(0, 0, 0)'
   }
 
-  const maxStagger = MAX_STAGGER_LINES * STAGGER_MS
-  const totalDuration = STAGGER_DURATION + maxStagger + 60
+  const totalDuration = STAGGER_DURATION + MAX_STAGGER_TOTAL * 1000 + 60
   const cleanup = () => {
     for (let i = 0; i < totalLines; i++) {
       const el = lineRefs.value[i]
@@ -1503,9 +1507,10 @@ function runDotsCascade(nextIndex) {
   lyricsScrollCleanup = () => { clearTimeout(timer); cleanup() }
 }
 
-const STAGGER_MS = 38
 const STAGGER_DURATION = 480
-const MAX_STAGGER_LINES = 18
+// 视口波前总扫过时长：延迟按「行的视口位置」线性展开（上下边界外 clamp），
+// 向下播放由上至下、向上播放由下至上，上下行遵循同一条波前
+const MAX_STAGGER_TOTAL = 0.42
 
 function scrollToLine(index, animate = true) {
   if (index < 0 || !scrollRef.value || !mainRef.value) return
@@ -1602,23 +1607,22 @@ function animateScrollTo(targetScroll, index, animate = true) {
     const csAfterOffset = getComputedStyle(lineEl).transform
     void csAfterOffset
 
+    // 归位编排：波前按「行的视口位置」展开——向下播放由上至下扫过、
+    // 向上播放由下至上，上方行与下方行遵循同一条波前（视口外行 clamp 到两端）
+    // 注意：offsetTop 是内容坐标，视口顶部在内容坐标中 = targetScroll（滚动值本身）
+    const viewportTop = targetScroll
+    const viewportH = Math.max(1, containerHeight)
     for (let i = 0; i < totalLines; i++) {
       const el = lineRefs.value[i]
       if (!el) continue
-      // staggerIdx 基于与级联起点的距离；大跨度 seek 时目标行 delay 仅 ~114ms
-      const cascadeOrigin = forward
-        ? Math.max(0, index - 3)                         // 前进：从目标上方3行开始向下级联
-        : Math.min(totalLines - 1, index + 3)            // 后退：从目标下方3行开始向上级联
-      const staggerIdx = forward
-        ? Math.min(Math.max(0, i - cascadeOrigin), MAX_STAGGER_LINES)
-        : Math.min(Math.max(0, cascadeOrigin - i), MAX_STAGGER_LINES)
-      const delay = staggerIdx * STAGGER_MS / 1000
+      const rel = (el.offsetTop - viewportTop) / viewportH
+      const progress = forward ? rel : 1 - rel
+      const delay = Math.min(Math.max(progress, 0), 1) * MAX_STAGGER_TOTAL
       el.style.transition = `transform ${STAGGER_DURATION}ms cubic-bezier(0.2, 0.9, 0.3, 1.0) ${delay}s, opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0), filter 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0)`
       el.style.transform = 'translate3d(0, 0, 0)'
     }
 
-    const maxStagger = MAX_STAGGER_LINES * STAGGER_MS
-    const totalDuration = STAGGER_DURATION + maxStagger + 60
+    const totalDuration = STAGGER_DURATION + MAX_STAGGER_TOTAL * 1000 + 60
 
     const cleanup = () => {
       for (let i = 0; i < totalLines; i++) {
