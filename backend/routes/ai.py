@@ -326,6 +326,8 @@ def _run_generation(flask_app, pending_songs, audio_pending):
                 db = get_db()
                 cursor = db.cursor()
                 blob_count = 0
+                # 分批提交：全量单事务会长时间持有写锁，导致 API 请求
+                # （如 get_profile 的 INSERT）busy 超时报 database is locked
                 for song_id, emb in results:
                     if emb is not None:
                         src = next((s for s in (audio_pending) if s[0] == song_id), None)
@@ -335,6 +337,8 @@ def _run_generation(flask_app, pending_songs, audio_pending):
                             emb.astype('float32').tobytes(), audio=True
                         )
                         blob_count += 1
+                        if blob_count % 200 == 0:
+                            db.commit()
                 db.commit()
                 cursor.close()
                 db.close()
