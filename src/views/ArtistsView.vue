@@ -1,6 +1,15 @@
 <template>
   <div class="artists-view">
-    <ListPageHeader title="艺术家" :count="artists.length ? `${artists.length} 位歌手` : null" :show-play-mode="false" />
+    <ListPageHeader
+      title="艺术家"
+      :count="artists.length ? `${artists.length} 位歌手` : null"
+      :show-play-mode="false"
+      show-sort
+      :sort-options="sortOptionsList"
+      :sort-key="sortKey"
+      :sort-order="sortOrder"
+      @sort="onSort"
+    />
 
     <!-- 空状态 -->
     <div v-if="!hasArtists" class="empty-state">
@@ -67,6 +76,31 @@ const gridRef = ref(null)
 const artists = computed(() => libraryStore.artists)
 const hasArtists = computed(() => artists.value.length > 0)
 
+// ---- 排序 ----
+const sortKey = ref('name')
+const sortOrder = ref('asc')
+const sortOptionsList = [
+  { label: '名称', value: 'name' },
+  { label: '歌曲数量', value: 'count' }
+]
+function onSort({ key, order }) {
+  sortKey.value = key
+  sortOrder.value = order
+}
+
+const sortedArtists = computed(() => {
+  const arr = [...artists.value]
+  arr.sort((a, b) => {
+    let r = 0
+    if (sortKey.value === 'count') {
+      r = a.tracks.length - b.tracks.length
+    }
+    if (r === 0) r = String(a.name).localeCompare(String(b.name))
+    return sortOrder.value === 'desc' ? -r : r
+  })
+  return arr
+})
+
 function albumCountOf(artist) {
   return new Set((artist.tracks || []).map(t => t.album).filter(Boolean)).size
 }
@@ -95,7 +129,7 @@ const perRow = computed(() => {
 // ---- 按 perRow 拆分为行 ----
 const artistRows = computed(() => {
   const rows = []
-  const list = artists.value
+  const list = sortedArtists.value
   for (let i = 0; i < list.length; i += perRow.value) {
     rows.push(list.slice(i, i + perRow.value))
   }
@@ -109,7 +143,8 @@ const { list: virtualList, containerProps, wrapperProps, scrollTo } = useVirtual
   { itemHeight: ROW_HEIGHT, overscan: 5 }
 )
 
-watch(() => artists.value.length, () => scrollTo(0))
+// 数据或排序变化滚回顶部
+watch([() => artists.value.length, sortKey, sortOrder], () => scrollTo(0))
 
 // 滚动记忆（containerProps 内层才是实际滚动容器）
 useScrollMemory('artists', () => gridRef.value?.querySelector('[style*="overflow"]'))

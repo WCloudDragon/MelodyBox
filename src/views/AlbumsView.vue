@@ -1,6 +1,15 @@
 <template>
   <div class="albums-view">
-    <ListPageHeader title="专辑" :count="albums.length ? `${albums.length} 张专辑` : null" :show-play-mode="false" />
+    <ListPageHeader
+      title="专辑"
+      :count="albums.length ? `${albums.length} 张专辑` : null"
+      :show-play-mode="false"
+      show-sort
+      :sort-options="sortOptionsList"
+      :sort-key="sortKey"
+      :sort-order="sortOrder"
+      @sort="onSort"
+    />
 
     <!-- 空状态 -->
     <div v-if="!hasAlbums" class="empty-state">
@@ -67,6 +76,36 @@ const gridRef = ref(null)
 const albums = computed(() => libraryStore.albums)
 const hasAlbums = computed(() => albums.value.length > 0)
 
+// ---- 排序 ----
+const sortKey = ref('name')
+const sortOrder = ref('asc')
+const sortOptionsList = [
+  { label: '名称', value: 'name' },
+  { label: '歌曲数量', value: 'count' },
+  { label: '年份', value: 'year' }
+]
+function onSort({ key, order }) {
+  sortKey.value = key
+  sortOrder.value = order
+}
+
+const sortedAlbums = computed(() => {
+  const arr = [...albums.value]
+  const byName = (a, b) => String(a.name).localeCompare(String(b.name))
+  arr.sort((a, b) => {
+    let r = 0
+    if (sortKey.value === 'count') {
+      r = a.tracks.length - b.tracks.length
+    } else if (sortKey.value === 'year') {
+      // year 可能为空或字符串，统一转数字（缺失视为 0，跟随升降序自然沉浮）
+      r = (Number(a.year) || 0) - (Number(b.year) || 0)
+    }
+    if (r === 0) r = byName(a, b)
+    return sortOrder.value === 'desc' ? -r : r
+  })
+  return arr
+})
+
 // ---- 根据容器宽度实时计算每行卡片数（与艺术家页一致）----
 const gridWidth = ref(0)
 let _resizeObs = null
@@ -91,7 +130,7 @@ const perRow = computed(() => {
 // ---- 按 perRow 拆分为行 ----
 const albumRows = computed(() => {
   const rows = []
-  const list = albums.value
+  const list = sortedAlbums.value
   for (let i = 0; i < list.length; i += perRow.value) {
     rows.push(list.slice(i, i + perRow.value))
   }
@@ -105,8 +144,8 @@ const { list: virtualList, containerProps, wrapperProps, scrollTo } = useVirtual
   { itemHeight: ROW_HEIGHT, overscan: 5 }
 )
 
-// 数据变化滚回顶部
-watch(() => albums.value.length, () => scrollTo(0))
+// 数据或排序变化滚回顶部
+watch([() => albums.value.length, sortKey, sortOrder], () => scrollTo(0))
 
 // 滚动记忆（containerProps 内层才是实际滚动容器）
 useScrollMemory('albums', () => gridRef.value?.querySelector('[style*="overflow"]'))
