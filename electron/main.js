@@ -9,6 +9,12 @@ const http = require('http')
 // 本地 Flask 后端健康检查地址（开发与打包均为本机服务）
 const FLASK_HEALTH_URL = 'http://127.0.0.1:5000/api/health'
 
+// Windows 应用身份标识：任务栏分组/通知/SMTC 媒体会话归属都依赖它。
+// 未设置时打包版会退回 Electron 默认身份，系统媒体浮窗（任务栏悬停播放控件）可能无法正确关联本应用
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.melodybox.player')
+}
+
 // Vite 开发服务器端口由 vite.config.js 写入 .vite-port，避免写死端口被占用/系统预留
 function getDevServerUrl() {
   let port = 5200

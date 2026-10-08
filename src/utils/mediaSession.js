@@ -16,6 +16,11 @@ export function initMediaSession() {
   if (!('mediaSession' in navigator)) {
     return
   }
+  // 桌面歌词独立窗口不参与：其 playerStore 为空壳实例，若执行会清空
+  // 全局 SMTC 元数据并向主进程发错误播放状态
+  if (window.location.hash === '#/desktop-lyrics') {
+    return
+  }
 
   const playerStore = usePlayerStore()
 
@@ -80,12 +85,15 @@ export function initMediaSession() {
   watch(
     () => playerStore.isPlaying,
     (playing) => {
+      // playbackState 是 MediaSession 规范核心字段，Chromium 据此驱动 SMTC 会话的播放/暂停按钮态
+      try { navigator.mediaSession.playbackState = playing ? 'playing' : 'paused' } catch {}
       if (playing) {
         startPositionTimer(playerStore)
       } else {
         updatePositionState(playerStore)
       }
-    }
+    },
+    { immediate: true }
   )
 
   // ==================== 监听进度 seek ====================
