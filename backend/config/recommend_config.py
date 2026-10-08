@@ -42,9 +42,6 @@ MMR_GENRE_PENALTY = 0.15
 EXPLORE_POOL_FACTOR = 3              # 抖动池 = limit × factor
 EXPLORE_JITTER = 0.03                # ±0.03 确定性微扰（替代硬编码随机）
 
-# ==================== 候选池 ====================
-CANDIDATE_POOL = 300                 # 每模式候选上限
-
 # ==================== 缓存 ====================
 RECOMMEND_CACHE_TTL = 300            # 秒
 

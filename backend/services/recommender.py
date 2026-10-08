@@ -28,7 +28,6 @@ from config.recommend_config import (
     MMR_GENRE_PENALTY,
     EXPLORE_POOL_FACTOR,
     EXPLORE_JITTER,
-    CANDIDATE_POOL,
     LANG_PREF_DEFAULT,
     LANG_NAMES,
     COMMON_LANGS,
@@ -264,7 +263,8 @@ def _recommend_comprehensive(ctx):
     ]
     if not candidates:
         return _cold_start(ctx)
-    candidates = candidates[:CANDIDATE_POOL]
+    # 不做候选截断：相似度为一次矩阵乘（全量毫秒级），截断会让
+    # 数据库插入顺序靠前的歌曲垄断推荐、排在其后的歌曲永无曝光
 
     text_sims = (store.text_similarity(profile['text_vec'])
                  if profile.get('text_vec') is not None else {})
