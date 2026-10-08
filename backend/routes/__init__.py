@@ -218,6 +218,35 @@ def get_song_by_path():
             WHERE s.file_path = ?
         ''', (file_path,))
         row = cursor.fetchone()
+
+        if not row:
+            # 本地曲库无此路径：回查云端曲库，命中则幂等登记为 songs 记录。
+            # 云端歌曲文件实际存在于本机缓存目录，登记后音轨信息、加入歌单、
+            # 播放历史等下游功能与本地歌曲共用同一条链路（file_path UNIQUE 保证幂等）
+            cursor.execute('SELECT * FROM cloud_songs WHERE file_path = ?', (file_path,))
+            cloud = cursor.fetchone()
+            if cloud:
+                cursor.execute('''
+                    INSERT OR IGNORE INTO songs
+                        (title, artist, album, file_path, cover_url, lyrics, year, genre,
+                         duration, bitrate, sample_rate, bit_depth, quality, file_size,
+                         file_mtime, fingerprint, lang)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ''', (
+                    cloud['title'], cloud['artist'], cloud['album'], cloud['file_path'],
+                    cloud['cover_url'], cloud['lyrics'], cloud['year'] or 0, cloud['genre'],
+                    cloud['duration'] or 0, cloud['bitrate'] or 0, cloud['sample_rate'] or 0,
+                    cloud['bit_depth'] or 0, cloud['quality'] or '', cloud['file_size'] or 0,
+                    cloud['file_mtime'] or 0, cloud['fingerprint'] or '', cloud['lang'] or ''
+                ))
+                db.commit()
+                cursor.execute('''
+                    SELECT s.*, COALESCE(ps.play_count, 0) AS play_count
+                    FROM songs s
+                    LEFT JOIN play_stats ps ON s.fingerprint = ps.fingerprint
+                    WHERE s.file_path = ?
+                ''', (file_path,))
+                row = cursor.fetchone()
         cursor.close()
         db.close()
 
