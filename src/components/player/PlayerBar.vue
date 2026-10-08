@@ -86,7 +86,7 @@
       <!-- 右侧：音量按钮 + 弹出面板（hover 可见） -->
       <div class="player-bar__right">
         <div class="volume-area">
-            <div class="volume-btn" v-ripple @click="showVolumePop = !showVolumePop" ref="volumeBtnRef">
+            <div class="volume-btn" v-ripple @click="showVolumePop = !showVolumePop" @wheel.prevent="onVolumeWheel" ref="volumeBtnRef" title="滚轮调节音量">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <template v-if="isMuted || volume === 0">
                   <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 8.5v7a4.47 4.47 0 002.5-3.5zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
@@ -347,6 +347,12 @@ function onVolumeMouseUp() {
   document.removeEventListener('mousemove', onVolumeDrag)
   document.removeEventListener('mouseup', onVolumeMouseUp)
 }
+
+// ===== 音量按钮滚轮：上滚增、下滚减（步长 5%，弹窗开着时滑块跟随） =====
+function onVolumeWheel(e) {
+  const step = e.deltaY < 0 ? 0.05 : -0.05
+  player.setVolume(Math.min(1, Math.max(0, volume.value + step)))
+}
 </script>
 
 <style scoped>
@@ -535,7 +541,7 @@ function onVolumeMouseUp() {
   min-width: 28px;
 }
 
-/* 音量弹出面板 */
+/* 音量弹出面板 —— 液态玻璃：与右键菜单/排序面板一致的材质语言 */
 .volume-pop {
   position: absolute;
   bottom: 60px;
@@ -544,12 +550,13 @@ function onVolumeMouseUp() {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
+  background: var(--glass-bg-strong, rgba(30, 30, 38, 0.92));
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
   padding: 14px 10px 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  transition: background 0.4s, border-color 0.4s;
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
 }
 .volume-pop__slider {
   width: 24px;
@@ -610,21 +617,30 @@ function onVolumeMouseUp() {
   opacity: 0;
 }
 
+/* 音量面板开闭动画：与右键菜单/排序面板同配方（弹性回弹入场 + 模糊缩小离场，中心锚点） */
 .volume-pop-enter-active {
-  transition: opacity 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-              transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-.volume-pop-leave-active {
-  transition: opacity 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-              transform 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  animation: volume-pop-pop 0.38s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .volume-pop-enter-from {
   opacity: 0;
-  transform: translateY(8px) scale(0.95);
+  filter: blur(6px);
+  transform: scale(0.85);
+}
+@keyframes volume-pop-pop {
+  0%   { transform: scale(0.85); }
+  100% { transform: scale(1); }
+}
+.volume-pop-leave-active {
+  transition: opacity 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .volume-pop-leave-to {
   opacity: 0;
-  transform: translateY(8px) scale(0.95);
+  filter: blur(6px);
+  transform: scale(0.85);
 }
 /* ===== 全屏播放面板激活时 ===== */
 .player-bar.panel-active {
@@ -646,12 +662,7 @@ function onVolumeMouseUp() {
 .player-bar.panel-active .progress-top__time { color: rgba(255, 255, 255, 0.8); }
 .player-bar.panel-active .volume-btn { color: rgba(255, 255, 255, 0.8); }
 .player-bar.panel-active .volume-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.15); }
-.player-bar.panel-active .volume-pop {
-  background: rgba(20, 20, 20, 0.85);
-  backdrop-filter: blur(12px);
-  border-color: rgba(255, 255, 255, 0.1);
-}
-.player-bar.panel-active .volume-pop__val { color: rgba(255, 255, 255, 0.8); }
+/* 音量面板已玻璃化（主题自适应），全屏态无需单独覆盖 */
 
 /* ===== 全屏播放页空闲沉浸状态 ===== */
 .player-bar.immersive .player-bar__center,
