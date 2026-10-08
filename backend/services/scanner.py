@@ -755,6 +755,12 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
                 JOIN songs s ON s.id = ps.song_id
                 WHERE ps.song_id IN ({placeholders_ids}) AND s.fingerprint != ''
             ''', deleted_song_ids)
+            # 失效推荐/搜索的向量内存缓存：否则已删歌曲仍会出现在推荐结果中
+            try:
+                from services.recommender import invalidate_embedding_cache
+                invalidate_embedding_cache()
+            except Exception:
+                pass
 
         # 删除歌曲记录
         placeholders = ','.join(['?'] * len(deleted_file_paths))

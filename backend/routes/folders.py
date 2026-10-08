@@ -346,6 +346,13 @@ def remove_folder(id):
 
         db.commit()
 
+        # 失效推荐/搜索的向量内存缓存：否则已删歌曲仍会出现在推荐结果中
+        try:
+            from services.recommender import invalidate_embedding_cache
+            invalidate_embedding_cache()
+        except Exception:
+            pass
+
         cursor.execute('SELECT COUNT(*) as remaining FROM songs')
         remaining = cursor.fetchone()['remaining']
         cursor.close()

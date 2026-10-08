@@ -194,7 +194,8 @@ async function refresh() {
     const res = await fetch(apiUrl('/api/stats/top?limit=100'))
     const data = await res.json()
     const libMap = new Map(libraryStore.tracks.map(t => [t.path, t]))
-    list.value = Array.isArray(data) ? data.map(item => {
+    // 过滤已删除歌曲的空记录（后端 LEFT JOIN 保留统计但 title 为空串）
+    list.value = Array.isArray(data) ? data.filter(item => item.title).map(item => {
       const lib = libMap.get(item.file_path)
       return {
         path: item.file_path || '',
