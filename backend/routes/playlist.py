@@ -133,6 +133,8 @@ def delete_playlist(id):
 
         # 先删除关联的歌曲记录
         cursor.execute('DELETE FROM playlist_song WHERE playlist_id = ?', (id,))
+        # 同步清理孤儿暂存，避免之后同名歌曲重新入库时被误恢复进已删除的歌单
+        cursor.execute('DELETE FROM orphaned_playlist_songs WHERE playlist_id = ?', (id,))
         # 再删除歌单本身
         cursor.execute('DELETE FROM playlists WHERE id = ?', (id,))
         db.commit()

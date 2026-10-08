@@ -89,6 +89,18 @@ def _ensure_tables(db_conn):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_play_stats_fingerprint ON play_stats(fingerprint)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_play_stats_song_id ON play_stats(song_id)')
 
+    # 歌单/收藏关联的指纹孤儿暂存表：移除文件夹/删除歌曲时把歌单关联
+    # 暂存于此（song 级联删除后 song_id 无从恢复），文件重新扫描入库时
+    # 按指纹重连，使歌单/收藏内容在移除-重加文件夹后保持完整
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS orphaned_playlist_songs (
+            playlist_id INTEGER NOT NULL,
+            fingerprint TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(playlist_id, fingerprint)
+        )
+    ''')
+
     db_conn.commit()
     cursor.close()
 
@@ -537,6 +549,33 @@ def _reconnect_orphaned_play_history(cursor, song_id, fingerprint):
     )
 
 
+def _reconnect_orphaned_playlist_songs(cursor, song_id, fingerprint):
+    """将指纹匹配的孤儿暂存歌单/收藏关联恢复到新插入的歌曲。
+
+    移除文件夹或扫描删除歌曲时，歌单关联（playlist_song，外键 CASCADE）会随之
+    消失；删除前先把 (playlist_id, fingerprint) 暂存到 orphaned_playlist_songs，
+    此处按指纹恢复。恢复时过滤已删除的歌单，恢复后清掉对应暂存行。
+    """
+    if not fingerprint:
+        return
+    cursor.execute('''
+        SELECT op.playlist_id
+        FROM orphaned_playlist_songs op
+        JOIN playlists p ON p.id = op.playlist_id
+        WHERE op.fingerprint = ?
+    ''', (fingerprint,))
+    rows = cursor.fetchall()
+    if not rows:
+        cursor.execute('DELETE FROM orphaned_playlist_songs WHERE fingerprint = ?', (fingerprint,))
+        return
+    for r in rows:
+        cursor.execute(
+            'INSERT OR IGNORE INTO playlist_song (playlist_id, song_id) VALUES (?, ?)',
+            (r['playlist_id'], song_id)
+        )
+    cursor.execute('DELETE FROM orphaned_playlist_songs WHERE fingerprint = ?', (fingerprint,))
+
+
 def scan_and_store(db_conn, dir_paths, progress_callback=None):
     """扫描目录并存储到 SQLite 数据库，同时填充 artists/albums/song_artist/song_album 表"""
     # 重置缩略图进度（避免上次扫描的残留数据影响本次）
@@ -653,10 +692,11 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
             if song_id is not None:
                 _handle_song_relations(cursor, song_id, meta)
 
-                # ---- 新插入的歌曲：重连孤立的 play_stats / play_history 记录 ----
+                # ---- 新插入的歌曲：重连孤立的 play_stats / play_history / 歌单关联 ----
                 if is_new:
                     _reconnect_orphaned_play_stats(cursor, song_id, meta['fingerprint'])
                     _reconnect_orphaned_play_history(cursor, song_id, meta['fingerprint'])
+                    _reconnect_orphaned_playlist_songs(cursor, song_id, meta['fingerprint'])
 
         except Exception as e:
             errors += 1
@@ -706,6 +746,15 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
             # 将 play_stats 中的记录置为孤儿（song_id 置 NULL，保留 fingerprint 以便后续重连）
             cursor.execute(f'UPDATE play_stats SET song_id = NULL WHERE song_id IN ({placeholders_ids})',
                            deleted_song_ids)
+            # 歌单/收藏关联：外键 CASCADE 会直接删除，先暂存为指纹孤儿，
+            # 文件若重新扫描入库则按指纹恢复
+            cursor.execute(f'''
+                INSERT OR IGNORE INTO orphaned_playlist_songs (playlist_id, fingerprint)
+                SELECT ps.playlist_id, s.fingerprint
+                FROM playlist_song ps
+                JOIN songs s ON s.id = ps.song_id
+                WHERE ps.song_id IN ({placeholders_ids}) AND s.fingerprint != ''
+            ''', deleted_song_ids)
 
         # 删除歌曲记录
         placeholders = ','.join(['?'] * len(deleted_file_paths))

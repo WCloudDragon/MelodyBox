@@ -498,11 +498,32 @@ def get_generation_active():
 def unload_models():
     """生成结束后主动卸载全部模型，释放 RAM/显存（下次使用懒加载重建）。"""
     global _MODEL, _CPU_MODEL, _AUDIO_MODEL, _MODEL_PROVIDER
+    # 先解引用 fastembed 内部结构，破坏 TextEmbedding → session 的引用链，
+    # 否则仅置 None 时循环引用可能让 ORT session 延迟一个 gc 周期才释放
+    for holder in (_MODEL, _CPU_MODEL):
+        if holder is not None:
+            try:
+                holder.model = None
+            except Exception:
+                pass
+            try:
+                holder.model_tokenizer = None
+            except Exception:
+                pass
     _MODEL = None
     _CPU_MODEL = None
     _AUDIO_MODEL = None
     _MODEL_PROVIDER = None
     import gc
+    gc.collect()
+    # 若 PyTorch 曾被加载（如依赖安装路径），empty_cache 将 caching allocator
+    # 的显存块归还系统（仅 del 引用不会归还）
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
     gc.collect()
 
 

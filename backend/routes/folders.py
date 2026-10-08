@@ -309,6 +309,24 @@ def remove_folder(id):
         dir_path = row['path']
         norm = dir_path.replace('\\', '/')
 
+        # 歌单/收藏关联暂存：外键级联会直接删除 playlist_song，先把指向本目录
+        # 歌曲的关联按指纹暂存，文件重新扫描入库时自动恢复（同 play_history 机制）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS orphaned_playlist_songs (
+                playlist_id INTEGER NOT NULL,
+                fingerprint TEXT NOT NULL,
+                created_at TEXT DEFAULT (datetime('now','localtime')),
+                UNIQUE(playlist_id, fingerprint)
+            )
+        ''')
+        cursor.execute('''
+            INSERT OR IGNORE INTO orphaned_playlist_songs (playlist_id, fingerprint)
+            SELECT ps.playlist_id, s.fingerprint
+            FROM playlist_song ps
+            JOIN songs s ON s.id = ps.song_id
+            WHERE REPLACE(s.file_path, '\\', '/') LIKE ? AND s.fingerprint != ''
+        ''', (norm + '/%',))
+
         # 删除该目录下所有歌曲（外键级联会清理 song_artist/song_album/playlist_song）
         cursor.execute("DELETE FROM songs WHERE REPLACE(file_path, '\\', '/') LIKE ?", (norm + '/%',))
         # 清理 play_stats 中对应 fingerprint 的记录（已是孤儿 song_id=NULL 的保留）
@@ -318,8 +336,13 @@ def remove_folder(id):
         cursor.execute('DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM song_artist)')
         cursor.execute('DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM song_album)')
 
-        # 清理没有歌曲的歌单（playlist_song 已通过外键级联清除）
-        cursor.execute('DELETE FROM playlists WHERE id NOT IN (SELECT DISTINCT playlist_id FROM playlist_song)')
+        # 清理没有歌曲的歌单（playlist_song 已通过外键级联清除）；
+        # 有孤儿暂存的歌单保留——重扫后歌曲按指纹恢复回歌单
+        cursor.execute('''
+            DELETE FROM playlists
+            WHERE id NOT IN (SELECT DISTINCT playlist_id FROM playlist_song)
+              AND id NOT IN (SELECT DISTINCT playlist_id FROM orphaned_playlist_songs)
+        ''')
 
         db.commit()
 
