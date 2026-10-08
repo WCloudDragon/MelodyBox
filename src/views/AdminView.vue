@@ -1,12 +1,13 @@
 <template>
   <div class="admin-page">
-    <header class="admin-header">
-      <div class="admin-header__left">
-        <el-icon size="22"><Monitor /></el-icon>
-        <h2>管理后台</h2>
-        <span class="admin-badge">仅管理员可见</span>
-      </div>
-    </header>
+    <ListPageHeader
+      title="管理后台"
+      :show-play-mode="false"
+      show-back
+      back-fallback="/"
+    >
+      <span class="admin-badge">仅管理员可见</span>
+    </ListPageHeader>
 
     <div class="admin-grid">
       <!-- 左侧：云端曲库管理 -->
@@ -422,7 +423,8 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaylistStore } from '@/stores/playlist'
-import { Monitor, Cloudy, Connection, InfoFilled, Plus, Delete, Check, FolderAdd, Document, Close, Edit } from '@element-plus/icons-vue'
+import ListPageHeader from '@/components/music/ListPageHeader.vue'
+import { Cloudy, Connection, InfoFilled, Plus, Delete, Check, FolderAdd, Document, Close, Edit } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiUrl, authHeaders } from '@/config/api'
 
@@ -1032,27 +1034,7 @@ watch(() => playlistStore.playlists, () => {
 .admin-page {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 32px;
-}
-
-.admin-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 28px;
-}
-
-.admin-header__left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--text-primary);
-}
-
-.admin-header__left h2 {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 700;
+  padding-bottom: 24px;
 }
 
 .admin-badge {
@@ -1070,6 +1052,7 @@ watch(() => playlistStore.playlists, () => {
   grid-template-columns: 1fr 360px;
   gap: 20px;
   align-items: start;
+  padding: 0 32px;
 }
 
 .admin-card {

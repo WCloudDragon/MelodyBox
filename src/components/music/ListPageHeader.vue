@@ -1,6 +1,10 @@
 <template>
   <div class="list-page-header" ref="headerEl">
-    <h1 class="list-page-header__title">{{ title }}</h1>
+    <!-- 返回按钮（下钻页）：置于标题左侧，标题随 flex 自然右移；顶层页不渲染保持现状 -->
+    <button v-if="showBack" class="lph-btn lph-btn--back" title="返回" @click="onBack">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+    </button>
+    <h1 class="list-page-header__title" :class="{ 'list-page-header__title--hidden': titleFade && !titleShown }">{{ title }}</h1>
     <span v-if="count != null" class="list-page-header__count">{{ count }}</span>
     <div class="list-page-header__spacer"></div>
 
@@ -96,6 +100,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { usePlayerStore, PLAY_MODES } from '@/stores/player'
 import ContextMenu from '@/components/music/ContextMenu.vue'
@@ -112,6 +117,15 @@ const props = defineProps({
   multiSelectActive: { type: Boolean, default: false },
   showViewSwitch: { type: Boolean, default: false },
   viewMode: { type: String, default: 'list' },
+  // 返回按钮（下钻页）：显示于标题左侧
+  showBack: { type: Boolean, default: false },
+  // 无浏览历史（刷新/直达 URL）时的返回兜底目标，建议传语义父级（如专辑列表页传 /albums）
+  backFallback: { type: String, default: '' },
+  // 自定义返回动作：传入后替代默认路由返回（设置页二级页用其回到设置菜单）
+  backHandler: { type: Function, default: null },
+  // 标题滚动渐显（Apple Music 式）：页头未贴顶（hero 内容可见）时标题隐藏，
+  // 贴顶后淡入。适用于 hero 区带封面/信息的下钻详情页
+  titleFade: { type: Boolean, default: false },
   sortOptions: { type: Array, default: () => [] },
   sortKey: { type: String, default: '' },
   sortOrder: { type: String, default: 'asc' },
@@ -119,6 +133,56 @@ const props = defineProps({
   filterValues: { type: Object, default: () => ({}) }
 })
 const emit = defineEmits(['sort', 'filter', 'viewChange', 'toggleMultiSelect'])
+
+const router = useRouter()
+
+// 返回：优先自定义动作；有浏览历史则 back；否则跳语义父级（兜底到首页）
+function onBack() {
+  if (props.backHandler) {
+    props.backHandler()
+    return
+  }
+  if (window.history.state?.back) {
+    router.back()
+  } else if (props.backFallback) {
+    router.replace(props.backFallback)
+  } else {
+    router.replace('/')
+  }
+}
+
+// ==================== 标题滚动渐显 ====================
+// 页头是 sticky 元素：未贴顶（top > 2px）说明 hero 内容仍可见 → 标题隐藏；
+// 贴顶说明 hero 已滚出 → 标题淡入。scroll 用捕获模式适配任意滚动容器。
+const titleShown = ref(!props.titleFade)
+let _fadeOnScroll = null
+
+function _syncTitleVisibility() {
+  if (!headerEl.value) return
+  titleShown.value = headerEl.value.getBoundingClientRect().top <= 2
+}
+
+function _startFadeWatch() {
+  if (_fadeOnScroll) return
+  _fadeOnScroll = _syncTitleVisibility
+  document.addEventListener('scroll', _fadeOnScroll, true)
+  window.addEventListener('resize', _fadeOnScroll)
+  nextTick(_syncTitleVisibility)
+}
+
+function _stopFadeWatch() {
+  if (_fadeOnScroll) {
+    document.removeEventListener('scroll', _fadeOnScroll, true)
+    window.removeEventListener('resize', _fadeOnScroll)
+    _fadeOnScroll = null
+  }
+  titleShown.value = true
+}
+
+watch(() => props.titleFade, (on) => {
+  if (on) _startFadeWatch()
+  else _stopFadeWatch()
+}, { immediate: true })
 
 const player = usePlayerStore()
 const { playMode } = storeToRefs(player)
@@ -275,7 +339,16 @@ onBeforeUnmount(() => {
   margin-bottom: 10px;
   background: transparent;
 }
-.list-page-header__title { font-size: 20px; font-weight: 700; margin: 0; white-space: nowrap; }
+.list-page-header__title {
+  font-size: 20px; font-weight: 700; margin: 0; white-space: nowrap;
+  transition: opacity 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0), transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+/* 渐显模式的隐藏态：hero 可见期间标题透明下移，贴顶后淡入归位 */
+.list-page-header__title--hidden {
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+}
 .list-page-header__count { font-size: 13px; color: var(--text-tertiary); }
 .list-page-header__spacer { flex: 1; }
 
@@ -297,6 +370,13 @@ onBeforeUnmount(() => {
 .lph-btn--playmode {
   border: 1px solid var(--border-color);
   font-size: 13px;
+}
+/* 返回按钮：标题左侧左箭头，交互语言与右侧操作按钮一致 */
+.lph-btn--back {
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+  color: var(--text-primary);
 }
 
 .lph-backdrop {

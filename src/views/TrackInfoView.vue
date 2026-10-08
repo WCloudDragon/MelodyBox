@@ -1,10 +1,9 @@
 <template>
   <div class="track-info-view">
     <div class="back-link">
-      <el-button text @click="$router.back()">
-        <el-icon><ArrowLeft /></el-icon>
-        返回
-      </el-button>
+      <button class="track-back-btn" title="返回" @click="onBack">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      </button>
     </div>
 
     <!-- 加载中 -->
@@ -225,6 +224,15 @@ function qualityLabel(quality) {
 
 const router = useRouter()
 
+// 返回：有浏览历史则 back，否则兜底首页（来源页面多样，无法假定语义父级）
+function onBack() {
+  if (window.history.state?.back) {
+    router.back()
+  } else {
+    router.replace('/')
+  }
+}
+
 /** 跳转到相似歌曲推荐页（AI similar 模式） */
 function goSimilar() {
   const t = track.value
@@ -274,7 +282,23 @@ watch(() => route.query.path, (p) => {
 .track-info-view {
   padding-bottom: 100px;
 }
-.back-link { margin-bottom: 24px; }
+/* 返回按钮：与 ListPageHeader 的 lph-btn--back 同款视觉语言 */
+.track-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.track-back-btn:hover { background: var(--hover-bg-strong); }
+.back-link { margin-bottom: 12px; padding-left: var(--page-pad-x, 12px); }
 
 .loading-state, .empty-state { text-align: center; padding: 80px 32px; color: var(--text-tertiary); }
 .loading-state p, .empty-state p { margin: 16px 0; font-size: 15px; }

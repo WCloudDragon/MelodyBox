@@ -1,6 +1,6 @@
 <template>
   <div class="search-view">
-    <ListPageHeader :title="`搜索「${q}」`" :show-play-mode="false">
+    <ListPageHeader :title="`搜索「${q}」`" :show-play-mode="false" show-back back-fallback="/">
       <el-button v-if="playableTracks.length" @click="playAllResults">
         <el-icon><VideoPlay /></el-icon>
       </el-button>

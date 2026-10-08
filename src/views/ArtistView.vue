@@ -1,11 +1,12 @@
 <template>
   <div class="artist-view">
-    <div class="back-link">
-      <el-button text @click="$router.back()">
-        <el-icon><ArrowLeft /></el-icon>
-        返回
-      </el-button>
-    </div>
+    <ListPageHeader
+      :title="artist?.name || '艺术家'"
+      :show-play-mode="false"
+      show-back
+      back-fallback="/artists"
+      title-fade
+    />
 
     <div v-if="artist" class="artist-content">
       <div class="artist-header">
@@ -16,7 +17,6 @@
           </div>
         </div>
         <div class="artist-info">
-          <h1>{{ artist.name }}</h1>
           <p>{{ artist.tracks.length }} 首歌曲</p>
         </div>
         <div class="artist-header__actions">
@@ -145,6 +145,7 @@ import { formatDuration, qualityClass } from '@/utils/format'
 import { ElMessage } from '@/utils/toast'
 import LazyCover from '@/components/LazyCover.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
+import ListPageHeader from '@/components/music/ListPageHeader.vue'
 
 const route = useRoute()
 const libraryStore = useLibraryStore()
@@ -222,7 +223,6 @@ function batchAddQueueNext(tracks) {
 
 <style scoped>
 .artist-view { padding-bottom: 100px; }
-.back-link { margin-bottom: 20px; padding-left: var(--page-pad-x, 12px); }
 
 /* 类别 tab（与搜索页 search-tabs 同款语言；按钮内边距即基准缩进） */
 .artist-tabs {
@@ -288,7 +288,6 @@ function batchAddQueueNext(tracks) {
   display: flex; align-items: center; justify-content: center;
   color: var(--text-tertiary);
 }
-.artist-info h1 { font-size: 32px; font-weight: 700; margin: 0 0 8px; }
 .artist-info p { color: var(--text-tertiary); margin: 0; font-size: 14px; }
 .artist-header__actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
 

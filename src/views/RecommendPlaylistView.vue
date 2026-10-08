@@ -1,22 +1,21 @@
 <template>
   <div class="recommend-view">
-    <div class="back-link">
-      <el-button text @click="$router.back()">
-        <el-icon><ArrowLeft /></el-icon>
-        返回
-      </el-button>
-    </div>
+    <ListPageHeader
+      :title="headerInfo?.title || '推荐'"
+      :show-play-mode="false"
+      show-back
+      back-fallback="/"
+      title-fade
+    />
 
     <div
       class="recommend-header"
-      :class="{ 'recommend-header--collapsed': headerCollapsed }"
       v-if="headerInfo"
     >
       <div class="recommend-header__cover" :style="{ background: headerInfo.gradient }">
         <span class="recommend-header__icon">{{ headerInfo.icon }}</span>
       </div>
       <div class="recommend-header__info">
-        <h1>{{ headerInfo.title }}</h1>
         <p v-if="headerInfo.subtitle">{{ headerInfo.subtitle }}</p>
         <p>{{ tracks.length }} 首推荐歌曲</p>
         <div class="recommend-header__actions">
@@ -34,10 +33,10 @@
       <span>正在生成推荐...</span>
     </div>
 
-    <!-- 歌曲列表 -->
+    <!-- 歌曲列表（整页滚动，与专辑/艺术家详情一致） -->
     <TrackTable
-      ref="tableRef"
       v-else-if="tracks.length > 0"
+      embedded
       :tracks="tracks"
       :current-path="currentTrack?.path"
       :context-target="contextMenuTarget"
@@ -76,7 +75,7 @@
 
 <script setup>
 defineOptions({ name: 'RecommendPlaylistView' })
-import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
@@ -86,6 +85,7 @@ import { apiUrl, coverUrl } from '@/config/api'
 import { useTrackList } from '@/composables/useTrackList'
 import TrackTable from '@/components/music/TrackTable.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
+import ListPageHeader from '@/components/music/ListPageHeader.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -106,37 +106,6 @@ function ctxAction(action) {
 
 const tracks = ref([])
 const isLoading = ref(false)
-const tableRef = ref(null)
-const headerCollapsed = ref(false)
-let _scrollEl = null
-let _scrollHandler = null
-
-function bindHeaderScroll() {
-  unbindHeaderScroll()
-  const body = tableRef.value?.bodyRef
-  if (!body) return
-  _scrollEl = body
-  _scrollHandler = () => {
-    headerCollapsed.value = body.scrollTop > 40
-  }
-  body.addEventListener('scroll', _scrollHandler, { passive: true })
-}
-
-function unbindHeaderScroll() {
-  if (_scrollEl && _scrollHandler) {
-    _scrollEl.removeEventListener('scroll', _scrollHandler)
-  }
-  _scrollEl = null
-  _scrollHandler = null
-}
-
-watch(tableRef, () => bindHeaderScroll())
-watch(() => tracks.value.length, async () => {
-  await nextTick()
-  bindHeaderScroll()
-})
-
-onUnmounted(unbindHeaderScroll)
 
 /**
  * 将推荐列表第一首歌的封面写入 store（单一数据源），
@@ -307,63 +276,21 @@ watch(() => route.fullPath, fetchRecommendations, { immediate: true })
 </script>
 
 <style scoped>
-.recommend-view { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-.back-link { margin-bottom: 16px; flex-shrink: 0; }
+.recommend-view { padding-bottom: 100px; }
 
 .recommend-header {
   display: flex; align-items: flex-end; gap: 16px;
   margin-bottom: 16px; flex-shrink: 0;
-  max-height: 160px;
-  transition: max-height 0.35s ease, gap 0.35s ease, margin-bottom 0.35s ease;
+  padding-left: var(--page-pad-x, 12px);
 }
 .recommend-header__cover {
   width: 150px; height: 150px; border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-  transition: width 0.35s ease, height 0.35s ease, border-radius 0.35s ease;
 }
-.recommend-header__icon { font-size: 44px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3)); transition: font-size 0.35s ease; }
-.recommend-header__info h1 { font-size: 24px; font-weight: 700; margin: 0 0 6px; transition: font-size 0.35s ease, margin 0.35s ease; }
-.recommend-header__info p { color: var(--text-tertiary); margin: 0 0 2px; font-size: 14px; transition: opacity 0.25s ease; }
+.recommend-header__icon { font-size: 44px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3)); }
+.recommend-header__info p { color: var(--text-tertiary); margin: 0 0 2px; font-size: 14px; }
 .recommend-header__actions { display: flex; gap: 8px; margin-top: 12px; }
-
-/* 向下滚动后：顶部内容区压缩为单行 */
-.recommend-header--collapsed {
-  align-items: center;
-  gap: 12px;
-  max-height: 56px;
-  margin-bottom: 12px;
-}
-.recommend-header--collapsed .recommend-header__cover {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-}
-.recommend-header--collapsed .recommend-header__icon {
-  font-size: 20px;
-}
-.recommend-header--collapsed .recommend-header__info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
-}
-.recommend-header--collapsed .recommend-header__info h1 {
-  font-size: 18px;
-  margin: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.recommend-header--collapsed .recommend-header__info p {
-  display: none;
-}
-.recommend-header--collapsed .recommend-header__actions {
-  margin-top: 0;
-  flex-shrink: 0;
-}
 
 .loading-hint {
   display: flex; align-items: center; justify-content: center; gap: 8px;

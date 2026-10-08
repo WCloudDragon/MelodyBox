@@ -10,8 +10,8 @@
       <span v-if="multiSelectMode" class="col-action"></span>
     </div>
 
-    <!-- 列表体 -->
-    <div class="track-table__body" ref="bodyRef">
+    <!-- 列表体（embedded 模式不自建滚动容器，交由外层整页滚动） -->
+    <div class="track-table__body" :class="{ 'track-table__body--embedded': embedded }" ref="bodyRef">
       <div v-if="!tracks.length" class="track-table__empty">暂无歌曲</div>
       <div
         v-for="(track, index) in tracks"
@@ -82,6 +82,8 @@ const props = defineProps({
   showHeader: { type: Boolean, default: true },
   showArtist: { type: Boolean, default: true },
   multiSelectMode: { type: Boolean, default: false },
+  // 嵌入模式：列表体不自建滚动容器（外层整页滚动），并用标题渐显时保持自然高度
+  embedded: { type: Boolean, default: false },
   selectedPaths: { type: Set, default: null },
 })
 
@@ -126,6 +128,11 @@ defineExpose({ scrollToTop, bodyRef })
 .track-table__body {
   flex: 1;
   overflow-y: auto;
+  min-height: 0;
+}
+.track-table__body--embedded {
+  flex: none;
+  overflow: visible;
   min-height: 0;
 }
 .track-table__body::-webkit-scrollbar { width: 6px; }

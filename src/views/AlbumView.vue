@@ -1,11 +1,12 @@
 <template>
   <div class="album-view">
-    <div class="back-link">
-      <el-button text @click="$router.back()">
-        <el-icon><ArrowLeft /></el-icon>
-        返回
-      </el-button>
-    </div>
+    <ListPageHeader
+      :title="album?.name || '专辑'"
+      :show-play-mode="false"
+      show-back
+      back-fallback="/albums"
+      title-fade
+    />
 
     <div v-if="album" class="album-content">
       <div class="album-header">
@@ -16,7 +17,6 @@
           </div>
         </div>
         <div class="album-info">
-          <h1>{{ album.name }}</h1>
           <p>{{ album.artist }} · {{ album.tracks.length }} 首歌曲</p>
           <p v-if="album.year">发行年份：{{ album.year }}</p>
         </div>
@@ -110,6 +110,7 @@ import { formatDuration, qualityClass } from '@/utils/format'
 import { ElMessage } from '@/utils/toast'
 import LazyCover from '@/components/LazyCover.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
+import ListPageHeader from '@/components/music/ListPageHeader.vue'
 
 const route = useRoute()
 const libraryStore = useLibraryStore()
@@ -183,7 +184,6 @@ function batchAddQueueNext(tracks) {
 
 <style scoped>
 .album-view { padding-bottom: 100px; }
-.back-link { margin-bottom: 20px; padding-left: var(--page-pad-x, 12px); }
 
 .album-header {
   display: flex; align-items: flex-end; gap: 24px;
@@ -203,7 +203,6 @@ function batchAddQueueNext(tracks) {
   display: flex; align-items: center; justify-content: center;
   color: var(--text-tertiary);
 }
-.album-info h1 { font-size: 28px; font-weight: 700; margin: 0 0 8px; }
 .album-info p { color: var(--text-tertiary); margin: 0 0 2px; font-size: 14px; }
 .album-header__actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
 

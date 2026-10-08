@@ -1,11 +1,12 @@
 <template>
   <div class="playlist-view">
-    <div class="back-link">
-      <el-button text @click="$router.back()">
-        <el-icon><ArrowLeft /></el-icon>
-        返回
-      </el-button>
-    </div>
+    <ListPageHeader
+      :title="playlist?.name || '歌单'"
+      :show-play-mode="false"
+      show-back
+      back-fallback="/library"
+      title-fade
+    />
 
     <div v-if="playlist" class="playlist-content">
       <div class="playlist-header">
@@ -16,7 +17,6 @@
           </div>
         </div>
         <div class="playlist-info">
-          <h1>{{ playlist.name }}</h1>
           <p v-if="playlist.description">{{ playlist.description }}</p>
           <p>{{ playlist.tracks.length }} 首歌曲</p>
           <div class="playlist-actions">
@@ -49,7 +49,7 @@
         </span>
       </div>
 
-      <!-- 列表视图（虚拟滚动） -->
+      <!-- 列表视图（整页滚动，与专辑/艺术家详情一致） -->
       <div class="tracks-list" v-if="playlist.tracks.length > 0">
         <div class="track-table-header">
           <span class="col-index">#</span>
@@ -60,11 +60,10 @@
           <span class="col-time">时长</span>
           <span class="col-action"></span>
         </div>
-        <div v-bind="containerProps" class="tracks-list-body">
-          <div v-bind="wrapperProps">
-            <div
-              v-for="{ data: track, index } in virtualList"
-              :key="track.path"
+        <div class="tracks-list-body">
+          <div
+            v-for="(track, index) in playlist.tracks"
+            :key="track.path"
               class="track-row"
               v-ripple
               :class="{ playing: currentTrack?.path === track.path, 'track-row--ctx-active': contextMenuTarget === track.path }"
@@ -100,7 +99,6 @@
                 </el-button>
               </span>
             </div>
-          </div>
         </div>
       </div>
 
@@ -135,7 +133,6 @@
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { useVirtualList } from '@vueuse/core'
 import { usePlaylistStore } from '@/stores/playlist'
 import { usePlayerStore } from '@/stores/player'
 import { useTrackList } from '@/composables/useTrackList'
@@ -144,6 +141,7 @@ import { useModal } from '@/composables/useModal'
 import { ElMessage } from '@/utils/toast'
 import LazyCover from '@/components/LazyCover.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
+import ListPageHeader from '@/components/music/ListPageHeader.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -168,15 +166,10 @@ watch([() => route.params.id, () => playlistStore.isLoaded], async ([id, loaded]
   if (id && loaded) await playlistStore.loadPlaylistTracks(id)
 }, { immediate: true })
 
-// 虚拟滚动（仅渲染可见 + 缓冲区行数，和 LibraryView 一致的策略）
-const { list: virtualList, containerProps, wrapperProps, scrollTo } = useVirtualList(
-  computed(() => playlist.value?.tracks ?? []),
-  { itemHeight: 52, overscan: 15 }
-)
-
-// tracks 数量变化时滚回顶部
+// 歌曲数量变化（添加/移除歌曲）时滚回列表顶部
 watch(() => playlist.value?.tracks.length, () => {
-  scrollTo(0)
+  const el = document.querySelector('.main-content')
+  if (el) el.scrollTop = 0
 })
 
 function playTrack(track) {
@@ -255,10 +248,9 @@ function batchAddQueueNext(tracks) {
 </script>
 
 <style scoped>
-.playlist-view { display: flex; flex-direction: column; height: 100%; overflow: hidden; padding-bottom: 100px; }
-.back-link { margin-bottom: 20px; padding-left: var(--page-pad-x, 12px); flex-shrink: 0; }
+.playlist-view { padding-bottom: 100px; }
 
-.playlist-content { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.playlist-content { min-height: 0; }
 
 .playlist-header {
   display: flex; align-items: flex-end; gap: 24px;
@@ -278,7 +270,6 @@ function batchAddQueueNext(tracks) {
   display: flex; align-items: center; justify-content: center;
   color: var(--text-tertiary);
 }
-.playlist-info h1 { font-size: 28px; font-weight: 700; margin: 0 0 8px; }
 .playlist-info p { color: var(--text-tertiary); margin: 0 0 2px; font-size: 14px; }
 .playlist-actions { display: flex; gap: 8px; margin-top: 16px; align-items: center; }
 
@@ -290,12 +281,9 @@ function batchAddQueueNext(tracks) {
   letter-spacing: 1px; border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
 }
-.tracks-list { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.tracks-list-body { flex: 1; overflow-y: auto; min-height: 0; transform: translateZ(0); }
-.tracks-list-body::-webkit-scrollbar { width: 6px; }
-.tracks-list-body::-webkit-scrollbar-track { background: transparent; }
-.tracks-list-body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
-.tracks-list-body::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+.tracks-list { display: flex; flex-direction: column; }
+/* 整页滚动：列表体不再自建滚动容器，交由主内容区滚动 */
+.tracks-list-body { }
 
 .track-row {
   display: flex; align-items: center;

@@ -109,12 +109,7 @@
 
     <!-- 二级页：外观 -->
     <template v-if="page === 'appearance'">
-      <header class="sub-header">
-        <button class="sub-header__back" v-ripple @click="page = 'menu'">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-        </button>
-        <h1 class="sub-header__title">外观</h1>
-      </header>
+      <ListPageHeader title="外观" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
       <section class="settings-section">
         <div class="setting-row">
           <div class="setting-label">
@@ -146,12 +141,7 @@
 
     <!-- 二级页：播放界面 -->
     <template v-if="page === 'player'">
-      <header class="sub-header">
-        <button class="sub-header__back" @click="page = 'menu'">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-        </button>
-        <h1 class="sub-header__title">播放界面</h1>
-      </header>
+      <ListPageHeader title="播放界面" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
       <section class="settings-section">
         <div class="setting-row">
           <div class="setting-label">
@@ -283,12 +273,7 @@
 
     <!-- 二级页：歌词排版 -->
     <template v-if="page === 'lyricStyle'">
-      <header class="sub-header">
-        <button class="sub-header__back" v-ripple @click="page = 'menu'">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-        </button>
-        <h1 class="sub-header__title">歌词排版</h1>
-      </header>
+      <ListPageHeader title="歌词排版" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
       <section class="settings-section">
         <div class="setting-row setting-row--slider">
           <div class="setting-label">
@@ -356,12 +341,7 @@
 
     <!-- 二级页：桌面歌词 -->
     <template v-if="page === 'desktopLyric'">
-      <header class="sub-header">
-        <button class="sub-header__back" v-ripple @click="page = 'menu'">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-        </button>
-        <h1 class="sub-header__title">桌面歌词</h1>
-      </header>
+      <ListPageHeader title="桌面歌词" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
       <section class="settings-section">
         <div class="setting-row setting-row--slider">
           <div class="setting-label">
@@ -434,12 +414,7 @@
 
     <!-- 二级页：系统 -->
     <template v-if="page === 'system'">
-      <header class="sub-header">
-        <button class="sub-header__back" @click="page = 'menu'">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-        </button>
-        <h1 class="sub-header__title">系统</h1>
-      </header>
+      <ListPageHeader title="系统" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
       <section class="settings-section">
         <div class="setting-row">
           <div class="setting-label">
@@ -453,12 +428,7 @@
 
     <!-- 二级页：AI 推荐 -->
     <template v-if="page === 'ai'">
-      <header class="sub-header">
-        <button class="sub-header__back" v-ripple @click="page = 'menu'">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-        </button>
-        <h1 class="sub-header__title">AI 推荐</h1>
-      </header>
+      <ListPageHeader title="AI 推荐" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
       <section class="settings-section">
         <div class="setting-row">
           <div class="setting-label">
@@ -498,12 +468,7 @@
 
     <!-- 二级页：关于 -->
     <template v-if="page === 'about'">
-      <header class="sub-header">
-        <button class="sub-header__back" v-ripple @click="page = 'menu'">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-        </button>
-        <h1 class="sub-header__title">关于</h1>
-      </header>
+      <ListPageHeader title="关于" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
       <section class="settings-section about-section">
         <div class="about-header">
           <div class="about-logo">
@@ -545,6 +510,7 @@ import { ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { usePerformanceStore } from '@/stores/performance'
 import { useScrollMemory } from '@/composables/useScrollMemory'
+import ListPageHeader from '@/components/music/ListPageHeader.vue'
 
 const settingsStore = useSettingsStore()
 const perf = usePerformanceStore()
@@ -706,21 +672,6 @@ useScrollMemory('settings', () => document.querySelector('.main-content'))
 .menu-item__desc { font-size: 12px; color: var(--text-tertiary); line-height: 1.3; }
 .menu-item__arrow { opacity: 0.25; flex-shrink: 0; transition: opacity 0.15s; }
 .menu-item:hover .menu-item__arrow { opacity: 0.45; }
-
-/* ===== 二级页公共头部 ===== */
-.sub-header {
-  display: flex; align-items: center; gap: 14px;
-  margin-bottom: 24px;
-}
-.sub-header__back {
-  display: flex; align-items: center; justify-content: center;
-  width: 38px; height: 38px; border-radius: 12px;
-  background: var(--bg-primary); border: 1px solid var(--border-color); color: inherit;
-  cursor: pointer; flex-shrink: 0;
-  transition: background 0.15s ease;
-}
-.sub-header__back:hover { background: var(--hover-bg-strong); }
-.sub-header__title { font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.2px; }
 
 /* ===== 二级页内容 ===== */
 .settings-section {
