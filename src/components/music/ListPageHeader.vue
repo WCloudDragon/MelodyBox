@@ -318,10 +318,20 @@ onMounted(() => {
     _buildFrost()
   }
   m()
+  // 页头高度 -> 全局 CSS 变量：穿透式布局（列表滚动容器全高 + wrapper 顶部偏移）
+  // 依赖此值，页头几何变化（字体加载/换行）时自动同步
+  _lphRO = new ResizeObserver(() => {
+    if (headerEl.value) document.documentElement.style.setProperty('--lph-h', headerEl.value.offsetHeight + 'px')
+  })
+  _lphRO.observe(headerEl.value)
+  document.documentElement.style.setProperty('--lph-h', headerEl.value.offsetHeight + 'px')
 })
+
+let _lphRO = null
 
 onBeforeUnmount(() => {
   _removeFrost()
+  _lphRO?.disconnect()
 })
 </script>
 

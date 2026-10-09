@@ -438,17 +438,20 @@ onBeforeUnmount(() => {
 /* ===== 页面切换过渡动画 ===== */
 /* absolute 子元素相对 .main-content 滚动视口定位，不随 scrollTop 移动。
    首页等在 main-content 上滚动的页面，离开时用 top 负向偏移复现滚后视觉位置；
-   音乐库等页面 main-content 几乎不滚动（--leave-scroll ≈ 0），故不受影响。 */
+   音乐库等页面 main-content 几乎不滚动（--leave-scroll ≈ 0），故不受影响。
+   position 必须 !important：列表页根类自带 position:relative（穿透式页头的 CB），
+   scoped 编译后特异性 (0,2,0) 会压过本规则，导致动画期间页面保持 relative，
+   top/left 沦为偏移（整体右移 32px、下移 24px）→ 过渡中错位、结束才复位 */
 .page-enter-active {
   animation: page-enter 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0) both;
-  position: absolute;
+  position: absolute !important;
   top: calc(24px - var(--enter-scroll, 0px));
   left: 32px;
   right: 32px;
 }
 .page-leave-active {
   animation: page-leave 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0) both;
-  position: absolute;
+  position: absolute !important;
   top: calc(24px - var(--leave-scroll, 0px));
   left: 32px;
   right: 32px;

@@ -43,9 +43,11 @@
       <p class="empty-hint" v-if="!list.length">播放歌曲后会自动统计</p>
     </div>
 
-    <!-- 列表 -->
+    <!-- 列表；滚动容器全高 -> 内容穿行悬浮页头背后。
+         spacer 顶开页头高度，wrapper margin-top 归 vueuse 管，不可覆盖 -->
     <div v-else class="tracks-list">
       <div v-bind="containerProps" class="tracks-list-body">
+        <div class="vlist-lph-spacer" aria-hidden="true" />
         <div v-bind="wrapperProps">
           <div
             v-for="{ data: track, index } in virtualList"
@@ -251,7 +253,20 @@ refresh()
 </script>
 
 <style scoped>
-.top-plays-view { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.top-plays-view { position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+/* 穿透式页头：页头悬浮覆盖，列表滚动容器全高 -> 内容穿行页头背后（渐进模糊） */
+.top-plays-view :deep(.list-page-header) {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 20;
+}
+/* 多选工具栏悬浮于页头正下方（浮在列表之上，避免被悬浮页头遮盖） */
+.top-plays-view .batch-toolbar {
+  position: absolute;
+  top: calc(var(--lph-h, 58px) + 8px);
+  left: 16px; right: 16px;
+  z-index: 21;
+}
 .top-plays-view__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
 .top-plays-view__header h1 { font-size: 28px; font-weight: 700; margin: 0; }
 .header-actions { display: flex; gap: 8px; }
@@ -260,12 +275,13 @@ refresh()
 .search-input { width: 260px; }
 .filter-select { width: 120px; }
 
-.loading-state, .empty-state { text-align: center; padding: 80px 32px; color: var(--text-tertiary); }
+.loading-state, .empty-state { text-align: center; padding: calc(var(--lph-h, 58px) + 80px) 32px 80px; color: var(--text-tertiary); }
 .loading-state p, .empty-state p { margin: 16px 0; font-size: 15px; }
 .empty-hint { font-size: 13px !important; }
 
 .tracks-list { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.tracks-list-body { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; transform: translateZ(0); }
+/* 滚动容器全高铺满（页头悬浮于其上）；wrapper margin-top 提供首行偏移 */
+.tracks-list-body { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; min-height: 0; transform: translateZ(0); }
 .tracks-list-body::-webkit-scrollbar { width: 6px; }
 .tracks-list-body::-webkit-scrollbar-track { background: transparent; }
 .tracks-list-body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }

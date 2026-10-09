@@ -135,6 +135,16 @@
 .batch-toolbar__count { color: var(--accent-color); font-weight: 600; }
 .batch-toolbar__actions { display: flex; gap: 6px; margin-left: auto; }
 
+/* ==================== 虚拟列表穿透式页头占位 ==================== */
+/* 置于 useVirtualList 的 wrapper 之前：内容整体下移一个页头高，让首屏行落在悬浮页头下方。
+   不可用覆盖 wrapper margin-top 的方式实现——vueuse 动态计算 marginTop=已滚过行高，
+   覆盖后窗口推进与行定位解耦，滚动时行会"快进"并逐渐减少直至全空 */
+.vlist-lph-spacer {
+  width: 100%;
+  height: var(--lph-h, 58px);
+  flex: none;
+}
+
 /* ==================== CSS 变量 ==================== */
 :root {
   --bg-primary: #272727;

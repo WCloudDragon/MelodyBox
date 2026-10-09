@@ -18,9 +18,11 @@
       <p class="empty-sub">导入音乐后将自动生成歌手列表</p>
     </div>
 
-    <!-- 歌手网格（虚拟滚动） -->
+    <!-- 艺术家网格（虚拟滚动）；滚动容器全高 -> 内容穿行悬浮页头背后。
+         spacer 顶开页头高度，wrapper margin-top 归 vueuse 管，不可覆盖 -->
     <div v-else ref="gridRef" class="artists-grid-measure">
       <div v-bind="containerProps" class="artists-grid-virt">
+        <div class="vlist-lph-spacer" aria-hidden="true" />
         <div v-bind="wrapperProps">
           <div
             v-for="{ data: row, index: rowIdx } in virtualList"
@@ -156,10 +158,17 @@ function playArtist(artist) {
 
 <style scoped>
 .artists-view {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+}
+/* 穿透式页头：页头悬浮覆盖，列表滚动容器全高 -> 内容穿行页头背后（渐进模糊） */
+.artists-view :deep(.list-page-header) {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 20;
 }
 .artists-view__header {
   display: flex;
@@ -180,7 +189,7 @@ function playArtist(artist) {
 /* 空状态 */
 .empty-state {
   text-align: center;
-  padding: 80px 32px;
+  padding: calc(var(--lph-h, 58px) + 80px) 32px 80px;
   color: var(--text-tertiary);
 }
 .empty-state p {
@@ -193,10 +202,10 @@ function playArtist(artist) {
   opacity: 0.7;
 }
 
-/* 外层测量容器（避免 containerProps 内置 ref 冲突） */
+/* 外层测量容器（避免 containerProps 内置 ref 冲突）；全高铺满 -> 滚动容器从视口顶开始 */
 .artists-grid-measure {
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
 }
 
