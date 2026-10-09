@@ -253,8 +253,8 @@ refresh()
 </script>
 
 <style scoped>
-.top-plays-view { position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-/* 穿透式页头：页头悬浮覆盖，列表滚动容器全高 -> 内容穿行页头背后（渐进模糊） */
+.top-plays-view { position: relative; display: flex; flex-direction: column; height: 100%; }
+/* 穿透式页头：页头悬浮覆盖，滚动容器全高（上伸至窗口顶，内容穿 TitleBar 背后） */
 .top-plays-view :deep(.list-page-header) {
   position: absolute;
   top: 0; left: 0; right: 0;
@@ -263,7 +263,7 @@ refresh()
 /* 多选工具栏悬浮于页头正下方（浮在列表之上，避免被悬浮页头遮盖） */
 .top-plays-view .batch-toolbar {
   position: absolute;
-  top: calc(var(--lph-h, 58px) + 8px);
+  top: calc(var(--content-top, 60px) + var(--lph-h, 58px) + 8px);
   left: 16px; right: 16px;
   z-index: 21;
 }
@@ -275,13 +275,17 @@ refresh()
 .search-input { width: 260px; }
 .filter-select { width: 120px; }
 
-.loading-state, .empty-state { text-align: center; padding: calc(var(--lph-h, 58px) + 80px) 32px 80px; color: var(--text-tertiary); }
+.loading-state, .empty-state { text-align: center; padding: calc(var(--content-top, 60px) + var(--lph-h, 58px) + 80px) 32px 80px; color: var(--text-tertiary); }
 .loading-state p, .empty-state p { margin: 16px 0; font-size: 15px; }
 .empty-hint { font-size: 13px !important; }
 
 .tracks-list { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-/* 滚动容器全高铺满（页头悬浮于其上）；wrapper margin-top 提供首行偏移 */
-.tracks-list-body { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; min-height: 0; transform: translateZ(0); }
+/* 滚动容器上伸至窗口顶（内容穿 TitleBar 背后）；wrapper 前的 spacer 提供首行偏移 */
+.tracks-list-body {
+  position: absolute; inset: 0;
+  top: calc(-1 * var(--content-top, 60px));
+  overflow-y: auto; overflow-x: hidden; min-height: 0; transform: translateZ(0);
+}
 .tracks-list-body::-webkit-scrollbar { width: 6px; }
 .tracks-list-body::-webkit-scrollbar-track { background: transparent; }
 .tracks-list-body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }

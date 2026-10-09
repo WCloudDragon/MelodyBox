@@ -387,8 +387,19 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--bg-primary);
+  /* bg-secondary：TitleBar/雾区色块为半透渐变，透出的窗口底色需与页面背景一致，
+     否则半透段会混入深色 bg-primary 形成色差（桌面歌词窗口有 transparent 覆盖） */
+  background: var(--bg-secondary);
   color: var(--text-primary);
+}
+
+/* ===== 沉浸式顶部布局变量 ===== */
+/* --titlebar-h：窗口标题栏高；--content-top：内容视觉起点（TitleBar 底 + 页头上方背景带）。
+   main-content 绝对定位上伸至窗口顶，滚动内容可穿到 TitleBar 背后，
+   页头雾层（frost）得以从窗口顶开始生效（SaltPlayer 式沉浸标题栏） */
+#melody-box {
+  --titlebar-h: 36px;
+  --content-top: calc(var(--titlebar-h) + 24px);
 }
 
 /* 桌面歌词独立窗口：透明背景，无 flex 布局 */
@@ -406,14 +417,21 @@ onBeforeUnmount(() => {
 }
 
 .main-content {
-  flex: 1;
+  /* 绝对定位上伸至窗口顶（相对 .app-body 顶部上移一个 TitleBar 高）：
+     滚动视口覆盖整个窗口高度，内容可穿到悬浮 TitleBar 背后；
+     padding-top 用 --content-top 让内容视觉起点保持在 TitleBar 底下方 */
+  position: absolute;
+  top: calc(-1 * var(--titlebar-h));
+  left: 0;
+  right: 0;
+  bottom: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 24px 32px 0;
+  padding: var(--content-top) 32px 0;
   scrollbar-gutter: stable;
   content-visibility: auto;
   background: var(--bg-secondary);
-  position: relative; /* 为页面过渡动画提供定位参考 */
+  /* absolute 即 positioned：页面过渡动画（page-enter/leave 的 absolute 化）以此为定位参考 */
   transition: margin-left 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .main-content.page-transitioning {
@@ -445,14 +463,14 @@ onBeforeUnmount(() => {
 .page-enter-active {
   animation: page-enter 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0) both;
   position: absolute !important;
-  top: calc(24px - var(--enter-scroll, 0px));
+  top: calc(var(--content-top) - var(--enter-scroll, 0px));
   left: 32px;
   right: 32px;
 }
 .page-leave-active {
   animation: page-leave 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0) both;
   position: absolute !important;
-  top: calc(24px - var(--leave-scroll, 0px));
+  top: calc(var(--content-top) - var(--leave-scroll, 0px));
   left: 32px;
   right: 32px;
   z-index: 1;
@@ -481,8 +499,20 @@ onBeforeUnmount(() => {
   }
 }
 
+/* 页头 frost（模糊层）与 fade（透明度遮罩层）：两者同为 z:-1，fade 的 DOM 靠后
+   画在 frost 之上、页头文字/按钮（流内内容）之下。
+   fade 从窗口顶铺到页头底：TitleBar 高度内全浓度（透明 TitleBar 由此供底，
+   观感与原不透明标题栏一致），页头区线性渐透明——雾自上而下缓慢显现 */
+.lph-fade {
+  background: linear-gradient(
+    to bottom,
+    var(--bg-secondary) 0px,
+    var(--bg-secondary) var(--titlebar-h, 36px),
+    transparent 100%
+  );
+}
 /* 过渡动画中页面根参与合成动画，Chromium 会禁用后代 backdrop-filter 的采样
-   （真模糊不可用，动画结束才恢复）。给页头 frost 层垫一层玻璃底色近似磨砂观感，
+   （真模糊不可用，动画结束才恢复）。frost 垫一层玻璃底色近似磨砂观感，
    动画结束 class 移除、底色淡出，真模糊无缝接管 */
 .lph-frost { transition: background 0.25s ease; }
 .page-enter-active .lph-frost,

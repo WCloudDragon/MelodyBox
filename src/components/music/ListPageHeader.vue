@@ -242,13 +242,17 @@ watch(() => [sortOpen.value, filterOpen.value], () => closeModeMenu())
 //     保证 backdrop 采样生效（sticky 矩形内是采样死区；用主动下延替代偶然错位）
 const headerEl = ref(null)
 let _frostEl = null
+let _fadeEl = null
 const FROST_EXTEND = 60        // 页头下方伸出段：保证采样可见
 
 function _syncFrost() {
   if (!_frostEl || !headerEl.value) return
   const h = headerEl.value.offsetHeight
   if (h <= 0) return
-  _frostEl.style.height = `${h + FROST_EXTEND}px`
+  // frost 上伸至窗口顶（--content-top = TitleBar 高 + 页头上方背景带），下延采样区照旧
+  _frostEl.style.height = `calc(var(--content-top, 60px) + ${h + FROST_EXTEND}px)`
+  // 遮罩层从窗口顶铺到页头底（TitleBar 高度内全浓度，页头区渐透明）
+  if (_fadeEl) _fadeEl.style.height = `calc(var(--content-top, 60px) + ${h}px)`
 }
 
 function _buildFrost() {
@@ -257,7 +261,7 @@ function _buildFrost() {
   _frostEl.className = 'lph-frost'
   Object.assign(_frostEl.style, {
     position: 'absolute',
-    top: '0',
+    top: 'calc(-1 * var(--content-top, 60px))',  // 上伸至窗口顶：雾从标题栏背后开始
     left: '-8px',               // 左侧冗余（页头恰好到边，8px 够）
     right: '-6px',              // 盖过 main 预留的滚动条 gutter 区，玻璃到窗口最右
     zIndex: '-1',               // 页头 context 内垫底，文字永不罩
@@ -266,18 +270,33 @@ function _buildFrost() {
     // 无底色：加 background 会产生色差（浅色主题尤其明显），保持纯模糊
     backdropFilter: 'var(--glass-blur)',
     webkitBackdropFilter: 'var(--glass-blur)',
-    // mask: to top => 0%(底)透明、渐升到 100%(顶)实心；
-    // 但调整梯度：页头矩形≈玻璃层上部 50%，需整条实心模糊；
-    // 仅下延区下半段渐隐收尾（50%→0%），避免边界硬切
-    maskImage: 'linear-gradient(to top, transparent 0%, transparent 8%, rgba(0,0,0,0.65) 30%, #000 50%, #000 100%)',
-    WebkitMaskImage: 'linear-gradient(to top, transparent 0%, transparent 8%, rgba(0,0,0,0.65) 30%, #000 50%, #000 100%)'
+    // mask 梯度（frost 总高 = content-top 60 + 页头高 + 60 下延，% 从底部起算；
+    // 页头底位于 (60+页头高)/总高 ≈ 66% 处，随页头实际高度浮动）：
+    //   下延尾(0-8%)透明缓冲 → 下延中段渐浓(30% 0.65) → 页头底(66%)起整条实心到顶
+    //   TitleBar 悬浮半透背景罩住窗口顶段，雾在其背后若隐若现
+    maskImage: 'linear-gradient(to top, transparent 0%, transparent 8%, rgba(0,0,0,0.65) 30%, #000 66%, #000 100%)',
+    WebkitMaskImage: 'linear-gradient(to top, transparent 0%, transparent 8%, rgba(0,0,0,0.65) 30%, #000 66%, #000 100%)'
   })
   headerEl.value.appendChild(_frostEl)
+  // 透明度遮罩层：窗口顶全浓度、页头区线性渐透明（渐变见 App.vue .lph-fade）。
+  // 与 frost 同为 z:-1 但 DOM 靠后 → 绘制在模糊之上、页头文字/按钮之下
+  _fadeEl = document.createElement('div')
+  _fadeEl.className = 'lph-fade'
+  Object.assign(_fadeEl.style, {
+    position: 'absolute',
+    top: 'calc(-1 * var(--content-top, 60px))',  // 顶至窗口顶，与 frost 同域
+    left: '-8px',
+    right: '-6px',
+    zIndex: '-1',
+    pointerEvents: 'none'
+  })
+  headerEl.value.appendChild(_fadeEl)
   _syncFrost()
 }
 
 function _removeFrost() {
   if (_frostEl) { _frostEl.remove(); _frostEl = null }
+  if (_fadeEl) { _fadeEl.remove(); _fadeEl = null }
 }
 
 onMounted(() => {
@@ -326,7 +345,8 @@ onBeforeUnmount(() => {
    backdrop-filter 采样不可靠（多轮实测），未使用毛玻璃背景方案。 */
 .list-page-header {
   position: sticky;
-  top: 0;
+  /* 沉浸式布局下 main 滚动视口顶 = 窗口顶，sticky 贴定点 = TitleBar 底下方 */
+  top: var(--content-top, 0px);
   z-index: 20;
   display: flex;
   align-items: center;

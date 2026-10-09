@@ -81,7 +81,11 @@ function onClose() { window.electronAPI?.close() }
   display: flex;
   align-items: center;
   height: 36px;
-  background: var(--bg-secondary);
+  /* 背景全透明：顶部的背景色/雾感由页头色块层（.lph-fade，z:-1）透过提供，
+     单一渐变源覆盖「窗口顶 → 页头底」，避免分段拼接的浓度接缝。
+     z:30 悬浮于 main-content（沉浸式布局，内容穿到标题栏背后）之上 */
+  z-index: 30;
+  background: transparent;
   -webkit-app-region: drag;
   user-select: none;
   flex-shrink: 0;

@@ -163,9 +163,8 @@ function playAlbum(album) {
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow: hidden;
 }
-/* 穿透式页头：页头悬浮覆盖，列表滚动容器全高 -> 内容穿行页头背后（渐进模糊） */
+/* 穿透式页头：页头悬浮覆盖，网格滚动容器全高（上伸至窗口顶，内容穿 TitleBar 背后） */
 .albums-view :deep(.list-page-header) {
   position: absolute;
   top: 0; left: 0; right: 0;
@@ -190,7 +189,7 @@ function playAlbum(album) {
 /* 空状态 */
 .empty-state {
   text-align: center;
-  padding: calc(var(--lph-h, 58px) + 80px) 32px 80px;
+  padding: calc(var(--content-top, 60px) + var(--lph-h, 58px) + 80px) 32px 80px;
   color: var(--text-tertiary);
 }
 .empty-state p {
@@ -207,6 +206,7 @@ function playAlbum(album) {
 .albums-grid-measure {
   position: absolute;
   inset: 0;
+  top: calc(-1 * var(--content-top, 60px));  /* 上伸至窗口顶：内容穿 TitleBar 背后 */
   overflow: hidden;
 }
 

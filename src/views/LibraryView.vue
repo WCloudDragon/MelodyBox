@@ -324,8 +324,8 @@ function batchAddQueueNext(tracks) {
 </script>
 
 <style scoped>
-.library-view { position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
-/* 穿透式页头：页头悬浮覆盖，列表/网格滚动容器全高 -> 内容穿行页头背后（渐进模糊） */
+.library-view { position: relative; display: flex; flex-direction: column; height: 100%; }
+/* 穿透式页头：页头悬浮覆盖，列表/网格滚动容器全高（上伸至窗口顶，内容穿 TitleBar 背后） */
 .library-view :deep(.list-page-header) {
   position: absolute;
   top: 0; left: 0; right: 0;
@@ -334,7 +334,7 @@ function batchAddQueueNext(tracks) {
 /* 多选工具栏悬浮于页头正下方（浮在列表/网格之上，避免被悬浮页头遮盖） */
 .library-view .batch-toolbar {
   position: absolute;
-  top: calc(var(--lph-h, 58px) + 8px);
+  top: calc(var(--content-top, 60px) + var(--lph-h, 58px) + 8px);
   left: 16px; right: 16px;
   z-index: 21;
 }
@@ -353,16 +353,17 @@ function batchAddQueueNext(tracks) {
 .filter-select { width: 120px; }
 
 .empty-state, .loading-state {
-  text-align: center; padding: calc(var(--lph-h, 58px) + 80px) 32px 80px;
+  text-align: center; padding: calc(var(--content-top, 60px) + var(--lph-h, 58px) + 80px) 32px 80px;
   color: var(--text-tertiary);
 }
 .empty-state p, .loading-state p { margin: 16px 0; font-size: 15px; }
 
-/* 网格视图：滚动容器全高铺满（页头悬浮于其上），padding-top 提供首行偏移 */
+/* 网格视图：滚动容器全高上伸至窗口顶（内容穿 TitleBar 背后），padding-top 提供首行偏移 */
 .tracks-grid {
   position: absolute; inset: 0;
+  top: calc(-1 * var(--content-top, 60px));
   display: flex; flex-wrap: wrap; gap: 4px;
-  overflow-y: auto; padding-top: var(--lph-h, 58px);
+  overflow-y: auto; padding-top: calc(var(--content-top, 60px) + var(--lph-h, 58px));
   will-change: scroll-position;
 }
 .tracks-grid::-webkit-scrollbar { width: 6px; }
@@ -371,8 +372,12 @@ function batchAddQueueNext(tracks) {
 
 /* 列表视图 */
 .tracks-list { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-/* 滚动容器全高铺满（页头悬浮于其上）；wrapper margin-top 提供首行偏移 */
-.tracks-list-body { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; min-height: 0; transform: translateZ(0); }
+/* 滚动容器上伸至窗口顶（内容穿 TitleBar 背后）；wrapper 前的 spacer 提供首行偏移 */
+.tracks-list-body {
+  position: absolute; inset: 0;
+  top: calc(-1 * var(--content-top, 60px));
+  overflow-y: auto; overflow-x: hidden; min-height: 0; transform: translateZ(0);
+}
 .tracks-list-body::-webkit-scrollbar { width: 6px; }
 .tracks-list-body::-webkit-scrollbar-track { background: transparent; }
 .tracks-list-body::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
