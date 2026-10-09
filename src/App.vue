@@ -480,4 +480,13 @@ onBeforeUnmount(() => {
     transform: scale(1.03);
   }
 }
+
+/* 过渡动画中页面根参与合成动画，Chromium 会禁用后代 backdrop-filter 的采样
+   （真模糊不可用，动画结束才恢复）。给页头 frost 层垫一层玻璃底色近似磨砂观感，
+   动画结束 class 移除、底色淡出，真模糊无缝接管 */
+.lph-frost { transition: background 0.25s ease; }
+.page-enter-active .lph-frost,
+.page-leave-active .lph-frost {
+  background: var(--glass-bg);
+}
 </style>

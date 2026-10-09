@@ -99,7 +99,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { usePlayerStore, PLAY_MODES } from '@/stores/player'
@@ -232,56 +232,34 @@ function chooseFilter(key, value) {
 
 watch(() => [sortOpen.value, filterOpen.value], () => closeModeMenu())
 
-// ===== 顶栏背景模糊（页头内 fixed z-1 + cb 补偿 + 下延采样区） =====
+// ===== 顶栏背景模糊（headerEl 内 absolute + 下延采样区） =====
 // 三要素齐备：
 //  1) 挂 headerEl 内 + z-index:-1 → 与文字同 stacking context，垫底不罩文字
-//  2) containing block 坐标补偿 → 精确对齐页头（fixed 基准非视口）
+//  2) absolute 相对页头自身定位（页头恒为视口固定位置：列表页页头 absolute 悬浮、
+//     详情页页头 sticky 贴顶）→ frost 跟随页头，无 containing block 切换问题；
+//     页面过渡 scale 动画中与页头同帧变换，模糊不再错位/消失
 //  3) 高度 = 页头高 + 60px 下延 → 下段伸出页头矩形、悬到滚动内容上，
-//     保证 backdrop 采样生效（sticky 矩形内是采样死区；这是⑤"错位才有模糊"
-//     的机制，现在用主动下延替代偶然错位）
+//     保证 backdrop 采样生效（sticky 矩形内是采样死区；用主动下延替代偶然错位）
 const headerEl = ref(null)
 let _frostEl = null
-let _onScroll = null
-let _cb = null
 const FROST_EXTEND = 60        // 页头下方伸出段：保证采样可见
-
-/** 找到 fixed 定位的 containing block（最近 transform/filter/will-change 祖先） */
-function _findCb(el) {
-  let node = el.parentElement
-  while (node && node !== document.documentElement) {
-    const cs = getComputedStyle(node)
-    const isCb =
-      (cs.transform && cs.transform !== 'none') ||
-      (cs.filter && cs.filter !== 'none') ||
-      (cs.perspective && cs.perspective !== 'none') ||
-      (cs.willChange && /transform|filter/.test(cs.willChange))
-    if (isCb) return node
-    node = node.parentElement
-  }
-  return null
-}
 
 function _syncFrost() {
   if (!_frostEl || !headerEl.value) return
-  const r = headerEl.value.getBoundingClientRect()   // 视口坐标
-  if (r.height <= 0) return
-  const cbR = _cb ? _cb.getBoundingClientRect() : { top: 0, left: 0, width: window.innerWidth }
-  // 右缘直接钉到视口右边界（含 cb 坐标系换算），不再依赖滚动条区估算，
-  // 确保玻璃层盖到窗口最右，不露垂直分界线
-  const ML = 8   // 左侧冗余（页头恰好到边，8px 够）
-  _frostEl.style.top = `${r.top - cbR.top}px`
-  _frostEl.style.left = `${r.left - cbR.left - ML}px`
-  _frostEl.style.right = `${(cbR.left + cbR.width) - window.innerWidth}px`
-  _frostEl.style.width = 'auto'   // left + right 撑满视口宽
-  _frostEl.style.height = `${r.height + FROST_EXTEND}px`   // 下延->采样区
+  const h = headerEl.value.offsetHeight
+  if (h <= 0) return
+  _frostEl.style.height = `${h + FROST_EXTEND}px`
 }
 
 function _buildFrost() {
   if (_frostEl || !headerEl.value) return
-  _cb = _findCb(headerEl.value)
   _frostEl = document.createElement('div')
+  _frostEl.className = 'lph-frost'
   Object.assign(_frostEl.style, {
-    position: 'fixed',
+    position: 'absolute',
+    top: '0',
+    left: '-8px',               // 左侧冗余（页头恰好到边，8px 够）
+    right: '-6px',              // 盖过 main 预留的滚动条 gutter 区，玻璃到窗口最右
     zIndex: '-1',               // 页头 context 内垫底，文字永不罩
     pointerEvents: 'none',
     // 模糊半径对齐侧边栏/播放队列的 --glass-blur（24px saturate）；
@@ -296,19 +274,10 @@ function _buildFrost() {
   })
   headerEl.value.appendChild(_frostEl)
   _syncFrost()
-  _onScroll = _syncFrost
-  document.addEventListener('scroll', _onScroll, true)
-  window.addEventListener('resize', _onScroll)
 }
 
 function _removeFrost() {
-  if (_onScroll) {
-    document.removeEventListener('scroll', _onScroll, true)
-    window.removeEventListener('resize', _onScroll)
-    _onScroll = null
-  }
   if (_frostEl) { _frostEl.remove(); _frostEl = null }
-  _cb = null
 }
 
 onMounted(() => {
@@ -318,13 +287,30 @@ onMounted(() => {
     _buildFrost()
   }
   m()
-  // 页头高度 -> 全局 CSS 变量：穿透式布局（列表滚动容器全高 + wrapper 顶部偏移）
-  // 依赖此值，页头几何变化（字体加载/换行）时自动同步
+  // 页头高度 -> 全局 CSS 变量：穿透式布局（列表滚动容器全高 + spacer 顶部偏移）
+  // 依赖此值，页头几何变化（字体加载/换行）时自动同步；frost 高度同步复用同一回调
+  // 守卫：keep-alive 离场时 DOM 移出文档，RO 会报 0 尺寸——跳过，
+  // 否则离场实例会把全局 --lph-h 清零，导致目标页 spacer 失效、内容顶穿页头
   _lphRO = new ResizeObserver(() => {
-    if (headerEl.value) document.documentElement.style.setProperty('--lph-h', headerEl.value.offsetHeight + 'px')
+    const el = headerEl.value
+    if (!el || !el.isConnected) return
+    const h = el.offsetHeight
+    if (h <= 0) return
+    document.documentElement.style.setProperty('--lph-h', h + 'px')
+    _syncFrost()
   })
   _lphRO.observe(headerEl.value)
   document.documentElement.style.setProperty('--lph-h', headerEl.value.offsetHeight + 'px')
+})
+
+// keep-alive 复用切回时立即矫正 --lph-h 与 frost（不依赖 RO 的触发时机）
+onActivated(() => {
+  const el = headerEl.value
+  if (!el || !el.isConnected) return
+  const h = el.offsetHeight
+  if (h <= 0) return
+  document.documentElement.style.setProperty('--lph-h', h + 'px')
+  _syncFrost()
 })
 
 let _lphRO = null
