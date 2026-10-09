@@ -262,8 +262,9 @@ function _buildFrost() {
   Object.assign(_frostEl.style, {
     position: 'absolute',
     top: 'calc(-1 * var(--content-top, 60px))',  // 上伸至窗口顶：雾从标题栏背后开始
-    left: '-8px',               // 左侧冗余（页头恰好到边，8px 够）
-    right: '-6px',              // 盖过 main 预留的滚动条 gutter 区，玻璃到窗口最右
+    // 左右外扩一个 main padding：雾铺满「侧边栏右缘 → 窗口右缘」（右侧额外盖过滚动条 gutter）
+    left: 'calc(-1 * var(--content-pad, 32px))',
+    right: 'calc(-1 * var(--content-pad, 32px) - 6px)',
     zIndex: '-1',               // 页头 context 内垫底，文字永不罩
     pointerEvents: 'none',
     // 模糊半径对齐侧边栏/播放队列的 --glass-blur（24px saturate）；
@@ -285,8 +286,8 @@ function _buildFrost() {
   Object.assign(_fadeEl.style, {
     position: 'absolute',
     top: 'calc(-1 * var(--content-top, 60px))',  // 顶至窗口顶，与 frost 同域
-    left: '-8px',
-    right: '-6px',
+    left: 'calc(-1 * var(--content-pad, 32px))',
+    right: 'calc(-1 * var(--content-pad, 32px) - 6px)',
     zIndex: '-1',
     pointerEvents: 'none'
   })

@@ -400,6 +400,7 @@ onBeforeUnmount(() => {
 #melody-box {
   --titlebar-h: 36px;
   --content-top: calc(var(--titlebar-h) + 24px);
+  --content-pad: 32px;   /* main 左右 padding：雾层向两侧外扩的基准（铺满窗口宽） */
 }
 
 /* 桌面歌词独立窗口：透明背景，无 flex 布局 */
@@ -427,7 +428,7 @@ onBeforeUnmount(() => {
   bottom: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--content-top) 32px 0;
+  padding: var(--content-top) var(--content-pad) 0;
   scrollbar-gutter: stable;
   content-visibility: auto;
   background: var(--bg-secondary);
