@@ -278,6 +278,11 @@ watch(() => route.fullPath, fetchRecommendations, { immediate: true })
 <style scoped>
 .recommend-view { padding-bottom: 100px; }
 
+/* 矫正 sticky 怪异：absolute 滚动容器 + static 父级组合下，Chromium 把
+   sticky top 当作相对流位置的偏移（top:60px → 实际贴到 120px），
+   导致页头与其 frost/fade 雾带整体下移。覆盖为 0 使页头贴上滚动视口顶 */
+.recommend-view :deep(.list-page-header) { top: 0; }
+
 .recommend-header {
   display: flex; align-items: flex-end; gap: 16px;
   margin-bottom: 16px; flex-shrink: 0;

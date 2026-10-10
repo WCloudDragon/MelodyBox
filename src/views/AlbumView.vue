@@ -185,6 +185,12 @@ function batchAddQueueNext(tracks) {
 <style scoped>
 .album-view { padding-bottom: 100px; }
 
+/* 矫正 sticky 怪异：absolute 滚动容器 + static 父级组合下，Chromium 把
+   sticky top 当作相对流位置的偏移（top:60px → 实际贴到 120px），
+   导致页头与其 frost/fade 雾带整体下移、顶部露出未模糊的封面。
+   覆盖为 0 使页头真正贴上滚动视口顶（窗口顶），与列表页穿透式布局一致 */
+.album-view :deep(.list-page-header) { top: 0; }
+
 .album-header {
   display: flex; align-items: flex-end; gap: 24px;
   padding-left: var(--page-pad-x, 12px);

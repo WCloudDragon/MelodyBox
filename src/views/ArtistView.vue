@@ -224,6 +224,11 @@ function batchAddQueueNext(tracks) {
 <style scoped>
 .artist-view { padding-bottom: 100px; }
 
+/* 矫正 sticky 怪异：absolute 滚动容器 + static 父级组合下，Chromium 把
+   sticky top 当作相对流位置的偏移（top:60px → 实际贴到 120px），
+   导致页头与其 frost/fade 雾带整体下移。覆盖为 0 使页头贴上滚动视口顶 */
+.artist-view :deep(.list-page-header) { top: 0; }
+
 /* 类别 tab（与搜索页 search-tabs 同款语言；按钮内边距即基准缩进） */
 .artist-tabs {
   display: flex; align-items: center; gap: 4px;
