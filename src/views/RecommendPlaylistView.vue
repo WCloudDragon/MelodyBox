@@ -5,7 +5,7 @@
       :show-play-mode="false"
       show-back
       back-fallback="/"
-      title-fade
+      fog-title
     />
 
     <div
@@ -16,14 +16,15 @@
         <span class="recommend-header__icon">{{ headerInfo.icon }}</span>
       </div>
       <div class="recommend-header__info">
+        <h2 class="page-content-title">{{ headerInfo.title }}</h2>
         <p v-if="headerInfo.subtitle">{{ headerInfo.subtitle }}</p>
         <p>{{ tracks.length }} 首推荐歌曲</p>
-        <div class="recommend-header__actions">
-          <el-button type="primary" @click="playAll" :disabled="tracks.length === 0">
-            <el-icon><VideoPlay /></el-icon>
-            播放全部
-          </el-button>
-        </div>
+      </div>
+      <div class="recommend-header__actions">
+        <el-button type="primary" @click="playAll" :disabled="tracks.length === 0">
+          <el-icon><VideoPlay /></el-icon>
+          播放全部
+        </el-button>
       </div>
     </div>
 
@@ -284,18 +285,18 @@ watch(() => route.fullPath, fetchRecommendations, { immediate: true })
 .recommend-view :deep(.list-page-header) { top: 0; }
 
 .recommend-header {
-  display: flex; align-items: flex-end; gap: 16px;
-  margin-bottom: 16px; flex-shrink: 0;
+  display: flex; align-items: flex-end; gap: 24px;
+  margin-bottom: 32px;
   padding-left: var(--page-pad-x, 12px);
 }
 .recommend-header__cover {
-  width: 150px; height: 150px; border-radius: 12px;
+  width: 200px; height: 200px; border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
 }
-.recommend-header__icon { font-size: 44px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3)); }
+.recommend-header__icon { font-size: 52px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3)); }
 .recommend-header__info p { color: var(--text-tertiary); margin: 0 0 2px; font-size: 14px; }
-.recommend-header__actions { display: flex; gap: 8px; margin-top: 12px; }
+.recommend-header__actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
 
 .loading-hint {
   display: flex; align-items: center; justify-content: center; gap: 8px;

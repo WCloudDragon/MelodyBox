@@ -5,7 +5,7 @@
       :show-play-mode="false"
       show-back
       back-fallback="/library"
-      title-fade
+      fog-title
     />
 
     <div v-if="playlist" class="playlist-content">
@@ -17,23 +17,24 @@
           </div>
         </div>
         <div class="playlist-info">
+          <h2 class="page-content-title">{{ playlist?.name }}</h2>
           <p v-if="playlist.description">{{ playlist.description }}</p>
           <p>{{ playlist.tracks.length }} 首歌曲</p>
-          <div class="playlist-actions">
-            <el-button type="primary" @click="playAll" :disabled="playlist.tracks.length === 0">
-              <el-icon><VideoPlay /></el-icon>
-              播放全部
-            </el-button>
-            <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
-              <el-icon><Select /></el-icon>
-              {{ multiSelectMode ? '退出多选' : '多选' }}
-            </el-button>
-            <!-- 系统歌单（我的收藏）不可重命名/删除 -->
-            <template v-if="!playlistStore.isSystemPlaylist(playlist.id)">
-              <el-button @click="showRenameDialog">重命名</el-button>
-              <el-button type="danger" plain @click="handleDelete">删除歌单</el-button>
-            </template>
-          </div>
+        </div>
+        <div class="playlist-actions">
+          <el-button type="primary" @click="playAll" :disabled="playlist.tracks.length === 0">
+            <el-icon><VideoPlay /></el-icon>
+            播放全部
+          </el-button>
+          <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
+            <el-icon><Select /></el-icon>
+            {{ multiSelectMode ? '退出多选' : '多选' }}
+          </el-button>
+          <!-- 系统歌单（我的收藏）不可重命名/删除 -->
+          <template v-if="!playlistStore.isSystemPlaylist(playlist.id)">
+            <el-button @click="showRenameDialog">重命名</el-button>
+            <el-button type="danger" plain @click="handleDelete">删除歌单</el-button>
+          </template>
         </div>
       </div>
 
@@ -260,7 +261,7 @@ function batchAddQueueNext(tracks) {
 .playlist-header {
   display: flex; align-items: flex-end; gap: 24px;
   padding-left: var(--page-pad-x, 12px);
-  margin-bottom: 24px; flex-shrink: 0;
+  margin-bottom: 32px;
 }
 .playlist-cover {
   width: 200px; height: 200px; border-radius: 12px;
@@ -276,7 +277,7 @@ function batchAddQueueNext(tracks) {
   color: var(--text-tertiary);
 }
 .playlist-info p { color: var(--text-tertiary); margin: 0 0 2px; font-size: 14px; }
-.playlist-actions { display: flex; gap: 8px; margin-top: 16px; align-items: center; }
+.playlist-actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
 
 /* 列表视图（对齐 LibraryView） */
 .track-table-header {

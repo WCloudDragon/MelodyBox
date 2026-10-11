@@ -5,7 +5,7 @@
       :show-play-mode="false"
       show-back
       back-fallback="/artists"
-      title-fade
+      fog-title
     />
 
     <div v-if="artist" class="artist-content">
@@ -17,6 +17,7 @@
           </div>
         </div>
         <div class="artist-info">
+          <h2 class="page-content-title">{{ artist?.name }}</h2>
           <p>{{ artist.tracks.length }} 首歌曲</p>
         </div>
         <div class="artist-header__actions">
@@ -277,12 +278,12 @@ function batchAddQueueNext(tracks) {
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .artist-header {
-  display: flex; align-items: center; gap: 24px;
+  display: flex; align-items: flex-end; gap: 24px;
   padding-left: var(--page-pad-x, 12px);
   margin-bottom: 32px;
 }
 .artist-avatar {
-  width: 180px; height: 180px; border-radius: 50%;
+  width: 200px; height: 200px; border-radius: 50%;
   overflow: hidden; flex-shrink: 0;
 }
 .artist-avatar img,

@@ -4,6 +4,7 @@
       title="艺术家"
       :count="artists.length ? `${artists.length} 位歌手` : null"
       :show-play-mode="false"
+      fog-title
       show-sort
       :sort-options="sortOptionsList"
       :sort-key="sortKey"
@@ -23,6 +24,7 @@
     <div v-else ref="gridRef" class="artists-grid-measure">
       <div v-bind="containerProps" class="artists-grid-virt">
         <div class="vlist-lph-spacer" aria-hidden="true" />
+        <h1 class="page-content-title page-content-title--inlist">艺术家</h1>
         <div v-bind="wrapperProps">
           <div
             v-for="{ data: row, index: rowIdx } in virtualList"

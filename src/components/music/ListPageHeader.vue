@@ -1,10 +1,10 @@
 <template>
-  <div class="list-page-header" ref="headerEl">
+  <div class="list-page-header" ref="headerEl" :class="{ 'fog-on': fogOn, 'title-follows-fog': fogTitle }">
     <!-- 返回按钮（下钻页）：置于标题左侧，标题随 flex 自然右移；顶层页不渲染保持现状 -->
     <button v-if="showBack" class="lph-btn lph-btn--back" title="返回" @click="onBack">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
     </button>
-    <h1 class="list-page-header__title" :class="{ 'list-page-header__title--hidden': titleFade && !titleShown }">{{ title }}</h1>
+    <h1 class="list-page-header__title">{{ title }}</h1>
     <span v-if="count != null" class="list-page-header__count">{{ count }}</span>
     <div class="list-page-header__spacer"></div>
 
@@ -123,9 +123,9 @@ const props = defineProps({
   backFallback: { type: String, default: '' },
   // 自定义返回动作：传入后替代默认路由返回（设置页二级页用其回到设置菜单）
   backHandler: { type: Function, default: null },
-  // 标题滚动渐显（Apple Music 式）：页头未贴顶（hero 内容可见）时标题隐藏，
-  // 贴顶后淡入。适用于 hero 区带封面/信息的下钻详情页
-  titleFade: { type: Boolean, default: false },
+  // 标题随雾显隐：页面已在内容区常驻同名标题（page-content-title）时开启，
+  // 顶部时页头标题/计数隐藏，下滚后随雾同步淡入
+  fogTitle: { type: Boolean, default: false },
   sortOptions: { type: Array, default: () => [] },
   sortKey: { type: String, default: '' },
   sortOrder: { type: String, default: 'asc' },
@@ -151,41 +151,45 @@ function onBack() {
   }
 }
 
-// ==================== 标题滚动渐显 ====================
-// 页头是 sticky 元素：未贴顶（top > 2px）说明 hero 内容仍可见 → 标题隐藏；
-// 贴顶说明 hero 已滚出 → 标题淡入。scroll 用捕获模式适配任意滚动容器。
-const titleShown = ref(!props.titleFade)
-let _fadeOnScroll = null
-
-function _syncTitleVisibility() {
-  if (!headerEl.value) return
-  titleShown.value = headerEl.value.getBoundingClientRect().top <= 2
-}
-
-function _startFadeWatch() {
-  if (_fadeOnScroll) return
-  _fadeOnScroll = _syncTitleVisibility
-  document.addEventListener('scroll', _fadeOnScroll, true)
-  window.addEventListener('resize', _fadeOnScroll)
-  nextTick(_syncTitleVisibility)
-}
-
-function _stopFadeWatch() {
-  if (_fadeOnScroll) {
-    document.removeEventListener('scroll', _fadeOnScroll, true)
-    window.removeEventListener('resize', _fadeOnScroll)
-    _fadeOnScroll = null
-  }
-  titleShown.value = true
-}
-
-watch(() => props.titleFade, (on) => {
-  if (on) _startFadeWatch()
-  else _stopFadeWatch()
-}, { immediate: true })
-
 const player = usePlayerStore()
 const { playMode } = storeToRefs(player)
+
+// ==================== 顶部雾区滚动显隐 ====================
+// 顶部（scrollTop ≤ 阈值）时雾区（frost/fade）与标题隐藏，下滚一点后同步淡入。
+// 滚动容器因页面而异：详情页滚 main-content，列表页（穿透式布局）滚视图内部
+// 容器——scroll 事件用捕获模式接住任意容器，按事件来源过滤相关容器后再取 scrollTop
+const FOG_THRESHOLD = 24
+const fogOn = ref(false)
+
+function _syncFogFromTarget(target) {
+  if (!(target instanceof Element)) return
+  const view = headerEl.value?.parentElement
+  if (target.classList.contains('main-content') || (view && view.contains(target))) {
+    fogOn.value = target.scrollTop > FOG_THRESHOLD
+  }
+}
+
+function _onDocScrollCapture(e) { _syncFogFromTarget(e.target) }
+
+// 初始/激活时全量探测：取 main-content 与视图内部滚动容器的最大 scrollTop
+// （列表页滚内层、详情页滚 main，二者取大者即为「页面滚过多少」）
+function _syncFogOn() {
+  let st = 0
+  const main = document.querySelector('.main-content')
+  if (main) st = main.scrollTop
+  const view = headerEl.value?.parentElement
+  if (view) {
+    for (const el of view.querySelectorAll('*')) {
+      const s = getComputedStyle(el)
+      if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollTop > st) st = el.scrollTop
+    }
+  }
+  fogOn.value = st > FOG_THRESHOLD
+}
+
+watch(fogOn, (v) => {
+  for (const el of [_frostEl, _fadeEl]) if (el) el.style.opacity = v ? '1' : '0'
+})
 
 const sortOpen = ref(false)
 const filterOpen = ref(false)
@@ -267,6 +271,9 @@ function _buildFrost() {
     right: 'calc(-1 * var(--content-pad, 32px) - 6px)',
     zIndex: '-1',               // 页头 context 内垫底，文字永不罩
     pointerEvents: 'none',
+    // 雾随滚动显隐：顶部隐藏，下滚淡入（fogOn watch 切换 opacity）
+    opacity: fogOn.value ? '1' : '0',
+    transition: 'opacity 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0), background 0.25s ease',
     // 模糊半径对齐侧边栏/播放队列的 --glass-blur（24px saturate）；
     // 无底色：加 background 会产生色差（浅色主题尤其明显），保持纯模糊
     backdropFilter: 'var(--glass-blur)',
@@ -289,7 +296,9 @@ function _buildFrost() {
     left: 'calc(-1 * var(--content-pad, 32px))',
     right: 'calc(-1 * var(--content-pad, 32px) - 6px)',
     zIndex: '-1',
-    pointerEvents: 'none'
+    pointerEvents: 'none',
+    opacity: fogOn.value ? '1' : '0',
+    transition: 'opacity 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
   })
   headerEl.value.appendChild(_fadeEl)
   _syncFrost()
@@ -305,8 +314,11 @@ onMounted(() => {
     if (document.fonts?.ready) { try { await document.fonts.ready } catch {} }
     await nextTick()
     _buildFrost()
+    _syncFogOn()
   }
   m()
+  // 雾/标题随滚动显隐：捕获模式接住任意滚动容器（main 或视图内部容器）
+  document.addEventListener('scroll', _onDocScrollCapture, true)
   // 页头高度 -> 全局 CSS 变量：穿透式布局（列表滚动容器全高 + spacer 顶部偏移）
   // 依赖此值，页头几何变化（字体加载/换行）时自动同步；frost 高度同步复用同一回调
   // 守卫：keep-alive 离场时 DOM 移出文档，RO 会报 0 尺寸——跳过，
@@ -331,6 +343,7 @@ onActivated(() => {
   if (h <= 0) return
   document.documentElement.style.setProperty('--lph-h', h + 'px')
   _syncFrost()
+  _syncFogOn()
 })
 
 let _lphRO = null
@@ -338,6 +351,7 @@ let _lphRO = null
 onBeforeUnmount(() => {
   _removeFrost()
   _lphRO?.disconnect()
+  document.removeEventListener('scroll', _onDocScrollCapture, true)
 })
 </script>
 
@@ -358,15 +372,21 @@ onBeforeUnmount(() => {
 }
 .list-page-header__title {
   font-size: 20px; font-weight: 700; margin: 0; white-space: nowrap;
-  transition: opacity 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0), transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0);
-}
-/* 渐显模式的隐藏态：hero 可见期间标题透明下移，贴顶后淡入归位 */
-.list-page-header__title--hidden {
-  opacity: 0;
-  transform: translateY(6px);
-  pointer-events: none;
 }
 .list-page-header__count { font-size: 13px; color: var(--text-tertiary); }
+/* 标题/计数随雾显隐（fog-title 页面）：顶部隐藏（标题由内容区 page-content-title 承载），
+   下滚后随雾同步淡入；未开启 fog-title 的页面标题常显不受影响 */
+.list-page-header.title-follows-fog .list-page-header__title,
+.list-page-header.title-follows-fog .list-page-header__count {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0), transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.list-page-header.title-follows-fog.fog-on .list-page-header__title,
+.list-page-header.title-follows-fog.fog-on .list-page-header__count {
+  opacity: 1;
+  transform: none;
+}
 .list-page-header__spacer { flex: 1; }
 
 .lph-btn {

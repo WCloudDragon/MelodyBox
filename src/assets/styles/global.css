@@ -146,6 +146,21 @@
   flex: none;
 }
 
+/* ==================== 内容区常驻大标题 ==================== */
+/* 页头标题随雾显隐（fog-title）期间，标题信息由内容区此元素承载：
+   顶部时页头标题隐藏、此标题可见；下滚后页头标题淡入、此标题随内容滚走 */
+.page-content-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 6px;
+}
+/* 列表页变体：滚动容器内首位，缩进对齐内容左基准线 */
+.page-content-title--inlist {
+  padding: 0 var(--page-pad-x, 12px);
+  margin-bottom: 4px;
+}
+
 /* ==================== CSS 变量 ==================== */
 :root {
   --bg-primary: #272727;

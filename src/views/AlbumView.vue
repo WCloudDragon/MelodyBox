@@ -5,7 +5,7 @@
       :show-play-mode="false"
       show-back
       back-fallback="/albums"
-      title-fade
+      fog-title
     />
 
     <div v-if="album" class="album-content">
@@ -17,6 +17,7 @@
           </div>
         </div>
         <div class="album-info">
+          <h2 class="page-content-title">{{ album?.name }}</h2>
           <p>{{ album.artist }} · {{ album.tracks.length }} 首歌曲</p>
           <p v-if="album.year">发行年份：{{ album.year }}</p>
         </div>
