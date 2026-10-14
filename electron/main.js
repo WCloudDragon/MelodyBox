@@ -15,6 +15,11 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.melodybox.player')
 }
 
+// 开发模式开启 CDP 调试端口（自动化测试/排查用；打包版不开启）
+if (!app.isPackaged) {
+  app.commandLine.appendSwitch('remote-debugging-port', '9222')
+}
+
 // Vite 开发服务器端口由 vite.config.js 写入 .vite-port，避免写死端口被占用/系统预留
 function getDevServerUrl() {
   let port = 5200
