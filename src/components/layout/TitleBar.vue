@@ -13,38 +13,46 @@
     <div v-if="!immersive" class="title-bar__search">
       <GlobalSearch />
     </div>
-    <div class="title-bar__controls" :class="{ 'title-bar__controls--lyrics': lyricsVisible }">
-      <button class="title-btn" v-ripple @click="onFullscreen" :title="isFs ? '退出全屏' : '全屏'">
-        <svg v-if="!isFs" width="12" height="12" viewBox="0 0 12 12">
-          <polyline points="1,5 1,1 5,1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-          <polyline points="7,1 11,1 11,5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-          <polyline points="11,7 11,11 7,11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-          <polyline points="5,11 1,11 1,7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-        </svg>
-        <svg v-else width="12" height="12" viewBox="0 0 12 12">
-          <polyline points="11,5 7,5 7,1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-          <polyline points="1,7 5,7 5,11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-        </svg>
-      </button>
-      <button class="title-btn" v-ripple @click="onMinimize" title="最小化">
-        <svg width="12" height="12" viewBox="0 0 12 12"><rect y="5" width="12" height="1.5" fill="currentColor"/></svg>
-      </button>
-      <button class="title-btn" v-ripple @click="onMaximize" title="最大化">
-        <svg v-if="!isMax" width="12" height="12" viewBox="0 0 12 12">
-          <rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
-        </svg>
-        <svg v-else width="12" height="12" viewBox="0 0 12 12">
-          <rect x="3" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
-          <rect x="0" y="3" width="9" height="9" fill="var(--bg-secondary)" stroke="currentColor" stroke-width="1.5"/>
-        </svg>
-      </button>
-      <button class="title-btn title-btn--close" v-ripple @click="onClose" title="关闭">
-        <svg width="12" height="12" viewBox="0 0 12 12">
-          <line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="1.5"/>
-          <line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="1.5"/>
-        </svg>
-      </button>
-    </div>
+    <!-- 窗控 Teleport 到 body：title-bar 自身（z:30）创建层叠上下文，会把窗控的
+         z:1001 困在内部，对外等效 30，被全屏播放面板（np-overlay z:1000）整体盖住；
+         平级渲染后窗控真正浮于面板之上，并跟随 5 秒沉浸逻辑显隐 -->
+    <teleport to="body">
+      <div
+        class="title-bar__controls"
+        :class="{ 'title-bar__controls--lyrics': lyricsVisible, 'title-bar__controls--hidden': immersive }"
+      >
+        <button class="title-btn" v-ripple @click="onFullscreen" :title="isFs ? '退出全屏' : '全屏'">
+          <svg v-if="!isFs" width="12" height="12" viewBox="0 0 12 12">
+            <polyline points="1,5 1,1 5,1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            <polyline points="7,1 11,1 11,5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            <polyline points="11,7 11,11 7,11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            <polyline points="5,11 1,11 1,7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+          <svg v-else width="12" height="12" viewBox="0 0 12 12">
+            <polyline points="11,5 7,5 7,1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            <polyline points="1,7 5,7 5,11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button class="title-btn" v-ripple @click="onMinimize" title="最小化">
+          <svg width="12" height="12" viewBox="0 0 12 12"><rect y="5" width="12" height="1.5" fill="currentColor"/></svg>
+        </button>
+        <button class="title-btn" v-ripple @click="onMaximize" title="最大化">
+          <svg v-if="!isMax" width="12" height="12" viewBox="0 0 12 12">
+            <rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+          <svg v-else width="12" height="12" viewBox="0 0 12 12">
+            <rect x="3" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <rect x="0" y="3" width="9" height="9" fill="var(--bg-secondary)" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+        </button>
+        <button class="title-btn title-btn--close" v-ripple @click="onClose" title="关闭">
+          <svg width="12" height="12" viewBox="0 0 12 12">
+            <line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="1.5"/>
+            <line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+        </button>
+      </div>
+    </teleport>
   </div>
 </template>
 
@@ -127,7 +135,14 @@ function onClose() { window.electronAPI?.close() }
   right: 0;
   z-index: 1001;
   -webkit-app-region: no-drag;
+  user-select: none;
   transition: opacity 0.4s ease;
+}
+/* 沉浸态（全屏播放页鼠标静止 5 秒）：窗控淡出，鼠标移动即恢复。
+   class 直接绑定在 Teleport 后的窗控元素上（不再经过 .title-bar 后代选择器） */
+.title-bar__controls--hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 .title-btn {
   width: 46px;
@@ -157,8 +172,4 @@ function onClose() { window.electronAPI?.close() }
   background: #e81123;
   color: #fff;
 }
-.title-bar--immersive .title-bar__controls {
-  opacity: 0;
-  pointer-events: none;
-}
-</style>
+  </style>
