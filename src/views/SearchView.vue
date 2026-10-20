@@ -421,8 +421,14 @@ function fmtRel(raw) {
   contain-intrinsic-size: 64px;
 }
 .track-row:hover, .track-row--ctx-active { background: var(--hover-bg); }
-.track-row.playing { background: var(--accent-bg); }
-.track-row.playing .col-title__name { color: var(--accent-color); }
+.track-row.playing .col-title__name,
+.track-row.playing .col-title__artist,
+.track-row.playing .col-title__sep,
+.track-row.playing .col-album,
+.track-row.playing .col-album .link,
+.track-row.playing .col-time,
+.track-row.playing .col-time-text,
+.track-row.playing .col-index .index-num { color: var(--accent-color); }
 
 .col-index { text-align: center; position: relative; }
 .col-index .index-num { font-size: 13px; color: var(--text-tertiary); transition: opacity 0.12s; }

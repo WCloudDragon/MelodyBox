@@ -59,7 +59,7 @@
             :key="track.path"
               class="track-row"
               v-ripple
-              :class="{ playing: currentTrack?.path === track.path, 'track-row--ctx-active': contextMenuTarget === track.path, 'track-row--missing': track.missing }"
+              :class="{ playing: currentTrack?.path === track.path, 'track-row--ctx-active': contextMenuTarget === track.path, 'track-row--selected': multiSelectMode && isSelected(track), 'track-row--missing': track.missing }"
               @dblclick="playTrack(track)"
               @contextmenu.prevent="showContextMenu($event, track)"
             >
@@ -302,8 +302,15 @@ function batchAddQueueNext(tracks) {
   contain: layout style paint;
 }
 .track-row:hover, .track-row--ctx-active { background: var(--hover-bg); }
-.track-row.playing { background: var(--accent-bg); }
-.track-row.playing .col-title__name { color: var(--accent-color); }
+/* 多选选中：整行背景高亮（当前播放只染文本，不染背景） */
+.track-row.track-row--selected { background: var(--accent-bg); }
+.track-row.playing .col-title__name,
+.track-row.playing .col-title__artist,
+.track-row.playing .col-title__sep,
+.track-row.playing .col-album,
+.track-row.playing .col-album .link,
+.track-row.playing .col-time,
+.track-row.playing .col-index .index-num { color: var(--accent-color); }
 
 /* 失效条目（文件缺失）：整行灰化，重新导入同指纹歌曲后自动恢复正常显示 */
 .track-row--missing .col-title__name,
