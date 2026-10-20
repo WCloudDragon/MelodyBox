@@ -236,6 +236,7 @@ def init_db(app):
             cover_url TEXT DEFAULT '',
             is_public INTEGER DEFAULT 0,
             is_system INTEGER DEFAULT 0,
+            sort_order INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now','localtime')),
             updated_at TEXT DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -247,6 +248,12 @@ def init_db(app):
     # 老库迁移：补 is_system 列（系统歌单标记）
     try:
         conn.executescript('ALTER TABLE playlists ADD COLUMN is_system INTEGER DEFAULT 0')
+    except Exception:
+        pass
+
+    # 老库迁移：补 sort_order 列（歌单自定义排序）
+    try:
+        conn.executescript('ALTER TABLE playlists ADD COLUMN sort_order INTEGER DEFAULT 0')
     except Exception:
         pass
 

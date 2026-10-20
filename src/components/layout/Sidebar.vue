@@ -64,23 +64,41 @@
     <div class="sidebar__section">
       <div class="sidebar__label">
         <span>歌单</span>
-        <el-button :icon="Plus" size="small" text circle @click="handleCreatePlaylist" />
+        <span class="sidebar__label-actions">
+          <el-button
+            v-if="playlistStore.sortMode === 'custom'"
+            :icon="Rank"
+            size="small"
+            text
+            circle
+            :type="reorderActive ? 'primary' : 'default'"
+            :title="reorderActive ? '完成排序' : '进入排序模式'"
+            @click="toggleReorder"
+          />
+          <el-button :icon="Sort" size="small" text circle title="歌单排序" @click="openSortMenu" />
+          <el-button :icon="Plus" size="small" text circle @click="handleCreatePlaylist" />
+        </span>
       </div>
-      <div class="playlist-items" v-if="playlistStore.playlists.length > 0">
+      <div v-if="playlistStore.playlists.length > 0" ref="plListEl" class="playlist-items">
         <router-link
-          v-for="pl in playlistStore.playlists"
+          v-for="pl in displayPlaylists"
           :key="pl.id"
           :to="`/playlist/${pl.id}`"
+          :data-id="pl.id"
           class="nav-item"
           v-ripple
-          :class="{ active: $route.params.id === pl.id }"
+          :class="{ active: $route.params.id === pl.id, 'is-system-row': pl.is_system }"
           @mouseenter="playlistStore.ensureTracksLoaded(pl.id)"
         >
           <el-icon v-if="pl.is_system"><StarFilled /></el-icon>
           <img v-else-if="pl.cover_url" :src="pl.cover_url" class="nav-item__cover" />
           <el-icon v-else><Document /></el-icon>
           <span class="truncate">{{ pl.name }}</span>
-          <span class="count">{{ pl.trackCount || pl.tracks.length }}</span>
+          <span class="count">{{ pl.track_count ?? pl.tracks.length ?? 0 }}</span>
+          <!-- 排序模式：把手占位使数字左移让位 -->
+          <span v-if="reorderActive && !pl.is_system" class="pl-drag-handle" @click.stop>
+            <el-icon size="14"><DCaret /></el-icon>
+          </span>
         </router-link>
       </div>
       <div v-else class="empty-hint">暂无歌单，点击 + 创建</div>
@@ -113,16 +131,29 @@
         <span class="theme-switch__label">{{ currentTheme.label }}</span>
       </button>
     </div>
+
+    <!-- 歌单排序下拉（复用全局玻璃菜单） -->
+    <ContextMenu
+      :visible="sortMenu.visible"
+      :x="sortMenu.x"
+      :y="sortMenu.y"
+      :items="sortMenuItems"
+      :animated="true"
+      @close="sortMenu.visible = false"
+      @action="onSortAction"
+    />
   </nav>
 </template>
 
 <script setup>
-import { ref, computed, onBeforeUnmount } from 'vue'
-import { Plus, Moon, Sunny, Monitor, UserFilled, Timer, TrendCharts, Expand, Fold, DArrowLeft, DArrowRight, StarFilled } from '@element-plus/icons-vue'
+import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
+import { Plus, Moon, Sunny, Monitor, UserFilled, Timer, TrendCharts, Expand, Fold, DArrowLeft, DArrowRight, StarFilled, Sort, Rank, DCaret } from '@element-plus/icons-vue'
+import Sortable from 'sortablejs'
 import { usePlaylistStore } from '@/stores/playlist'
 import { useSettingsStore } from '@/stores/settings'
 import { useAuthStore } from '@/stores/auth'
 import { useModal } from '@/composables/useModal'
+import ContextMenu from '@/components/music/ContextMenu.vue'
 
 const playlistStore = usePlaylistStore()
 const settings = useSettingsStore()
@@ -224,6 +255,85 @@ async function handleCreatePlaylist() {
     }
   } catch {}
 }
+
+// --- 歌单排序：下拉选择模式 + 自定义拖拽 ---
+const sortMenu = ref({ visible: false, x: 0, y: 0 })
+const reorderActive = ref(false)
+const plListEl = ref(null)
+
+const sortMenuItems = computed(() => ([
+  { label: '按名称', action: 'name', active: playlistStore.sortMode === 'name' },
+  { label: '按修改时间', action: 'updated', active: playlistStore.sortMode === 'updated' },
+  { label: '按歌曲数量', action: 'count', active: playlistStore.sortMode === 'count' },
+  '-',
+  { label: '自定义排序', action: 'custom', active: playlistStore.sortMode === 'custom' },
+]))
+
+// 展示顺序：系统歌单（我的收藏）恒置顶，其余按当前模式排序
+const displayPlaylists = computed(() => {
+  const list = [...playlistStore.playlists]
+  const sys = list.filter(p => p.is_system)
+  const rest = list.filter(p => !p.is_system)
+  const mode = playlistStore.sortMode
+  if (mode === 'name') {
+    rest.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-Hans-CN'))
+  } else if (mode === 'updated') {
+    rest.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
+  } else if (mode === 'count') {
+    rest.sort((a, b) => (b.track_count || 0) - (a.track_count || 0))
+  } else {
+    // 自定义：sort_order 升序，老数据同为 0 时回退创建时间
+    rest.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) ||
+      String(b.created_at || '').localeCompare(String(a.created_at || '')))
+  }
+  return [...sys, ...rest]
+})
+
+function openSortMenu(e) {
+  const rect = e.currentTarget.getBoundingClientRect()
+  // 自按钮左下角展开；ContextMenu 自带实测防出屏
+  sortMenu.value = { visible: true, x: rect.left, y: rect.bottom + 6 }
+}
+
+function onSortAction(mode) {
+  sortMenu.value.visible = false
+  playlistStore.setSortMode(mode)
+  if (mode !== 'custom') reorderActive.value = false
+}
+
+function toggleReorder() {
+  reorderActive.value = !reorderActive.value
+}
+
+let sortable = null
+watch([reorderActive, () => playlistStore.playlists.length], async ([active]) => {
+  await nextTick()
+  if (active && !sortable && plListEl.value) {
+    sortable = Sortable.create(plListEl.value, {
+      animation: 150,
+      handle: '.pl-drag-handle',
+      draggable: '.nav-item',
+      filter: '.is-system-row',
+      ghostClass: 'pl-ghost',
+      chosenClass: 'pl-chosen',
+      onEnd() {
+        if (!plListEl.value) return
+        const ids = [...plListEl.value.querySelectorAll('.nav-item')]
+          .map(el => Number(el.dataset.id))
+          .filter(Boolean)
+        if (ids.length) playlistStore.reorderPlaylists(ids)
+      }
+    })
+  } else if (!active && sortable) {
+    sortable.destroy()
+    sortable = null
+  }
+})
+
+onBeforeUnmount(() => {
+  sortable?.destroy()
+  sortable = null
+})
 </script>
 
 <style scoped>
@@ -319,6 +429,30 @@ async function handleCreatePlaylist() {
   letter-spacing: 1.5px;
   color: var(--text-tertiary);
 }
+.sidebar__label-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.sidebar__label-actions .el-button { margin: 0; }
+
+/* 排序模式：行尾拖拽把手（数字因 auto margin 自然左移让位） */
+.pl-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 28px;
+  margin-right: -4px;
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  cursor: grab;
+  flex-shrink: 0;
+}
+.pl-drag-handle:hover { color: var(--text-primary); background: var(--hover-bg-strong); }
+.pl-drag-handle:active { cursor: grabbing; }
+.pl-ghost { opacity: 0.35; background: var(--accent-bg); }
+.pl-chosen { opacity: 0.92; }
 .nav-item {
   display: flex;
   align-items: center;

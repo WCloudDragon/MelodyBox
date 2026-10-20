@@ -30,6 +30,14 @@
           <div v-if="checkboxLabel" class="modal-checkbox">
             <AppCheckbox v-model="checkboxChecked" :label="checkboxLabel" />
           </div>
+          <!-- 自定义 body 内容（如歌单选择器）：update:value 回传确认载荷，update:valid 门控确认按钮 -->
+          <component
+            v-if="bodyComponent"
+            :is="bodyComponent"
+            v-bind="bodyProps || {}"
+            @update:value="bodyValue = $event"
+            @update:valid="bodyValid = $event"
+          />
           <slot />
         </template>
 
@@ -42,6 +50,7 @@
           <button
             class="modal-btn modal-btn--confirm"
             :class="{ 'modal-btn--danger': danger }"
+            :disabled="!bodyValid"
             @click="handleConfirm"
           >{{ confirmText }}</button>
         </div>
@@ -69,6 +78,9 @@ const props = defineProps({
   // 复选框：非空 label 时在正文下方渲染，confirm 事件携带 { checked }
   checkboxLabel: { type: String, default: '' },
   checkboxDefault: { type: Boolean, default: true },
+  // 自定义 body：传入组件则在正文区渲染，confirm 事件携带其 update:value 载荷（调用方需 markRaw）
+  bodyComponent: { type: [Object, Function], default: null },
+  bodyProps: { type: Object, default: null },
 })
 const emit = defineEmits(['confirm', 'cancel', 'closed'])
 
@@ -76,6 +88,8 @@ const inputRef = ref(null)
 const inputValue = ref('')
 const inputError = ref('')
 const checkboxChecked = ref(props.checkboxDefault)
+const bodyValue = ref(null)
+const bodyValid = ref(true)
 
 const showCancel = computed(() => props.mode !== 'alert')
 
@@ -84,6 +98,8 @@ watch(() => props.visible, async (v) => {
     inputValue.value = props.inputDefault || ''
     inputError.value = ''
     checkboxChecked.value = props.checkboxDefault
+    bodyValue.value = null
+    bodyValid.value = true
     await nextTick()
     inputRef.value?.focus()
   }
@@ -97,8 +113,10 @@ function handleConfirm() {
       return
     }
   }
+  if (!bodyValid.value) return
   let payload
   if (props.mode === 'prompt') payload = inputValue.value
+  else if (props.bodyComponent) payload = bodyValue.value
   else if (props.checkboxLabel) payload = { checked: checkboxChecked.value }
   emit('confirm', payload)
 }
@@ -214,6 +232,11 @@ function emitClosed() {
 
 .modal-btn:active {
   opacity: 0.8;
+}
+
+.modal-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .modal-btn--cancel {

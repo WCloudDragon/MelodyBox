@@ -33,6 +33,7 @@
         <el-button size="small" @click="batchPlay(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">播放选中</el-button>
         <el-button size="small" @click="batchAddQueueNext(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">插播至当前播放后</el-button>
         <el-button size="small" @click="batchAddQueue(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">插播至队列末尾</el-button>
+        <el-button size="small" @click="showAddPlaylistDialog(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">添加到歌单</el-button>
         <el-button size="small" type="danger" plain :loading="removing" @click="removeFromLibrary(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">从音乐库移除</el-button>
         <el-button size="small" @click="selectAll(libraryStore.filteredTracks)">全选</el-button>
         <el-button size="small" @click="clearSelection">取消</el-button>

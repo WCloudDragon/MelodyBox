@@ -26,6 +26,13 @@
 .ctx-menu-item:hover { background: var(--hover-bg-strong); }
 .ctx-menu-item--danger { color: #f56c6c; }
 .ctx-menu-item--danger:hover { background: rgba(245,108,108,0.1); }
+/* 选中态勾标（如排序模式下拉） */
+.ctx-menu-check {
+  float: right;
+  margin-left: 12px;
+  color: var(--accent-color);
+  font-size: 12px;
+}
 .ctx-menu-item--has-submenu {
   position: relative;
   display: flex;

@@ -20,6 +20,8 @@ export function createModalProvider() {
     inputValidator: null,
     checkboxLabel: '',
     checkboxDefault: true,
+    bodyComponent: null,
+    bodyProps: null,
   })
 
   function open(options) {
@@ -37,6 +39,8 @@ export function createModalProvider() {
       inputValidator: null,
       checkboxLabel: '',
       checkboxDefault: true,
+      bodyComponent: null,
+      bodyProps: null,
     })
     Object.assign(state, options, { visible: true })
 

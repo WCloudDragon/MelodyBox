@@ -25,6 +25,7 @@
             @mouseleave="onItemLeave"
           >
             <span>{{ item.label }}</span>
+            <span v-if="item.active" class="ctx-menu-check">✓</span>
           </div>
         </template>
       </div>

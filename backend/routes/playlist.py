@@ -40,12 +40,13 @@ def list_playlists():
     try:
         db = get_db()
         cursor = db.cursor()
+        # track_count 口径与歌单页一致：正常条目 + 文件缺失的失效条目
         cursor.execute('''
-            SELECT p.*, COUNT(ps.id) as track_count
+            SELECT p.*,
+                   (SELECT COUNT(*) FROM playlist_song ps WHERE ps.playlist_id = p.id)
+                 + (SELECT COUNT(*) FROM orphaned_playlist_songs o WHERE o.playlist_id = p.id) AS track_count
             FROM playlists p
-            LEFT JOIN playlist_song ps ON p.id = ps.playlist_id
             WHERE p.user_id = 1
-            GROUP BY p.id
             ORDER BY p.is_system DESC, p.created_at DESC
         ''')
         rows = cursor.fetchall()
@@ -87,6 +88,11 @@ def create_playlist():
             (1, name, description)
         )
         playlist_id = cursor.lastrowid
+        # 自定义排序：新歌单追加到队尾
+        cursor.execute(
+            'UPDATE playlists SET sort_order = (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM playlists WHERE user_id = 1) WHERE id = ?',
+            (playlist_id,)
+        )
         db.commit()
 
         # 返回创建的歌单
@@ -106,6 +112,29 @@ def create_playlist():
             'created_at': row['created_at'],
             'updated_at': row['updated_at'],
         }), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@playlist_bp.route('/reorder', methods=['PUT'])
+def reorder_playlists():
+    """保存歌单自定义排序：body { order: [id, ...] }，按数组下标写入 sort_order"""
+    data = request.get_json(silent=True) or {}
+    order = data.get('order') or []
+    if not order:
+        return jsonify({'error': '缺少 order'}), 400
+
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        cursor.executemany(
+            'UPDATE playlists SET sort_order = ? WHERE id = ? AND user_id = 1',
+            [(idx, pid) for idx, pid in enumerate(order)]
+        )
+        db.commit()
+        cursor.close()
+        db.close()
+        return jsonify({'message': '排序已保存'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -199,10 +228,13 @@ def update_playlist(id):
         )
         db.commit()
 
-        # 返回更新后的歌单（含歌曲计数）
+        # 返回更新后的歌单（含歌曲计数，口径同上：正常 + 失效条目）
         cursor.execute('SELECT * FROM playlists WHERE id = ?', (id,))
         row = cursor.fetchone()
-        cursor.execute('SELECT COUNT(*) as track_count FROM playlist_song WHERE playlist_id = ?', (id,))
+        cursor.execute('''
+            SELECT (SELECT COUNT(*) FROM playlist_song WHERE playlist_id = ?)
+                 + (SELECT COUNT(*) FROM orphaned_playlist_songs WHERE playlist_id = ?) AS track_count
+        ''', (id, id))
         track_count = cursor.fetchone()['track_count']
 
         cursor.close()
@@ -310,11 +342,12 @@ def add_song_to_playlist(id):
             db.close()
             return jsonify({'error': '歌曲不存在'}), 404
 
-        # INSERT OR IGNORE 避免重复添加
+        # INSERT OR IGNORE 避免重复添加；rowcount 判断是否实际写入
         cursor.execute(
             'INSERT OR IGNORE INTO playlist_song (playlist_id, song_id) VALUES (?, ?)',
             (id, song_id)
         )
+        added = cursor.rowcount > 0
         db.commit()
 
         # 始终更新歌单封面为最新添加歌曲的封面
@@ -328,7 +361,50 @@ def add_song_to_playlist(id):
         cursor.close()
         db.close()
 
-        return jsonify({'message': '添加成功'})
+        return jsonify({'added': bool(added), 'message': '添加成功'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@playlist_bp.route('/membership', methods=['POST'])
+def playlist_membership():
+    """查询选中歌曲在各歌单中的包含情况。
+
+    body: { paths: [file_path, ...] }
+    返回: { "<playlist_id>": { total: 歌单歌曲总数(含失效条目), contained: 选中歌曲已在该歌单的数量 } }
+    """
+    data = request.get_json(silent=True) or {}
+    paths = [p for p in (data.get('paths') or []) if p]
+    if not paths:
+        return jsonify({})
+
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        qs = ','.join('?' * len(paths))
+        cursor.execute(f'''
+            SELECT ps.playlist_id AS pid, COUNT(*) AS contained
+            FROM playlist_song ps
+            JOIN songs s ON s.id = ps.song_id
+            WHERE s.file_path IN ({qs})
+            GROUP BY ps.playlist_id
+        ''', paths)
+        contained = {r['pid']: r['contained'] for r in cursor.fetchall()}
+
+        cursor.execute('''
+            SELECT p.id AS pid,
+                   (SELECT COUNT(*) FROM playlist_song ps WHERE ps.playlist_id = p.id)
+                 + (SELECT COUNT(*) FROM orphaned_playlist_songs o WHERE o.playlist_id = p.id) AS total
+            FROM playlists p
+            WHERE p.user_id = 1
+        ''')
+        out = {
+            str(r['pid']): {'total': r['total'], 'contained': contained.get(r['pid'], 0)}
+            for r in cursor.fetchall()
+        }
+        cursor.close()
+        db.close()
+        return jsonify(out)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

@@ -1,7 +1,9 @@
-import { ref, h } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { ref, markRaw } from 'vue'
 import { ElMessage } from '@/utils/toast'
 import { usePlaylistStore } from '@/stores/playlist'
+import { useModal } from '@/composables/useModal'
+import { apiUrl } from '@/config/api'
+import PlaylistPicker from '@/components/music/PlaylistPicker.vue'
 
 /**
  * 共享的曲目列表交互逻辑：右键菜单 + 多选
@@ -9,6 +11,8 @@ import { usePlaylistStore } from '@/stores/playlist'
 export function useTrackList() {
   const multiSelectMode = ref(false)
   const selected = ref(new Set())
+  // inject 仅在 setup 期间合法，必须在组合函数初始化时获取，不能延迟到事件回调里
+  const modal = useModal()
 
   const ctxMenu = ref({ visible: false, x: 0, y: 0, track: null, submenu: null })
   const contextMenuTarget = ref(null)  // 当前右键目标 track.path，菜单关闭时清空
@@ -163,49 +167,67 @@ export function useTrackList() {
     return items
   }
 
-  // --- 添加到歌单（多选弹窗） ---
-  function showAddPlaylistDialog(track) {
+  // --- 添加到歌单（自研弹窗 + 歌单多选选择器；支持单曲或批量，已存在的自动跳过） ---
+  async function showAddPlaylistDialog(trackInput) {
     const playlistStore = usePlaylistStore()
+    const tracks = (Array.isArray(trackInput) ? trackInput : [trackInput])
+      .filter(t => t && t.path && !t.missing)
     const pls = playlistStore.playlists
-    if (pls.length === 0) {
+    if (!pls.length) {
       ElMessage.warning('暂无歌单，请先创建歌单')
       return
     }
-    if (pls.length === 1) {
-      playlistStore.addToPlaylist(pls[0].id, track)
-      ElMessage.success(`已添加到「${pls[0].name}」`)
+    if (!tracks.length) {
+      ElMessage.warning('所选歌曲无法添加到歌单')
       return
     }
 
-    const selected = new Set()
-    const checkItems = pls.map(pl =>
-      h('label', { style: 'display:flex;align-items:center;gap:10px;padding:6px 0;cursor:pointer;font-size:14px' }, [
-        h('input', {
-          type: 'checkbox',
-          value: pl.id,
-          style: 'width:16px;height:16px;accent-color:var(--accent-color,#6366f1)',
-          onChange: (e) => { if (e.target.checked) selected.add(pl.id); else selected.delete(pl.id) }
-        }),
-        h('span', pl.name)
-      ])
-    )
+    // 预取各歌单包含情况：total=歌单歌曲总数(含失效条目)，contained=选中歌曲已在该歌单的数量
+    let status = {}
+    try {
+      const res = await fetch(apiUrl('/api/playlists/membership'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths: tracks.map(t => t.path) })
+      })
+      if (res.ok) status = await res.json()
+    } catch {}
 
-    ElMessageBox({
-      title: '添加到歌单',
-      message: h('div', { style: 'max-height:280px;overflow-y:auto' }, checkItems),
-      confirmButtonText: '添加',
-      showCancelButton: true,
-      cancelButtonText: '取消'
-    }).then(() => {
-      if (selected.size === 0) {
-        ElMessage.warning('未选择任何歌单')
-        return
+    try {
+      const result = await modal.confirm({
+        title: '添加到歌单',
+        message: tracks.length > 1
+          ? `将选中的 ${tracks.length} 首歌曲添加到歌单（可多选）：`
+          : '选择要添加到的歌单（可多选）：',
+        confirmText: '添加',
+        bodyComponent: markRaw(PlaylistPicker),
+        bodyProps: { playlists: pls, status, total: tracks.length },
+      })
+      const ids = Array.isArray(result) ? result : []
+      if (!ids.length) return
+
+      // 已存在的歌曲由后端 INSERT OR IGNORE 跳过，前端据此统计提示
+      let added = 0
+      let skipped = 0
+      for (const id of ids) {
+        const k = status[id]?.contained || 0
+        skipped += k
+        added += tracks.length - k
+        for (const t of tracks) {
+          await playlistStore.addToPlaylist(id, t)
+        }
       }
-      for (const id of selected) {
-        playlistStore.addToPlaylist(id, track)
+      let msg
+      if (ids.length === 1) {
+        const name = pls.find(p => p.id === ids[0])?.name || '歌单'
+        msg = added > 0 && added < tracks.length
+          ? `已添加到「${name}」（新增 ${added} 首，跳过 ${skipped} 首已存在）`
+          : `已添加到「${name}」`
+      } else {
+        msg = `已添加到 ${ids.length} 个歌单（新增 ${added} 首${skipped ? `，跳过 ${skipped} 首已存在` : ''}）`
       }
-      ElMessage.success(`已添加到 ${selected.size} 个歌单`)
-    }).catch(() => {})
+      ElMessage.success(msg)
+    } catch {}
   }
 
   // --- 多选 ---

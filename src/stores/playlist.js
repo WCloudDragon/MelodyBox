@@ -12,6 +12,13 @@ export const usePlaylistStore = defineStore('playlist', () => {
   const playlists = shallowRef([])
   const isLoaded = ref(false)
 
+  // 歌单排序模式：name | updated | count | custom（用户偏好持久化于 localStorage）
+  const sortMode = ref(localStorage.getItem('melodybox.playlistSortMode') || 'custom')
+  function setSortMode(mode) {
+    sortMode.value = mode
+    localStorage.setItem('melodybox.playlistSortMode', mode)
+  }
+
   const tracksCache = new Map()  // playlistId → songs[]
   const loadedPlaylists = new Set()
 
@@ -47,7 +54,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
       const pl = playlists.value.find(p => p.id === playlistId)
       if (pl) {
         pl.tracks = songs
-        pl.trackCount = songs.length
+        pl.track_count = songs.length
         triggerRef(playlists)
       }
     } catch {}
@@ -127,11 +134,13 @@ export const usePlaylistStore = defineStore('playlist', () => {
         body: JSON.stringify({ song_path: track.path })
       })
       if (!res.ok) return
+      const data = await res.json().catch(() => ({}))
+      // 后端命中已存在去重（INSERT OR IGNORE）时不递增计数
+      if (data.added === false) return
 
-      // 更新 trackCount
       const pl = playlists.value.find(p => p.id === playlistId)
       if (pl) {
-        pl.trackCount = (pl.trackCount || 0) + 1
+        pl.track_count = (pl.track_count || 0) + 1
         if (track.cover) pl.cover_url = track.cover
         triggerRef(playlists)
       }
@@ -155,8 +164,33 @@ export const usePlaylistStore = defineStore('playlist', () => {
       const res = await fetch(apiUrl(`/api/playlists/${playlistId}/songs/by-path?path=${encodeURIComponent(trackPath)}`), {
         method: 'DELETE'
       })
+      if (res.ok) {
+        const pl = playlists.value.find(p => p.id === playlistId)
+        if (pl) {
+          pl.track_count = Math.max(0, (pl.track_count || 0) - 1)
+          triggerRef(playlists)
+        }
+      }
       loadedPlaylists.delete(playlistId)
     } catch {}
+  }
+
+  // 保存自定义排序（侧边栏拖拽结束后调用），并同步本地 sort_order
+  async function reorderPlaylists(orderedIds) {
+    try {
+      const res = await fetch(apiUrl('/api/playlists/reorder'), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order: orderedIds })
+      })
+      if (!res.ok) return false
+      orderedIds.forEach((id, idx) => {
+        const item = playlists.value.find(p => p.id === id)
+        if (item) item.sort_order = idx
+      })
+      triggerRef(playlists)
+      return true
+    } catch { return false }
   }
 
   // 获取歌单（route.params.id 是字符串，数据库 id 是数字，松散比较）
@@ -174,7 +208,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
   }
 
   const totalTracks = computed(() => {
-    return playlists.value.reduce((sum, p) => sum + (p.trackCount || 0), 0)
+    return playlists.value.reduce((sum, p) => sum + (p.track_count || 0), 0)
   })
 
   // 向后兼容: ensureTracksLoaded
@@ -187,6 +221,7 @@ export const usePlaylistStore = defineStore('playlist', () => {
   return {
     playlists, totalTracks, isLoaded,
     favoritesPlaylist, isSystemPlaylist,
+    sortMode, setSortMode, reorderPlaylists,
     createPlaylist, deletePlaylist, renamePlaylist,
     addToPlaylist, removeFromPlaylist, getPlaylist,
     ensureTracksLoaded, loadPlaylistTracks, savePlaylists

@@ -26,6 +26,7 @@
         <el-button size="small" @click="batchPlay(filtered.filter(t => selected.has(t.path)))">播放选中</el-button>
         <el-button size="small" @click="batchAddQueueNext(filtered.filter(t => selected.has(t.path)))">插播至当前播放后</el-button>
         <el-button size="small" @click="batchAddQueue(filtered.filter(t => selected.has(t.path)))">插播至队列末尾</el-button>
+        <el-button size="small" @click="showAddPlaylistDialog(filtered.filter(t => selected.has(t.path)))">添加到歌单</el-button>
         <el-button size="small" @click="selectAll(filtered)">全选</el-button>
         <el-button size="small" @click="clearSelection">取消</el-button>
       </span>

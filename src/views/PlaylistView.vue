@@ -45,6 +45,7 @@
           <el-button size="small" @click="batchPlay(playlist.tracks.filter(t => selected.has(t.path)))">播放选中</el-button>
           <el-button size="small" @click="batchAddQueueNext(playlist.tracks.filter(t => selected.has(t.path)))">插播至当前播放后</el-button>
           <el-button size="small" @click="batchAddQueue(playlist.tracks.filter(t => selected.has(t.path)))">插播至队列末尾</el-button>
+          <el-button size="small" @click="showAddPlaylistDialog(playlist.tracks.filter(t => selected.has(t.path) && !t.missing))">添加到歌单</el-button>
           <el-button size="small" @click="selectAll(playlist.tracks)">全选</el-button>
           <el-button size="small" @click="clearSelection">取消</el-button>
         </span>
@@ -152,7 +153,7 @@ const modal = useModal()
 const playerStore = usePlayerStore()
 const { currentTrack } = storeToRefs(playerStore)
 
-const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, openArtistSubmenu, createSubActionHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems } = useTrackList()
+const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, createCtxHandler, openArtistSubmenu, createSubActionHandler, contextMenuTarget, toggleSelectMode, isSelected, toggleSelect, selectAll, clearSelection, buildMenuItems, showAddPlaylistDialog } = useTrackList()
 
 const ctxHandler = createCtxHandler(playerStore, router)
 const subActionHandler = createSubActionHandler(router)

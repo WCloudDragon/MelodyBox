@@ -47,6 +47,7 @@
           <el-button size="small" @click="batchPlay(artist.tracks.filter(t => selected.has(t.path)))">播放选中</el-button>
           <el-button size="small" @click="batchAddQueueNext(artist.tracks.filter(t => selected.has(t.path)))">插播至当前播放后</el-button>
           <el-button size="small" @click="batchAddQueue(artist.tracks.filter(t => selected.has(t.path)))">插播至队列末尾</el-button>
+          <el-button size="small" @click="showAddPlaylistDialog(artist.tracks.filter(t => selected.has(t.path)))">添加到歌单</el-button>
           <el-button size="small" @click="selectAll(artist.tracks)">全选</el-button>
           <el-button size="small" @click="clearSelection">取消</el-button>
         </span>
