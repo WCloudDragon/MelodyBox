@@ -1,7 +1,12 @@
 import os
 import hashlib
+import logging
 import re
+import threading
+import traceback
 from concurrent.futures import ThreadPoolExecutor
+
+logger = logging.getLogger('melodybox.scan')
 
 
 def _get_cover_dir():
@@ -25,6 +30,8 @@ AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.aac', '.m4a', '.wma', '.a
 
 # 缩略图生成进度（全局，供 API 轮询）
 _thumb_progress = {'scanning': False, 'current': 0, 'total': 0, 'path': ''}
+# 串行化缩略图批次：本地扫描与云端上传可能同时触发，共用一份进度必须互斥
+_thumb_lock = threading.Lock()
 
 
 def _ensure_tables(db_conn):
@@ -91,7 +98,8 @@ def _ensure_tables(db_conn):
 
     # 歌单/收藏关联的指纹孤儿暂存表：移除文件夹/删除歌曲时把歌单关联
     # 暂存于此（song 级联删除后 song_id 无从恢复），文件重新扫描入库时
-    # 按指纹重连，使歌单/收藏内容在移除-重加文件夹后保持完整
+    # 按指纹重连，使歌单/收藏内容在移除-重加文件夹后保持完整。
+    # 元数据快照列用于歌单页展示"文件缺失"的灰色失效条目。
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS orphaned_playlist_songs (
             playlist_id INTEGER NOT NULL,
@@ -100,6 +108,13 @@ def _ensure_tables(db_conn):
             UNIQUE(playlist_id, fingerprint)
         )
     ''')
+    for col, decl in (('file_path', 'TEXT DEFAULT ""'), ('title', 'TEXT DEFAULT ""'),
+                      ('artist', 'TEXT DEFAULT ""'), ('album', 'TEXT DEFAULT ""'),
+                      ('cover_url', 'TEXT DEFAULT ""'), ('duration', 'INTEGER DEFAULT 0')):
+        try:
+            cursor.execute(f'ALTER TABLE orphaned_playlist_songs ADD COLUMN {col} {decl}')
+        except Exception:
+            pass  # 列已存在
 
     db_conn.commit()
     cursor.close()
@@ -121,8 +136,16 @@ def scan_directory(dir_path):
     return results
 
 
-def extract_cover(mutagen_file, file_path):
-    """提取封面图片保存到临时目录，返回路径"""
+def extract_cover(mutagen_file, file_path=''):
+    """提取内嵌封面保存到缓存目录，返回缓存路径。
+
+    以封面"内容哈希"命名（旧实现用 md5(音频文件路径)：路径不变则封面文件
+    永不更新，音频内嵌封面更新会被旧缓存吃掉）。内容哈希下封面内容变化
+    → 文件名变化 → 数据库 cover_url 更新 → 缩略图按新名补齐 → 前端
+    thumb:// 的 immutable 缓存（URL 含文件名）自然失效，实现封面更新后的
+    精准替换；同一张封面图被多首歌引用时也自动去重。
+    file_path 参数保留以兼容云端上传调用点，已不参与命名。
+    """
     from mutagen.mp3 import MP3
     from mutagen.flac import FLAC
     from mutagen.id3 import APIC
@@ -160,8 +183,8 @@ def extract_cover(mutagen_file, file_path):
     if not picture_data:
         return ''
 
-    file_hash = hashlib.md5(file_path.encode()).hexdigest()
-    cover_path = os.path.join(cover_dir, f'{file_hash}{ext}')
+    cover_hash = hashlib.md5(picture_data).hexdigest()
+    cover_path = os.path.join(cover_dir, f'{cover_hash}{ext}')
     if not os.path.exists(cover_path):
         try:
             with open(cover_path, 'wb') as f:
@@ -173,50 +196,72 @@ def extract_cover(mutagen_file, file_path):
 
 
 def pre_generate_thumbs_batch(cover_paths, max_workers=4):
-    """批量预生成缩略图（线程池并行），扫描完成后调用"""
+    """批量预生成缩略图（线程池并行），扫描完成后调用。
+
+    - 先筛出真正缺少尺寸的封面：全部已存在时不产生进度（避免"空转进度条"）
+    - 用 _thumb_lock 串行化整批任务，进度只对应唯一在跑的一批
+    """
     global _thumb_progress
     if not cover_paths:
-        _thumb_progress['scanning'] = False
         return
 
-    from threading import Lock
-    thumbs_base = _get_thumbs_dir()
-    sizes = [72, 80, 200, 280, 292, 332]
-    total = len(cover_paths)
-    done = [0]
-    lock = Lock()
-    _thumb_progress = {'scanning': True, 'current': 0, 'total': total, 'path': ''}
+    with _thumb_lock:
+        thumbs_base = _get_thumbs_dir()
+        sizes = [72, 80, 200, 280, 292, 332]
 
-    def _generate_one(cover_path):
-        basename = os.path.basename(cover_path)
+        pending = []
+        for cover_path in cover_paths:
+            basename = os.path.basename(cover_path)
+            try:
+                need = any(not os.path.exists(os.path.join(thumbs_base, str(s), basename))
+                           for s in sizes)
+            except Exception:
+                need = True
+            if need:
+                pending.append(cover_path)
+
+        if not pending:
+            _thumb_progress = {'scanning': False, 'current': 0, 'total': 0, 'path': ''}
+            return
+
+        total = len(pending)
+        done = [0]
+        lock = threading.Lock()
+        # 本批次独占的进度对象：即使其它线程重置全局变量，也不会把数字写串
+        progress = {'scanning': True, 'current': 0, 'total': total, 'path': ''}
+        _thumb_progress = progress
+
+        def _generate_one(cover_path):
+            basename = os.path.basename(cover_path)
+            try:
+                with lock:
+                    progress['path'] = basename
+                from PIL import Image
+                with Image.open(cover_path) as img:
+                    for size in sizes:
+                        thumb_dir = os.path.join(thumbs_base, str(size))
+                        os.makedirs(thumb_dir, exist_ok=True)
+                        thumb_path = os.path.join(thumb_dir, basename)
+                        if os.path.exists(thumb_path):
+                            continue
+                        tmp = thumb_path + '.tmp'
+                        thumb = img.copy()
+                        thumb.thumbnail((size, size), Image.LANCZOS)
+                        fmt = img.format or 'JPEG'
+                        thumb.save(tmp, format=fmt, quality=82)
+                        os.replace(tmp, thumb_path)
+            except Exception:
+                pass
+            finally:
+                with lock:
+                    done[0] += 1
+                    progress['current'] = done[0]
+
         try:
-            with lock:
-                _thumb_progress['path'] = basename
-            from PIL import Image
-            img = Image.open(cover_path)
-            for size in sizes:
-                thumb_dir = os.path.join(thumbs_base, str(size))
-                os.makedirs(thumb_dir, exist_ok=True)
-                thumb_path = os.path.join(thumb_dir, basename)
-                if os.path.exists(thumb_path):
-                    continue
-                tmp = thumb_path + '.tmp'
-                thumb = img.copy()
-                thumb.thumbnail((size, size), Image.LANCZOS)
-                fmt = img.format or 'JPEG'
-                thumb.save(tmp, format=fmt, quality=82)
-                os.replace(tmp, thumb_path)
-        except Exception:
-            pass
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                list(executor.map(_generate_one, pending))
         finally:
-            with lock:
-                done[0] += 1
-                _thumb_progress['current'] = done[0]
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        list(executor.map(_generate_one, cover_paths))
-
-    _thumb_progress['scanning'] = False
+            progress['scanning'] = False
 
 
 def detect_language(title, lyrics, artist=''):
@@ -486,7 +531,7 @@ def _upsert_artist(cursor, artist_name):
 
 
 def _upsert_album(cursor, album_name, cover_url, year, genre):
-    """INSERT OR IGNORE 专辑，返回 album_id"""
+    """INSERT OR IGNORE 专辑，返回 album_id；已存在时封面跟随最新内嵌封面刷新"""
     name = album_name.strip()
     if not name:
         return None
@@ -494,9 +539,15 @@ def _upsert_album(cursor, album_name, cover_url, year, genre):
         'INSERT OR IGNORE INTO albums (title, cover_url, year, genre) VALUES (?, ?, ?, ?)',
         (name, cover_url, year, genre)
     )
-    cursor.execute('SELECT id FROM albums WHERE title = ? AND year = ?', (name, year))
+    cursor.execute('SELECT id, cover_url FROM albums WHERE title = ? AND year = ?', (name, year))
     row = cursor.fetchone()
-    return row['id'] if row else None
+    if row is None:
+        return None
+    # 内容哈希命名下歌曲封面更新 → 专辑封面同步刷新（旧行为是 INSERT OR
+    # IGNORE 后永不更新，专辑页会一直停留在旧封面）
+    if cover_url and row['cover_url'] != cover_url:
+        cursor.execute('UPDATE albums SET cover_url = ? WHERE id = ?', (cover_url, row['id']))
+    return row['id']
 
 
 def _handle_song_relations(cursor, song_id, meta):
@@ -576,11 +627,106 @@ def _reconnect_orphaned_playlist_songs(cursor, song_id, fingerprint):
     cursor.execute('DELETE FROM orphaned_playlist_songs WHERE fingerprint = ?', (fingerprint,))
 
 
+def _stage_orphan_playlist_links(cursor, song_ids):
+    """删除歌曲前，把它们的歌单/收藏关联按指纹暂存到 orphaned_playlist_songs。
+
+    同时快照歌曲元数据（file_path/title/artist/album/cover_url/duration），
+    供歌单页展示"文件缺失"的灰色失效条目。UPSERT 保证旧暂存行的元数据
+    也能在再次删除时补全。
+    """
+    if not song_ids:
+        return
+    placeholders = ','.join(['?'] * len(song_ids))
+    cursor.execute(f'''
+        INSERT INTO orphaned_playlist_songs
+            (playlist_id, fingerprint, file_path, title, artist, album, cover_url, duration)
+        SELECT ps.playlist_id, s.fingerprint, s.file_path, s.title, s.artist,
+               s.album, s.cover_url, s.duration
+        FROM playlist_song ps
+        JOIN songs s ON s.id = ps.song_id
+        WHERE ps.song_id IN ({placeholders}) AND s.fingerprint != ''
+        ON CONFLICT(playlist_id, fingerprint) DO UPDATE SET
+            file_path = COALESCE(excluded.file_path, file_path),
+            title = COALESCE(excluded.title, title),
+            artist = COALESCE(excluded.artist, artist),
+            album = COALESCE(excluded.album, album),
+            cover_url = COALESCE(excluded.cover_url, cover_url),
+            duration = COALESCE(excluded.duration, duration)
+    ''', song_ids)
+
+
+def delete_songs_from_db(cursor, song_ids, preserve_footprints=True):
+    """从音乐库删除歌曲的公共内核（不删除源文件），返回删除的歌曲数。
+
+    所有删除入口（单曲/批量移除、移除文件夹、扫描清理消失文件）统一走
+    此函数，保证附属数据处理行为一致。
+
+    preserve_footprints=True（保留歌曲足迹）：
+      - 歌单/收藏关联按指纹暂存（含元数据快照），重导同指纹歌曲自动恢复；
+      - play_stats / play_history 的 song_id 置 NULL（保留指纹），重导自动重连。
+    preserve_footprints=False（不留足迹）：
+      - 歌单关联随外键级联直接删除，不暂存；
+      - play_stats / play_history 真删，且这些指纹的历史孤儿行一并删除
+        （同一首歌此前被删过一次留下的待重连数据也彻底清除）。
+    两种模式共同：清理 song_artist / song_album / song_vectors(local)，
+    并失效推荐/搜索的向量内存缓存。
+    """
+    if not song_ids:
+        return 0
+    placeholders = ','.join(['?'] * len(song_ids))
+
+    if preserve_footprints:
+        _stage_orphan_playlist_links(cursor, song_ids)
+    # else: 不暂存，playlist_song 由外键 ON DELETE CASCADE 直接删除
+
+    cursor.execute(
+        f'SELECT DISTINCT fingerprint FROM songs WHERE id IN ({placeholders}) AND fingerprint != ""',
+        song_ids)
+    fingerprints = [r[0] for r in cursor.fetchall()]
+
+    cursor.execute(f'DELETE FROM song_artist WHERE song_id IN ({placeholders})', song_ids)
+    cursor.execute(f'DELETE FROM song_album WHERE song_id IN ({placeholders})', song_ids)
+    cursor.execute(
+        f"DELETE FROM song_vectors WHERE song_id IN ({placeholders}) AND source = 'local'",
+        song_ids)
+
+    if preserve_footprints:
+        cursor.execute(
+            f'UPDATE play_stats SET song_id = NULL WHERE song_id IN ({placeholders})', song_ids)
+        cursor.execute(
+            f'UPDATE play_history SET song_id = NULL WHERE song_id IN ({placeholders})', song_ids)
+    else:
+        cursor.execute(f'DELETE FROM play_stats WHERE song_id IN ({placeholders})', song_ids)
+        cursor.execute(f'DELETE FROM play_history WHERE song_id IN ({placeholders})', song_ids)
+        if fingerprints:
+            fp_ph = ','.join(['?'] * len(fingerprints))
+            # 无痕：连此前删除留下的待重连孤儿行一起清掉
+            cursor.execute(
+                f'DELETE FROM play_stats WHERE song_id IS NULL AND fingerprint IN ({fp_ph})',
+                fingerprints)
+            cursor.execute(
+                f'DELETE FROM play_history WHERE song_id IS NULL AND fingerprint IN ({fp_ph})',
+                fingerprints)
+
+    cursor.execute(f'DELETE FROM songs WHERE id IN ({placeholders})', song_ids)
+
+    try:
+        from services.recommender import invalidate_embedding_cache
+        invalidate_embedding_cache()
+    except Exception:
+        pass
+    return len(song_ids)
+
+
 def scan_and_store(db_conn, dir_paths, progress_callback=None):
     """扫描目录并存储到 SQLite 数据库，同时填充 artists/albums/song_artist/song_album 表"""
-    # 重置缩略图进度（避免上次扫描的残留数据影响本次）
+    # 重置缩略图进度：仅当没有批次正在生成时清空，避免覆盖正在跑的进度
     global _thumb_progress
-    _thumb_progress = {'scanning': False, 'current': 0, 'total': 0, 'path': ''}
+    if _thumb_lock.acquire(blocking=False):
+        try:
+            _thumb_progress = {'scanning': False, 'current': 0, 'total': 0, 'path': ''}
+        finally:
+            _thumb_lock.release()
 
     # 确保相关表存在
     _ensure_tables(db_conn)
@@ -626,8 +772,10 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
 
         is_new = file_path not in existing
 
-        # 收集新封面
-        if is_new and meta['cover_url']:
+        # 收集需检查缩略图的封面：新歌与更新歌统一收集。
+        # 内容哈希命名下封面更新 → 新文件名 → 缩略图必然缺失 → 本批会重建；
+        # 未变化的歌其缩略图已齐全，pre_generate_thumbs_batch 内部会跳过。
+        if meta['cover_url']:
             new_cover_paths.append(meta['cover_url'])
 
         try:
@@ -700,6 +848,7 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
 
         except Exception as e:
             errors += 1
+            logger.warning('解析失败: %s (%s)', file_path, e)
 
         # 每完成一首有变更的歌曲立即提交，避免整个扫描期间长期占用数据库写锁
         # （否则扫描过程中播放/跳过等统计上报会因写锁等待超时返回 500）
@@ -732,35 +881,9 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
                             if db_paths_in_scope.get(fp) is not None]
 
         if deleted_song_ids:
-            # 清理关联表
-            placeholders_ids = ','.join(['?'] * len(deleted_song_ids))
-            cursor.execute(f'DELETE FROM song_artist WHERE song_id IN ({placeholders_ids})',
-                           deleted_song_ids)
-            cursor.execute(f'DELETE FROM song_album WHERE song_id IN ({placeholders_ids})',
-                           deleted_song_ids)
-            # 清理重构版向量表（本地歌曲）
-            cursor.execute(
-                f'DELETE FROM song_vectors WHERE song_id IN ({placeholders_ids}) AND source = \'local\'',
-                deleted_song_ids
-            )
-            # 将 play_stats 中的记录置为孤儿（song_id 置 NULL，保留 fingerprint 以便后续重连）
-            cursor.execute(f'UPDATE play_stats SET song_id = NULL WHERE song_id IN ({placeholders_ids})',
-                           deleted_song_ids)
-            # 歌单/收藏关联：外键 CASCADE 会直接删除，先暂存为指纹孤儿，
-            # 文件若重新扫描入库则按指纹恢复
-            cursor.execute(f'''
-                INSERT OR IGNORE INTO orphaned_playlist_songs (playlist_id, fingerprint)
-                SELECT ps.playlist_id, s.fingerprint
-                FROM playlist_song ps
-                JOIN songs s ON s.id = ps.song_id
-                WHERE ps.song_id IN ({placeholders_ids}) AND s.fingerprint != ''
-            ''', deleted_song_ids)
-            # 失效推荐/搜索的向量内存缓存：否则已删歌曲仍会出现在推荐结果中
-            try:
-                from services.recommender import invalidate_embedding_cache
-                invalidate_embedding_cache()
-            except Exception:
-                pass
+            # 统一删除内核（保留足迹模式）：暂存歌单关联、置空播放数据，
+            # 清理关联表与向量、失效推荐缓存
+            delete_songs_from_db(cursor, deleted_song_ids, preserve_footprints=True)
 
         # 删除歌曲记录
         placeholders = ','.join(['?'] * len(deleted_file_paths))
@@ -768,13 +891,19 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
                        list(deleted_file_paths))
         db_conn.commit()
 
-    cursor.close()
-
     # 异步批量生成缩略图（后台线程，不阻塞扫描完成通知）
     if new_cover_paths:
-        import threading
         paths_copy = list(new_cover_paths)
         threading.Thread(target=pre_generate_thumbs_batch, args=(paths_copy,), daemon=True).start()
+
+    # ---- 孤儿封面/缩略图 GC ----
+    # 内容哈希命名下封面更新后旧文件不再被任何歌曲/专辑引用，删除它们防止
+    # 缓存目录无限膨胀。仅按 songs + albums 的 cover_url 判定引用；跳过
+    # .tmp（缩略图批次可能正在写）。缩略图批次写入的都是被引用的文件名，
+    # 与 GC 的删除集合不相交，先后顺序无影响。
+    _gc_orphan_covers(cursor, keep_tmp=True)
+
+    cursor.close()
 
     return {
         'total': total,
@@ -783,3 +912,64 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
         'deleted': deleted_count,
         'errors': errors
     }
+
+
+def _gc_orphan_covers(cursor, keep_tmp=False):
+    """删除 covers/ 与 thumbs/ 中不被 songs.cover_url / albums.cover_url 引用的文件。
+
+    cursor 须来自已提交全部写事务的连接（扫描末尾调用）。返回删除的文件数，
+    出错返回 -1。
+    """
+    removed = 0
+    try:
+        cursor.execute(
+            "SELECT DISTINCT cover_url FROM songs WHERE cover_url != '' "
+            "UNION SELECT DISTINCT cover_url FROM albums WHERE cover_url != ''"
+        )
+        keep = {os.path.basename(row['cover_url']) for row in cursor.fetchall()}
+        # 云端歌曲封面与本地共用同一缓存目录，必须纳入引用集合
+        try:
+            cursor.execute(
+                "SELECT DISTINCT cover_url FROM cloud_songs WHERE cover_url != ''")
+            keep |= {os.path.basename(row['cover_url']) for row in cursor.fetchall()}
+        except Exception:
+            pass  # 老库无 cloud_songs 表时跳过该来源
+        # 失效歌单条目的封面快照同样被引用（歌单页"文件缺失"灰行要显示封面）
+        try:
+            cursor.execute(
+                "SELECT DISTINCT cover_url FROM orphaned_playlist_songs WHERE cover_url != ''")
+            keep |= {os.path.basename(row['cover_url']) for row in cursor.fetchall()}
+        except Exception:
+            pass
+
+        cover_dir = _get_cover_dir()
+        if os.path.isdir(cover_dir):
+            for name in os.listdir(cover_dir):
+                if name in keep or (keep_tmp and name.endswith('.tmp')):
+                    continue
+                try:
+                    os.remove(os.path.join(cover_dir, name))
+                    removed += 1
+                except Exception:
+                    pass
+
+        thumbs_base = _get_thumbs_dir()
+        if os.path.isdir(thumbs_base):
+            for size in os.listdir(thumbs_base):
+                size_dir = os.path.join(thumbs_base, size)
+                if not os.path.isdir(size_dir):
+                    continue
+                for name in os.listdir(size_dir):
+                    if name in keep or (keep_tmp and name.endswith('.tmp')):
+                        continue
+                    try:
+                        os.remove(os.path.join(size_dir, name))
+                        removed += 1
+                    except Exception:
+                        pass
+        if removed:
+            logger.info('封面GC: 清理孤儿文件 %d 个', removed)
+        return removed
+    except Exception:
+        logger.error('封面GC异常:\n%s', traceback.format_exc())
+        return -1

@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify, current_app
+import logging
 import os
 import threading
 import traceback
@@ -7,9 +8,17 @@ from routes.auth import token_required
 
 folders_bp = Blueprint('folders', __name__, url_prefix='/api/folders')
 
+logger = logging.getLogger('melodybox.scan')
+
 # 扫描进度（全局，单用户桌面应用无需加锁）
 _scan_progress = {'current': 0, 'total': 0, 'path': '', 'scanning': False,
-                  'inserted': 0, 'updated': 0, 'deleted': 0}
+                  'inserted': 0, 'updated': 0, 'deleted': 0, 'errors': 0}
+
+# 扫描队列：同一时刻只允许一个扫描线程，多个目录按顺序处理。
+# 并发扫描会互相覆盖同一份全局进度，导致前端进度跳变/提前完成/统计错乱。
+_scan_queue = []
+_scan_lock = threading.Lock()
+_scan_thread = None
 
 
 @folders_bp.before_request
@@ -125,7 +134,70 @@ def scan_progress():
         'inserted': _scan_progress.get('inserted', 0),
         'updated': _scan_progress.get('updated', 0),
         'deleted': _scan_progress.get('deleted', 0),
+        'errors': _scan_progress.get('errors', 0),
     })
+
+
+def _enqueue_scan(dir_path, flask_app):
+    """把扫描任务加入队列，由单一工作线程顺序处理。
+
+    并发扫描会互相覆盖同一份全局进度（前端表现为进度跳变、提前完成、
+    统计错乱），因此同一时刻只允许一个扫描在跑，其余目录排队等待。
+    """
+    global _scan_thread
+    with _scan_lock:
+        _scan_queue.append((dir_path, flask_app))
+        if _scan_thread is None or not _scan_thread.is_alive():
+            _scan_thread = threading.Thread(target=_scan_worker, daemon=True)
+            _scan_thread.start()
+
+
+def _scan_worker():
+    """顺序消费扫描队列；队列空时退出。"""
+    global _scan_progress
+    from services.scanner import scan_and_store
+
+    while True:
+        with _scan_lock:
+            if not _scan_queue:
+                return
+            dir_path, flask_app = _scan_queue.pop(0)
+
+        logger.info('扫描开始: %s', dir_path)
+        _scan_progress = {'current': 0, 'total': 0, 'path': '', 'scanning': True,
+                          'inserted': 0, 'updated': 0, 'deleted': 0, 'errors': 0}
+
+        def _cb(current, total, file_path):
+            _scan_progress['current'] = current
+            _scan_progress['total'] = total
+            _scan_progress['path'] = file_path
+
+        try:
+            with flask_app.app_context():
+                db2 = get_db()
+                result = scan_and_store(db2, [dir_path], progress_callback=_cb)
+                db2.close()
+                if result:
+                    _scan_progress['inserted'] = result.get('inserted', 0)
+                    _scan_progress['updated'] = result.get('updated', 0)
+                    _scan_progress['deleted'] = result.get('deleted', 0)
+                    _scan_progress['errors'] = result.get('errors', 0)
+                    logger.info('扫描完成: %s 新增=%s 更新=%s 删除=%s 解析失败=%s',
+                                dir_path, result.get('inserted', 0),
+                                result.get('updated', 0), result.get('deleted', 0),
+                                result.get('errors', 0))
+                    # 新歌曲入库后自动触发 embedding 生成
+                    if result.get('inserted', 0) > 0 or result.get('updated', 0) > 0:
+                        from routes.ai import auto_generate_embeddings
+                        auto_generate_embeddings(flask_app)
+        except Exception:
+            logger.error('扫描异常: %s\n%s', dir_path, traceback.format_exc())
+        finally:
+            # 队列还有任务时保持 scanning=True，前端看到的是一次连续扫描
+            with _scan_lock:
+                has_more = bool(_scan_queue)
+            if not has_more:
+                _scan_progress['scanning'] = False
 
 
 @folders_bp.route('/thumb-progress')
@@ -254,40 +326,10 @@ def add_folder():
         cursor.close()
         db.close()
 
-        # 异步扫描：后台线程，前端轮询进度
+        # 异步扫描：加入队列由工作线程顺序处理，前端轮询进度
         # 必须捕获 app 实例，因为 current_app 在线程中不可用
         flask_app = current_app._get_current_object()
-
-        def _scan_async(dir_path):
-            global _scan_progress
-            from services.scanner import scan_and_store
-            _scan_progress = {'current': 0, 'total': 0, 'path': '', 'scanning': True,
-                              'inserted': 0, 'updated': 0, 'deleted': 0}
-
-            def _cb(current, total, file_path):
-                _scan_progress['current'] = current
-                _scan_progress['total'] = total
-                _scan_progress['path'] = file_path
-
-            try:
-                with flask_app.app_context():
-                    db2 = get_db()
-                    result = scan_and_store(db2, [dir_path], progress_callback=_cb)
-                    db2.close()
-                    if result:
-                        _scan_progress['inserted'] = result.get('inserted', 0)
-                        _scan_progress['updated'] = result.get('updated', 0)
-                        _scan_progress['deleted'] = result.get('deleted', 0)
-                        # 新歌曲入库后自动触发 embedding 生成
-                        if result.get('inserted', 0) > 0 or result.get('updated', 0) > 0:
-                            from routes.ai import auto_generate_embeddings
-                            auto_generate_embeddings(flask_app)
-            except Exception as e:
-                traceback.print_exc()
-            finally:
-                _scan_progress['scanning'] = False
-
-        threading.Thread(target=_scan_async, args=(path,), daemon=True).start()
+        _enqueue_scan(path, flask_app)
 
         return jsonify({'success': True, 'message': '开始扫描...'})
     except Exception as e:
@@ -309,27 +351,16 @@ def remove_folder(id):
         dir_path = row['path']
         norm = dir_path.replace('\\', '/')
 
-        # 歌单/收藏关联暂存：外键级联会直接删除 playlist_song，先把指向本目录
-        # 歌曲的关联按指纹暂存，文件重新扫描入库时自动恢复（同 play_history 机制）
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS orphaned_playlist_songs (
-                playlist_id INTEGER NOT NULL,
-                fingerprint TEXT NOT NULL,
-                created_at TEXT DEFAULT (datetime('now','localtime')),
-                UNIQUE(playlist_id, fingerprint)
-            )
-        ''')
-        cursor.execute('''
-            INSERT OR IGNORE INTO orphaned_playlist_songs (playlist_id, fingerprint)
-            SELECT ps.playlist_id, s.fingerprint
-            FROM playlist_song ps
-            JOIN songs s ON s.id = ps.song_id
-            WHERE REPLACE(s.file_path, '\\', '/') LIKE ? AND s.fingerprint != ''
-        ''', (norm + '/%',))
+        # 删除该目录下所有歌曲：统一删除内核（保留足迹模式）——歌单关联按
+        # 指纹暂存（含元数据快照，重导自动恢复）、播放数据置孤儿待重连、
+        # 清理关联表与向量、失效推荐缓存
+        cursor.execute(
+            "SELECT id FROM songs WHERE REPLACE(file_path, '\\', '/') LIKE ?",
+            (norm + '/%',))
+        song_ids = [r[0] for r in cursor.fetchall()]
+        from services.scanner import delete_songs_from_db
+        delete_songs_from_db(cursor, song_ids, preserve_footprints=True)
 
-        # 删除该目录下所有歌曲（外键级联会清理 song_artist/song_album/playlist_song）
-        cursor.execute("DELETE FROM songs WHERE REPLACE(file_path, '\\', '/') LIKE ?", (norm + '/%',))
-        # 清理 play_stats 中对应 fingerprint 的记录（已是孤儿 song_id=NULL 的保留）
         cursor.execute('DELETE FROM scan_directories WHERE id = ?', (id,))
 
         # 清理空的艺术家和专辑
@@ -345,13 +376,6 @@ def remove_folder(id):
         ''')
 
         db.commit()
-
-        # 失效推荐/搜索的向量内存缓存：否则已删歌曲仍会出现在推荐结果中
-        try:
-            from services.recommender import invalidate_embedding_cache
-            invalidate_embedding_cache()
-        except Exception:
-            pass
 
         cursor.execute('SELECT COUNT(*) as remaining FROM songs')
         remaining = cursor.fetchone()['remaining']
@@ -387,40 +411,9 @@ def rescan_folder(id):
             db.close()
             return jsonify({'error': '文件夹不存在'}), 404
 
-        # 异步扫描
+        # 异步扫描：加入队列由工作线程顺序处理
         flask_app = current_app._get_current_object()
-
-        def _rescan_async(dir_path):
-            global _scan_progress
-            from services.scanner import scan_and_store
-            _scan_progress = {'current': 0, 'total': 0, 'path': '', 'scanning': True,
-                              'inserted': 0, 'updated': 0, 'deleted': 0}
-
-            def _cb(current, total, file_path):
-                _scan_progress['current'] = current
-                _scan_progress['total'] = total
-                _scan_progress['path'] = file_path
-
-            try:
-                with flask_app.app_context():
-                    db2 = get_db()
-                    result = scan_and_store(db2, [dir_path], progress_callback=_cb)
-                    db2.close()
-                    if result:
-                        _scan_progress['inserted'] = result.get('inserted', 0)
-                        _scan_progress['updated'] = result.get('updated', 0)
-                        _scan_progress['deleted'] = result.get('deleted', 0)
-                        # 新歌曲入库后自动触发 embedding 生成
-                        if result.get('inserted', 0) > 0 or result.get('updated', 0) > 0:
-                            from routes.ai import auto_generate_embeddings
-                            auto_generate_embeddings(flask_app)
-            except Exception as e:
-                traceback.print_exc()
-            finally:
-                _scan_progress['scanning'] = False
-
-        path = row['path']
-        threading.Thread(target=_rescan_async, args=(path,), daemon=True).start()
+        _enqueue_scan(row['path'], flask_app)
 
         return jsonify({'success': True, 'message': '开始重新扫描...'})
     except Exception as e:

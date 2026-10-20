@@ -18,6 +18,8 @@ export function createModalProvider() {
     inputPlaceholder: '',
     inputDefault: '',
     inputValidator: null,
+    checkboxLabel: '',
+    checkboxDefault: true,
   })
 
   function open(options) {
@@ -33,6 +35,8 @@ export function createModalProvider() {
       inputPlaceholder: '',
       inputDefault: '',
       inputValidator: null,
+      checkboxLabel: '',
+      checkboxDefault: true,
     })
     Object.assign(state, options, { visible: true })
 

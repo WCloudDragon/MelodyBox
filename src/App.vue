@@ -47,6 +47,8 @@
       :input-placeholder="modalState.inputPlaceholder"
       :input-default="modalState.inputDefault"
       :input-validator="modalState.inputValidator"
+      :checkbox-label="modalState.checkboxLabel"
+      :checkbox-default="modalState.checkboxDefault"
       @confirm="handleModalConfirm"
       @cancel="handleModalCancel"
     />

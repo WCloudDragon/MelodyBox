@@ -67,18 +67,19 @@
             :key="track.path"
               class="track-row"
               v-ripple
-              :class="{ playing: currentTrack?.path === track.path, 'track-row--ctx-active': contextMenuTarget === track.path }"
+              :class="{ playing: currentTrack?.path === track.path, 'track-row--ctx-active': contextMenuTarget === track.path, 'track-row--missing': track.missing }"
               @dblclick="playTrack(track)"
               @contextmenu.prevent="showContextMenu($event, track)"
             >
               <span class="col-index">
                 <span class="index-num">{{ index + 1 }}</span>
-                <el-icon class="play-icon" v-ripple size="16" @click.stop="playTrack(track)"><VideoPlay /></el-icon>
+                <el-icon v-if="!track.missing" class="play-icon" v-ripple size="16" @click.stop="playTrack(track)"><VideoPlay /></el-icon>
               </span>
               <span class="col-title">
                 <LazyCover v-if="track.cover" :src="track.cover" class="row-cover" :thumb-size="72" />
                 <div v-else class="row-cover row-cover--empty"><el-icon size="14"><Headset /></el-icon></div>
                 <span>{{ track.title }}</span>
+                <span v-if="track.missing" class="missing-tag">文件缺失</span>
               </span>
               <span class="col-artist">
                 <template v-for="(name, ai) in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
@@ -174,16 +175,20 @@ watch(() => playlist.value?.tracks.length, () => {
 })
 
 function playTrack(track) {
+  if (track.missing) return // 失效条目无音频源，禁播
   if (!playlist.value) return
-  const idx = playlist.value.tracks.findIndex(t => t.path === track.path)
+  const playable = playlist.value.tracks.filter(t => !t.missing)
+  const idx = playable.findIndex(t => t.path === track.path)
   if (idx !== -1) {
-    playerStore.playAll(playlist.value.tracks, idx)
+    playerStore.playAll(playable, idx)
   }
 }
 
 function playAll() {
-  if (playlist.value) {
-    playerStore.playAll(playlist.value.tracks)
+  if (!playlist.value) return
+  const playable = playlist.value.tracks.filter(t => !t.missing)
+  if (playable.length) {
+    playerStore.playAll(playable)
   }
 }
 
@@ -217,7 +222,11 @@ async function handleDelete() {
       danger: true
     })
     if (playlist.value) {
-      playlistStore.deletePlaylist(playlist.value.id)
+      const ok = await playlistStore.deletePlaylist(playlist.value.id)
+      if (!ok) {
+        ElMessage.error('删除失败，请稍后重试')
+        return
+      }
       ElMessage.success('歌单已删除')
       router.push('/')
     }
@@ -230,20 +239,26 @@ function ctxAction(action) {
 }
 
 // 批量操作
+function playableOf(tracks) {
+  return tracks.filter(t => !t.missing)
+}
 function batchPlay(tracks) {
-  if (!tracks.length) return
-  playerStore.playAll(tracks, 0)
+  const playable = playableOf(tracks)
+  if (!playable.length) return
+  playerStore.playAll(playable, 0)
 }
 function batchAddQueue(tracks) {
-  tracks.forEach(t => playerStore.addToQueue(t))
-  ElMessage.success(`已插播 ${tracks.length} 首至队列末尾`)
+  const playable = playableOf(tracks)
+  if (!playable.length) return
+  playable.forEach(t => playerStore.addToQueue(t))
+  ElMessage.success(`已插播 ${playable.length} 首至队列末尾`)
   clearSelection()
 }
 function batchAddQueueNext(tracks) {
-  tracks.forEach((t, i) => {
-    playerStore.addToQueueNext(t)
-  })
-  ElMessage.success(`已插播 ${tracks.length} 首至下一位置`)
+  const playable = playableOf(tracks)
+  if (!playable.length) return
+  playable.forEach(t => playerStore.addToQueueNext(t))
+  ElMessage.success(`已插播 ${playable.length} 首至下一位置`)
   clearSelection()
 }
 </script>
@@ -300,6 +315,29 @@ function batchAddQueueNext(tracks) {
 .track-row.playing { background: var(--accent-bg); }
 .track-row.playing .col-title span { color: var(--accent-color); }
 .track-row--ctx-active { background: var(--hover-bg); }
+
+/* 失效条目（文件缺失）：整行灰化，重新导入同指纹歌曲后自动恢复正常显示 */
+.track-row--missing .col-title span,
+.track-row--missing .col-artist,
+.track-row--missing .col-album,
+.track-row--missing .col-index .index-num,
+.track-row--missing .col-time { color: var(--text-tertiary); opacity: 0.6; }
+.track-row--missing .col-artist__link,
+.track-row--missing .col-album .link { color: var(--text-tertiary); }
+.track-row--missing .row-cover { opacity: 0.45; filter: grayscale(0.8); }
+/* 缺失行 hover 无播放图标可显示，序号保持可见 */
+.track-row--missing:hover .col-index .index-num,
+.track-row--missing.track-row--ctx-active .col-index .index-num { opacity: 1; }
+
+.missing-tag {
+  flex-shrink: 0;
+  font-size: 10px; line-height: 1;
+  padding: 3px 6px; border-radius: 4px;
+  border: 1px dashed var(--border-color);
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  white-space: nowrap;
+}
 
 .col-index { width: 40px; text-align: center; position: relative; }
 .col-index .index-num { font-size: 12px; color: var(--text-tertiary); transition: opacity 0.12s; }

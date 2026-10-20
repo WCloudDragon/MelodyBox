@@ -33,6 +33,7 @@
         <el-button size="small" @click="batchPlay(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">播放选中</el-button>
         <el-button size="small" @click="batchAddQueueNext(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">插播至当前播放后</el-button>
         <el-button size="small" @click="batchAddQueue(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">插播至队列末尾</el-button>
+        <el-button size="small" type="danger" plain :loading="removing" @click="removeFromLibrary(libraryStore.filteredTracks.filter(t => selected.has(t.path)))">从音乐库移除</el-button>
         <el-button size="small" @click="selectAll(libraryStore.filteredTracks)">全选</el-button>
         <el-button size="small" @click="clearSelection">取消</el-button>
       </span>
@@ -176,6 +177,8 @@ import { useAuthStore } from '@/stores/auth'
 import { usePlaylistStore } from '@/stores/playlist'
 import { formatDuration, formatBitrate, formatSampleRate, qualityClass } from '@/utils/format'
 import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } from '@/utils/scanNotify'
+import { apiUrl } from '@/config/api'
+import { useModal } from '@/composables/useModal'
 import MusicCard from '@/components/music/MusicCard.vue'
 import LazyCover from '@/components/LazyCover.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
@@ -208,6 +211,7 @@ const { multiSelectMode, selected, ctxMenu, showContextMenu, hideContextMenu, cr
 const ctxHandler = createCtxHandler(playerStore, router)
 const subActionHandler = createSubActionHandler(router)
 const auth = useAuthStore()
+const modal = useModal()
 const sourceFilter = ref('all')
 
 const sortOptionsList = [
@@ -269,6 +273,7 @@ watch(sourceFilter, (v) => libraryStore.setSourceFilter(v))
 function ctxAction(action) {
   if (ctxHandler(action)) return
   if (action === 'addToPlaylist') showAddPlaylistDialog(ctxMenu.value.track)
+  if (action === 'removeFromLibrary') removeFromLibrary([ctxMenu.value.track].filter(Boolean))
 }
 
 const detailVisible = ref(false)
@@ -323,6 +328,41 @@ function batchAddQueueNext(tracks) {
   })
   ElMessage.success(`已插播 ${tracks.length} 首至下一位置`)
   clearSelection()
+}
+
+// 从音乐库移除（单曲右键 + 多选批量共用；不删源文件）
+const removing = ref(false)
+async function removeFromLibrary(tracks) {
+  if (!tracks.length) return
+  try {
+    const result = await modal.confirm({
+      title: '从音乐库中移除',
+      message: `确认从音乐库中移除这 ${tracks.length} 首歌曲吗？源文件不会被删除。`,
+      confirmText: '移除',
+      danger: true,
+      checkboxLabel: '保留歌曲足迹（歌单位置、播放次数与播放记录，重新导入相同歌曲后自动恢复）',
+      checkboxDefault: true,
+    })
+    const preserve = !result || result.checked !== false
+    removing.value = true
+    const res = await fetch(apiUrl('/api/music/songs/delete'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: tracks.map(t => t.id), preserve_footprints: preserve })
+    })
+    const data = await res.json()
+    if (!res.ok) { ElMessage.error(data.error || '移除失败'); return }
+    ElMessage.success(preserve
+      ? `已移除 ${data.removed} 首（足迹已保留，重新导入后自动恢复）`
+      : `已移除 ${data.removed} 首（未保留足迹）`)
+    clearSelection()
+    await libraryStore.loadFromApi()
+    libraryStore.loadFoldersList?.()
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '移除失败')
+  } finally {
+    removing.value = false
+  }
 }
 </script>
 

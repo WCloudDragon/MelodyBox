@@ -260,6 +260,57 @@ def get_song_by_path():
         return jsonify({'error': str(e)}), 500
 
 
+@music_bp.route('/songs/delete', methods=['POST'])
+def delete_songs_route():
+    """从音乐库移除歌曲（不删除源文件），支持单曲与批量。
+
+    body: {ids: [int], preserve_footprints: bool}
+    preserve_footprints=true（默认，保留歌曲足迹）：
+      歌单/收藏关联按指纹暂存（含元数据快照，歌单页显示灰色"文件缺失"条目）、
+      播放次数/历史置孤儿待重连——重新导入同指纹歌曲后全部自动恢复。
+    preserve_footprints=false（不留足迹）：
+      毫不留情——歌单条目级联移除、播放次数/历史连同历史孤儿行真删、
+      用户画像立即刷新，系统中不再留有这首歌的任何痕迹。
+    """
+    data = request.get_json(silent=True) or {}
+    ids = data.get('ids') or []
+    preserve = data.get('preserve_footprints', True)
+    if not isinstance(ids, list) or not ids:
+        return jsonify({'error': '请提供要删除的歌曲 id 列表'}), 400
+    if not all(isinstance(i, int) for i in ids):
+        return jsonify({'error': '歌曲 id 必须为整数'}), 400
+
+    try:
+        db = get_db()
+        cursor = db.cursor()
+
+        placeholders = ','.join(['?'] * len(ids))
+        cursor.execute(f'SELECT id FROM songs WHERE id IN ({placeholders})', ids)
+        valid_ids = [r[0] for r in cursor.fetchall()]
+        if not valid_ids:
+            cursor.close()
+            db.close()
+            return jsonify({'error': '歌曲不存在或已被移除'}), 404
+
+        from services.scanner import delete_songs_from_db
+        removed = delete_songs_from_db(cursor, valid_ids, preserve_footprints=bool(preserve))
+        db.commit()
+
+        if not preserve:
+            # 播放历史已真删，用户画像（由播放历史派生）立即重算，实现彻底无痕
+            try:
+                from services.profile import refresh_profile
+                refresh_profile(db, 1)
+            except Exception:
+                pass
+
+        cursor.close()
+        db.close()
+        return jsonify({'success': True, 'removed': removed})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # ==================== 专辑 / 艺术家 / 流派 ====================
 
 @music_bp.route('/albums')

@@ -27,6 +27,9 @@
 
         <template v-else>
           <p class="modal-message" v-if="message">{{ message }}</p>
+          <div v-if="checkboxLabel" class="modal-checkbox">
+            <AppCheckbox v-model="checkboxChecked" :label="checkboxLabel" />
+          </div>
           <slot />
         </template>
 
@@ -49,6 +52,7 @@
 
 <script setup>
 import { ref, watch, nextTick, computed } from 'vue'
+import AppCheckbox from '@/components/AppCheckbox.vue'
 
 const props = defineProps({
   visible: Boolean,
@@ -62,12 +66,16 @@ const props = defineProps({
   inputPlaceholder: { type: String, default: '' },
   inputDefault: { type: String, default: '' },
   inputValidator: { type: Function, default: null },
+  // 复选框：非空 label 时在正文下方渲染，confirm 事件携带 { checked }
+  checkboxLabel: { type: String, default: '' },
+  checkboxDefault: { type: Boolean, default: true },
 })
 const emit = defineEmits(['confirm', 'cancel', 'closed'])
 
 const inputRef = ref(null)
 const inputValue = ref('')
 const inputError = ref('')
+const checkboxChecked = ref(props.checkboxDefault)
 
 const showCancel = computed(() => props.mode !== 'alert')
 
@@ -75,6 +83,7 @@ watch(() => props.visible, async (v) => {
   if (v) {
     inputValue.value = props.inputDefault || ''
     inputError.value = ''
+    checkboxChecked.value = props.checkboxDefault
     await nextTick()
     inputRef.value?.focus()
   }
@@ -88,7 +97,10 @@ function handleConfirm() {
       return
     }
   }
-  emit('confirm', props.mode === 'prompt' ? inputValue.value : undefined)
+  let payload
+  if (props.mode === 'prompt') payload = inputValue.value
+  else if (props.checkboxLabel) payload = { checked: checkboxChecked.value }
+  emit('confirm', payload)
 }
 
 function handleCancel() {
@@ -146,6 +158,13 @@ function emitClosed() {
   color: var(--text-secondary);
   margin: 0 0 16px;
   white-space: pre-line;
+}
+
+.modal-checkbox {
+  margin: 2px 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
 }
 
 .modal-input {

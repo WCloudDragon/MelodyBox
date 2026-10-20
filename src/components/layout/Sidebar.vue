@@ -239,9 +239,16 @@ async function handleCreatePlaylist() {
   background: var(--bg-secondary);
   border-radius: 14px;
   border: 1px solid var(--border-color);
-  overflow: hidden;
+  /* 纵向滚动：中部主导航/歌单可滚，头部与底部按钮组通过 sticky 固定在两端 */
+  overflow-x: hidden;
+  overflow-y: auto;
   z-index: 90;
   transition: width 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+}
+.sidebar::-webkit-scrollbar { width: 4px; }
+.sidebar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
 }
 .sidebar.collapsed {
   width: 64px;
@@ -275,6 +282,11 @@ async function handleCreatePlaylist() {
   justify-content: flex-end;
   padding: 10px 10px 0;
   flex-shrink: 0;
+  /* 固定在顶部：滚动时折叠/隐藏按钮始终可点 */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-secondary);
 }
 .sidebar-toggle {
   width: 34px;
@@ -349,15 +361,6 @@ async function handleCreatePlaylist() {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.playlist-items {
-  max-height: 240px;
-  overflow-y: auto;
-}
-.playlist-items::-webkit-scrollbar { width: 4px; }
-.playlist-items::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
-}
 .empty-hint {
   padding: 12px 8px;
   font-size: 12px;
@@ -367,6 +370,11 @@ async function handleCreatePlaylist() {
 .sidebar__bottom {
   margin-top: auto;
   padding: 8px 12px 12px;
+  /* 固定在底部：账号/登录、设置、主题切换三项始终可见，不随歌单滚动 */
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: var(--bg-secondary);
 }
 
 /* 折叠态：仅保留图标，文字/计数隐藏 */

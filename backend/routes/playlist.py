@@ -240,17 +240,32 @@ def get_playlist_songs(id):
             return jsonify({'error': '歌单不存在'}), 404
 
         cursor.execute('''
-            SELECT s.*
+            SELECT s.*, ps.added_at
             FROM playlist_song ps
             JOIN songs s ON ps.song_id = s.id
             WHERE ps.playlist_id = ?
             ORDER BY ps.added_at ASC
         ''', (id,))
         rows = cursor.fetchall()
+
+        # 失效条目：歌曲已从音乐库移除但保留了足迹（指纹暂存 + 元数据快照），
+        # 前端灰色显示"文件缺失"；重新导入同指纹歌曲后自动恢复为正常条目
+        cursor.execute('''
+            SELECT file_path, title, artist, album, cover_url, duration,
+                   fingerprint, created_at
+            FROM orphaned_playlist_songs
+            WHERE playlist_id = ?
+            ORDER BY created_at ASC
+        ''', (id,))
+        missing_rows = cursor.fetchall()
         cursor.close()
         db.close()
 
-        songs = [row_to_playlist_song(r) for r in rows]
+        songs = [dict(row_to_playlist_song(r), missing=False) for r in rows]
+        for mr in missing_rows:
+            item = row_to_playlist_song(mr)
+            item['missing'] = True
+            songs.append(item)
         return jsonify(songs)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -328,6 +343,23 @@ def remove_song_from_playlist_by_path(id):
     try:
         db = get_db()
         cursor = db.cursor()
+
+        # 失效条目（歌曲已从音乐库移除但保留足迹）：不存在 songs 行，直接删除
+        # 该歌单的指纹暂存行即可
+        cursor.execute(
+            'DELETE FROM orphaned_playlist_songs WHERE playlist_id = ? AND file_path = ?',
+            (id, song_path)
+        )
+        if cursor.rowcount > 0:
+            cursor.execute(
+                "UPDATE playlists SET updated_at = datetime('now','localtime') WHERE id = ?",
+                (id,)
+            )
+            db.commit()
+            cursor.close()
+            db.close()
+            return jsonify({'message': '移除成功'})
+
         cursor.execute('SELECT id FROM songs WHERE file_path = ?', (song_path,))
         song = cursor.fetchone()
         if not song:

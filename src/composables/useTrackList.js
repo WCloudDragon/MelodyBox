@@ -115,6 +115,10 @@ export function useTrackList() {
    * @param {'library'|'playlist'|'album'|'artist'|'default'} page
    */
   function buildMenuItems(page, track, context = {}) {
+    // 失效条目（歌曲已从音乐库移除但保留足迹）：仅允许移除出歌单
+    if (page === 'playlist' && track?.missing) {
+      return [{ label: '从歌单移除', action: 'remove', danger: true }]
+    }
     const artistNames = (track?.artist || '').split('/').map(s => s.trim()).filter(Boolean)
     const hasMultiArtist = artistNames.length > 1
     const currentArtist = context.artistName
@@ -147,6 +151,10 @@ export function useTrackList() {
     // 相似推荐：仅本地歌曲可用（后端 song_id 指向 songs 表）
     if (track && track.id != null && track.source !== 'cloud') {
       items.push({ label: '相似推荐', action: 'goSimilar' })
+    }
+    // 从音乐库移除：仅音乐库页提供（不删源文件，弹窗内可选是否保留歌曲足迹）
+    if (page === 'library' && track && track.id != null && track.source !== 'cloud') {
+      items.push({ label: '从音乐库移除', action: 'removeFromLibrary', danger: true })
     }
     items.push(
       '-',

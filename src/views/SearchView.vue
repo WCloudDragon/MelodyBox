@@ -116,6 +116,7 @@
 defineOptions({ name: 'SearchView' })
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { rankPick } from '@/utils/pinyinSearch'
 import { storeToRefs } from 'pinia'
 import { Search, VideoPlay, Headset } from '@element-plus/icons-vue'
 import { usePlayerStore } from '@/stores/player'
@@ -191,17 +192,18 @@ const GLYPH = {
 const sections = computed(() => {
   const kw = q.value.toLowerCase()
   if (!kw) return []
-  const match = (s) => (s || '').toLowerCase().includes(kw)
 
-  const songs = libraryStore.allTracks.filter(t => match(t.title) || match(t.artist) || match(t.album))
-  const albums = libraryStore.albums.filter(a => match(a.name) || match(a.artist))
+  // 各分组统一走「原文 / 全拼 / 首字母」三级匹配，并按匹配分值排序
+  const fields = t => [t.title, t.artist, t.album]
+  const songs = rankPick(libraryStore.allTracks, fields, kw)
+  const albums = rankPick(libraryStore.albums, a => [a.name, a.artist], kw)
     .map(a => ({ key: a.name, title: a.name, sub: a.artist, cover: a.cover, route: `/album/${encodeURIComponent(a.name)}` }))
-  const artists = libraryStore.artists.filter(a => match(a.name))
+  const artists = rankPick(libraryStore.artists, a => [a.name], kw)
     .map(a => ({ key: a.name, title: a.name, sub: `${a.tracks.length} 首歌曲`, cover: a.tracks?.[0]?.cover || '', glyph: GLYPH.artist, route: `/artist/${encodeURIComponent(a.name)}` }))
-  const playlists = playlistStore.playlists.filter(p => match(p.name) || match(p.description))
+  const playlists = rankPick(playlistStore.playlists, p => [p.name, p.description], kw)
     .map(p => ({ key: String(p.id), title: p.name, sub: p.description || '歌单', cover: p.cover_url || '', glyph: GLYPH.playlist, route: `/playlist/${p.id}` }))
-  const hist = statsRecent.value.filter(t => match(t.title) || match(t.artist) || match(t.album))
-  const tops = statsTop.value.filter(t => match(t.title) || match(t.artist) || match(t.album))
+  const hist = rankPick(statsRecent.value, fields, kw)
+  const tops = rankPick(statsTop.value, fields, kw)
 
   const out = []
   if (songs.length) out.push({ type: 'tracks', key: 'song', label: '歌曲', items: songs, meta: fmtDur })

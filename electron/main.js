@@ -53,20 +53,31 @@ function startFlask() {
   }
 
   const internalDir = path.join(path.dirname(flaskPath), '_internal')
+  // 后端日志落盘：打包版无控制台，stdout/stderr 必须写文件才能排查启动/扫描问题
+  // 单文件上限约 5MB，超出则重新开始，避免无限膨胀
+  const logFile = path.join(DATA_DIR, 'backend.log')
+  try {
+    const st = fs.statSync(logFile)
+    if (st.size > 5 * 1024 * 1024) fs.rmSync(logFile, { force: true })
+  } catch {}
+  const logStream = fs.createWriteStream(logFile, { flags: 'a' })
+  logStream.write(`\n==== MelodyBox backend started ${new Date().toLocaleString()} ====\n`)
+
   flaskProcess = spawn(flaskPath, [], {
     cwd: path.dirname(flaskPath),
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, PYTHONHOME: internalDir }
   })
 
-  flaskProcess.stdout.on('data', data => {
-    const msg = data.toString().trim()
+  flaskProcess.stdout.on('data', data => logStream.write(data))
+  flaskProcess.stderr.on('data', data => logStream.write(data))
+  flaskProcess.on('error', err => {
+    logStream.write(`[flask] 启动失败: ${err.message}\n`)
+    console.error('[flask] 启动失败:', err.message)
   })
-  flaskProcess.stderr.on('data', data => {
-    const msg = data.toString().trim()
-  })
-  flaskProcess.on('error', err => console.error('[flask] 启动失败:', err.message))
   flaskProcess.on('exit', code => {
+    logStream.write(`[flask] exited code=${code}\n`)
+    logStream.end()
     flaskProcess = null
   })
 

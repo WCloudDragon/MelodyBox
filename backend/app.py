@@ -265,6 +265,29 @@ def init_db(app):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_pls_pl ON playlist_song(playlist_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_pls_song ON playlist_song(song_id)')
 
+    # 歌单/收藏关联的指纹孤儿暂存表：移除文件夹/删除歌曲时把歌单关联暂存于此，
+    # 文件重新扫描入库时按指纹重连。
+    # 必须在此建表：删除歌单等接口会清理该表，若等到首次扫描才惰性建表，
+    # 未扫描过的库会因 "no such table" 导致删除歌单失败
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS orphaned_playlist_songs (
+            playlist_id INTEGER NOT NULL,
+            fingerprint TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now','localtime')),
+            UNIQUE(playlist_id, fingerprint)
+        )
+    ''')
+    # 元数据快照列：供歌单页展示"文件缺失"的灰色失效条目（启动时迁移，
+    # 不依赖首次扫描的 _ensure_tables）
+    for _col, _decl in (('file_path', 'TEXT DEFAULT ""'), ('title', 'TEXT DEFAULT ""'),
+                        ('artist', 'TEXT DEFAULT ""'), ('album', 'TEXT DEFAULT ""'),
+                        ('cover_url', 'TEXT DEFAULT ""'), ('duration', 'INTEGER DEFAULT 0')):
+        try:
+            cursor.execute(
+                f'ALTER TABLE orphaned_playlist_songs ADD COLUMN {_col} {_decl}')
+        except Exception:
+            pass  # 列已存在
+
     # ========== 11. settings ==========
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
@@ -597,6 +620,15 @@ def init_db(app):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_fav_user ON favorites(user_id)')
 
     # ========== 25. 系统收藏歌单（初始化 + 老收藏迁移）==========
+    # 首次运行：必须先创建默认管理员，否则下面 user_id=1 的系统歌单会触发外键约束失败
+    cursor.execute('SELECT COUNT(*) FROM users')
+    if cursor.fetchone()[0] == 0:
+        from werkzeug.security import generate_password_hash
+        cursor.execute(
+            'INSERT INTO users (username, password_hash, email, role) VALUES (?, ?, ?, ?)',
+            ('admin', generate_password_hash('admin123'), 'admin@melodybox.local', 'admin')
+        )
+
     # "我的收藏"（is_system=1）不可删除、置顶歌单区；旧 favorites 表的本地收藏迁移进来。
     cursor.execute('SELECT id FROM playlists WHERE is_system = 1 AND user_id = 1 LIMIT 1')
     sys_row = cursor.fetchone()
@@ -620,7 +652,7 @@ def init_db(app):
     cursor.close()
     conn.close()
 
-    # 首次运行：创建默认管理员用户
+    # 首次运行：创建默认管理员用户（已在系统歌单初始化前完成，这里兜底校验）
     from werkzeug.security import generate_password_hash
     conn2 = sqlite3.connect(db_path)
     conn2.execute('PRAGMA foreign_keys = ON')
@@ -643,7 +675,29 @@ def get_db(app):
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA foreign_keys = ON')
     conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA busy_timeout=10000')
+    # 登记到当前应用上下文：即使某条路由走了异常分支漏关连接，
+    # 也会在上下文销毁时统一关闭，避免未提交的写事务长期占住 SQLite 写锁
+    try:
+        tracked = getattr(g, '_db_conns', None)
+        if tracked is None:
+            tracked = []
+            g._db_conns = tracked
+        tracked.append(conn)
+    except RuntimeError:
+        pass  # 无应用上下文时（脚本/裸线程）不登记
     return conn
+
+
+def close_tracked_conns(exc=None):
+    """关闭本次上下文内登记过的全部数据库连接（异常时先回滚释放写锁）"""
+    for conn in getattr(g, '_db_conns', []) or []:
+        try:
+            if exc is not None:
+                conn.rollback()
+            conn.close()
+        except Exception:
+            pass
 
 
 def _init_ai_model_dir(app):
@@ -672,6 +726,19 @@ def create_app():
     # 静默 werkzeug 访问日志
     import logging
     logging.getLogger('werkzeug').setLevel(logging.ERROR)
+
+    # 扫描日志：打包版没有控制台，扫描/解析问题统一落盘便于排查
+    # （%LOCALAPPDATA%/melodybox/scan.log）
+    scan_logger = logging.getLogger('melodybox.scan')
+    scan_logger.setLevel(logging.INFO)
+    if not scan_logger.handlers:
+        _scan_log_dir = os.path.join(
+            os.environ.get('LOCALAPPDATA', os.path.expanduser('~')), 'melodybox')
+        os.makedirs(_scan_log_dir, exist_ok=True)
+        _sfh = logging.FileHandler(os.path.join(_scan_log_dir, 'scan.log'), encoding='utf-8')
+        _sfh.setFormatter(logging.Formatter('%(asctime)s %(message)s'))
+        scan_logger.addHandler(_sfh)
+
     # 推荐引擎日志（含耗时/条数，便于观察与调参）
     rec_logger = logging.getLogger('melodybox.recommend')
     rec_logger.setLevel(logging.INFO)
@@ -736,6 +803,9 @@ def create_app():
 
     app.get_db = lambda: get_db(app)
     app.db_path = app.config['DB_PATH']
+
+    # 请求/应用上下文销毁时统一兜底关闭连接（修复写锁泄漏导致无法删除歌单等问题）
+    app.teardown_appcontext(close_tracked_conns)
 
     # 从数据库初始化 AI 模型缓存路径
     _init_ai_model_dir(app)

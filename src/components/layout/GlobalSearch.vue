@@ -109,12 +109,19 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaylistStore } from '@/stores/playlist'
 import { usePlayerStore } from '@/stores/player'
 import { apiUrl, audioUrl, coverUrl } from '@/config/api'
+import { rankPick, prewarm } from '@/utils/pinyinSearch'
 
 const route = useRoute()
 const router = useRouter()
 const libraryStore = useLibraryStore()
 const playlistStore = usePlaylistStore()
 const playerStore = usePlayerStore()
+
+// 曲库就绪后空闲预建拼音索引（全库约几十毫秒），避免首次输入时才转换造成卡顿
+watch(() => libraryStore.allTracks.length, (n) => {
+  if (!n) return
+  setTimeout(() => prewarm(libraryStore.allTracks.flatMap(t => [t.title, t.artist, t.album])), 0)
+}, { immediate: true })
 
 const rootRef = ref(null)
 const inputRef = ref(null)
@@ -200,29 +207,34 @@ const GROUP_META = {
 const groups = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return []
-  const match = (s) => (s || '').toLowerCase().includes(q)
   const mk = (type, items) => {
     if (!items.length) return null
     return { type, label: GROUP_META[type].label, items }
   }
 
+  // 各分组统一走「原文 / 全拼 / 首字母」三级匹配，并按匹配分值排序后截断
+  const fields = t => [t.title, t.artist, t.album]
+  const nameArtist = a => [a.name, a.artist]
+  const nameOnly = a => [a.name]
+  const nameDesc = p => [p.name, p.description]
+
   // 歌曲
-  const songs = libraryStore.allTracks.filter(t => match(t.title) || match(t.artist) || match(t.album)).slice(0, 5)
+  const songs = rankPick(libraryStore.allTracks, fields, q, 5)
     .map(t => ({ kind: 'song', key: t.path, title: t.title, sub: t.artist, cover: t.cover, glyph: GROUP_META.song.glyph, track: t }))
   // 专辑
-  const albums = libraryStore.albums.filter(a => match(a.name) || match(a.artist)).slice(0, 5)
+  const albums = rankPick(libraryStore.albums, nameArtist, q, 5)
     .map(a => ({ kind: 'album', key: a.name, title: a.name, sub: a.artist, cover: a.cover, glyph: GROUP_META.album.glyph, route: `/album/${encodeURIComponent(a.name)}` }))
   // 艺术家
-  const artists = libraryStore.artists.filter(a => match(a.name)).slice(0, 5)
+  const artists = rankPick(libraryStore.artists, nameOnly, q, 5)
     .map(a => ({ kind: 'artist', key: a.name, title: a.name, sub: `${a.tracks.length} 首歌曲`, cover: '', glyph: GROUP_META.artist.glyph, route: `/artist/${encodeURIComponent(a.name)}` }))
   // 歌单
-  const playlists = playlistStore.playlists.filter(p => match(p.name) || match(p.description)).slice(0, 5)
+  const playlists = rankPick(playlistStore.playlists, nameDesc, q, 5)
     .map(p => ({ kind: 'playlist', key: String(p.id), title: p.name, sub: p.description || '歌单', cover: p.cover_url || '', glyph: GROUP_META.playlist.glyph, route: `/playlist/${p.id}` }))
   // 历史记录
-  const hist = statsRecent.value.filter(t => match(t.title) || match(t.artist) || match(t.album)).slice(0, 5)
+  const hist = rankPick(statsRecent.value, fields, q, 5)
     .map(t => ({ kind: 'history', key: 'h-' + t.path + '-' + t.played_at, title: t.title, sub: t.artist, cover: t.cover, glyph: GROUP_META.history.glyph, meta: fmtRel(t.played_at), track: t }))
   // 播放次数
-  const tops = statsTop.value.filter(t => match(t.title) || match(t.artist) || match(t.album)).slice(0, 5)
+  const tops = rankPick(statsTop.value, fields, q, 5)
     .map(t => ({ kind: 'top', key: 't-' + t.path, title: t.title, sub: t.artist, cover: t.cover, glyph: GROUP_META.top.glyph, meta: `${t.play_count} 次`, track: t }))
 
   const list = [mk('song', songs), mk('album', albums), mk('artist', artists), mk('playlist', playlists), mk('history', hist), mk('top', tops)].filter(Boolean)
