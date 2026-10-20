@@ -366,12 +366,15 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px var(--page-pad-x, 12px) 10px;
+  /* 顶/底收紧：标题与控件贴近标题栏（对齐文件夹页的贴顶比例） */
+  padding: 6px var(--page-pad-x, 12px) 8px;
   margin-bottom: 10px;
   background: transparent;
 }
 .list-page-header__title {
-  font-size: 20px; font-weight: 700; margin: 0; white-space: nowrap;
+  /* 字号对齐文件夹页标题（28px），各页面标题栏视觉统一 */
+  font-size: 28px; font-weight: 700; margin: 0; white-space: nowrap;
+  letter-spacing: -0.3px; line-height: 1.2;
 }
 .list-page-header__count { font-size: 13px; color: var(--text-tertiary); }
 /* 标题/计数随雾显隐（fog-title 页面）：顶部隐藏（标题由内容区 page-content-title 承载），

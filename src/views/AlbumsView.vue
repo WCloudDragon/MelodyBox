@@ -4,7 +4,6 @@
       title="专辑"
       :count="albums.length ? `${albums.length} 张专辑` : null"
       :show-play-mode="false"
-      fog-title
       show-sort
       :sort-options="sortOptionsList"
       :sort-key="sortKey"
@@ -24,7 +23,6 @@
     <div v-else ref="gridRef" class="albums-grid-measure">
       <div v-bind="containerProps" class="albums-grid-virt">
         <div class="vlist-lph-spacer" aria-hidden="true" />
-        <h1 class="page-content-title page-content-title--inlist">专辑</h1>
         <div v-bind="wrapperProps">
           <div
             v-for="{ data: row, index: rowIdx } in virtualList"

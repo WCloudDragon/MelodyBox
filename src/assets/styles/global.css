@@ -150,8 +150,10 @@
 /* 页头标题随雾显隐（fog-title）期间，标题信息由内容区此元素承载：
    顶部时页头标题隐藏、此标题可见；下滚后页头标题淡入、此标题随内容滚走 */
 .page-content-title {
-  font-size: 22px;
+  /* 与页头标题/文件夹页标题同字号（28px）：雾显隐交叉淡入淡出时大小一致 */
+  font-size: 28px;
   font-weight: 700;
+  letter-spacing: -0.3px;
   color: var(--text-primary);
   margin: 0 0 6px;
 }

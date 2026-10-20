@@ -32,7 +32,7 @@
     <div class="sidebar__section">
       <router-link to="/" class="nav-item" v-ripple :class="{ active: $route.path === '/' }">
         <el-icon><HomeFilled /></el-icon>
-        <span>首页</span>
+        <span>推荐</span>
       </router-link>
       <router-link to="/library" class="nav-item" v-ripple :class="{ active: $route.path === '/library' }">
         <el-icon><Headset /></el-icon>

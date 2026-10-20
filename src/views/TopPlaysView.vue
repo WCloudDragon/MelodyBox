@@ -4,7 +4,6 @@
       title="播放次数"
       :count="filtered.length"
       :list-tracks="filtered"
-      fog-title
       show-sort
       :show-multi-select="true"
       :multi-select-active="multiSelectMode"
@@ -50,7 +49,6 @@
     <div v-else class="tracks-list">
       <div v-bind="containerProps" class="tracks-list-body">
         <div class="vlist-lph-spacer" aria-hidden="true" />
-        <h1 class="page-content-title page-content-title--inlist">播放次数</h1>
         <div v-bind="wrapperProps">
           <div
             v-for="{ data: track, index } in virtualList"

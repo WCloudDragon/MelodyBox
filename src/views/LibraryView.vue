@@ -4,7 +4,6 @@
       title="音乐库"
       :count="libraryStore.filteredTracks.length"
       :list-tracks="libraryStore.filteredTracks"
-      fog-title
       show-sort
       show-filter
       :show-multi-select="true"
@@ -54,7 +53,6 @@
 
     <!-- 网格视图 -->
     <div v-else-if="libraryStore.viewMode === 'grid'" class="tracks-grid">
-      <h1 class="page-content-title page-content-title--inlist">音乐库</h1>
       <MusicCard
         v-for="track in libraryStore.filteredTracks"
         :key="track.path"
@@ -69,7 +67,6 @@
     <div v-else class="tracks-list">
       <div v-bind="containerProps" class="tracks-list-body">
         <div class="vlist-lph-spacer" aria-hidden="true" />
-        <h1 class="page-content-title page-content-title--inlist">音乐库</h1>
         <div v-if="!virtualList.length" class="empty-list-tip">无匹配歌曲</div>
         <div v-bind="wrapperProps">
           <div
