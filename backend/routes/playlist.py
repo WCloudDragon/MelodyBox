@@ -16,18 +16,25 @@ def get_db():
 
 
 def row_to_playlist_song(row):
-    """将 sqlite3.Row 转换为前端期望的歌曲格式"""
-    cover = row['cover_url'] or ''
+    """将 sqlite3.Row 转换为前端期望的歌曲格式。
+
+    用 dict(row) 而非下标访问：正常行来自 songs(s.*) 含 quality，
+    失效条目来自 orphaned_playlist_songs（无 quality 列），需容忍缺列。
+    """
+    d = dict(row)
+    cover = d.get('cover_url') or ''
     if cover and not cover.startswith('http'):
         cover = f"http://127.0.0.1:5000/api/music/cover?path={cover}"
+    file_path = d.get('file_path') or ''
     return {
-        'id': row['id'],
-        'path': row['file_path'],
-        'title': row['title'] or os.path.basename(row['file_path']),
-        'artist': row['artist'] or '未知艺术家',
-        'album': row['album'] or '未知专辑',
+        'id': d.get('id'),
+        'path': file_path,
+        'title': d.get('title') or os.path.basename(file_path),
+        'artist': d.get('artist') or '未知艺术家',
+        'album': d.get('album') or '未知专辑',
         'cover': cover or None,
-        'duration': row['duration'] or 0,
+        'duration': d.get('duration') or 0,
+        'quality': d.get('quality') or '',
         'url': None,
     }
 

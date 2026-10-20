@@ -51,17 +51,8 @@
         </span>
       </div>
 
-      <!-- 列表视图（整页滚动，与专辑/艺术家详情一致） -->
+      <!-- 列表视图（整页滚动，与专辑/艺术家详情一致；无表头，行规格与列表页统一） -->
       <div class="tracks-list" v-if="playlist.tracks.length > 0">
-        <div class="track-table-header">
-          <span class="col-index">#</span>
-          <span class="col-title">歌曲</span>
-          <span class="col-artist">歌手</span>
-          <span class="col-album">专辑</span>
-          <span class="col-quality">音质</span>
-          <span class="col-time">时长</span>
-          <span class="col-action"></span>
-        </div>
         <div class="tracks-list-body">
           <div
             v-for="(track, index) in playlist.tracks"
@@ -79,14 +70,16 @@
               <span class="col-title">
                 <LazyCover v-if="track.cover" :src="track.cover" class="row-cover" :thumb-size="72" />
                 <div v-else class="row-cover row-cover--empty"><el-icon size="14"><Headset /></el-icon></div>
-                <span>{{ track.title }}</span>
+                <div class="col-title__text">
+                  <span class="col-title__name">{{ track.title }}</span>
+                  <span class="col-title__artist-row">
+                    <template v-for="(name, ai) in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
+                      <router-link :to="`/artist/${encodeURIComponent(name)}`" class="link col-title__artist">{{ name }}</router-link>
+                      <span v-if="ai < (track.artist || '').split('/').map(s => s.trim()).filter(Boolean).length - 1" class="col-title__sep"> / </span>
+                    </template>
+                  </span>
+                </div>
                 <span v-if="track.missing" class="missing-tag">文件缺失</span>
-              </span>
-              <span class="col-artist">
-                <template v-for="(name, ai) in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
-                  <span v-if="ai > 0" class="col-title__sep"> / </span>
-                  <router-link :to="`/artist/${encodeURIComponent(name)}`" class="link col-artist__link">{{ name }}</router-link>
-                </template>
               </span>
               <span class="col-album">
                 <router-link v-if="track.album" :to="`/album/${encodeURIComponent(track.album)}`" class="link">{{ track.album }}</router-link>
@@ -97,9 +90,6 @@
               <span class="col-time">{{ formatDuration(track.duration) }}</span>
               <span class="col-action">
                 <el-checkbox v-if="multiSelectMode" :model-value="isSelected(track)" @change="toggleSelect(track)" />
-                <el-button v-else text size="small" @click.stop="removeTrack(track)">
-                  <el-icon><Close /></el-icon>
-                </el-button>
               </span>
             </div>
         </div>
@@ -295,35 +285,32 @@ function batchAddQueueNext(tracks) {
 .playlist-info p { color: var(--text-tertiary); margin: 0 0 2px; font-size: 14px; }
 .playlist-actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
 
-/* 列表视图（对齐 LibraryView） */
-.track-table-header {
-  display: flex; align-items: center;
-  padding: 10px 12px; font-size: 11px;
-  color: var(--text-tertiary); text-transform: uppercase;
-  letter-spacing: 1px; border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
+/* 列表视图（与音乐库/专辑/艺术家页同一套行规格，无表头） */
 .tracks-list { display: flex; flex-direction: column; }
 /* 整页滚动：列表体不再自建滚动容器，交由主内容区滚动 */
 .tracks-list-body { }
 
 .track-row {
-  display: flex; align-items: center;
-  padding: 0 12px; border-radius: 6px;
-  height: 52px; transition: background 0.15s; cursor: default;
+  display: grid;
+  grid-template-columns: 40px 1fr 1fr 52px 60px 40px;
+  align-items: center;
+  /* 内容落在 --page-pad-x 基准线；hover 背景天然从基准线左一个 pad 处开始 */
+  padding: 0 var(--page-pad-x, 12px); border-radius: 6px;
+  height: 64px; transition: background 0.15s; cursor: default;
+  content-visibility: auto;
+  contain-intrinsic-size: 64px;
+  contain: layout style paint;
 }
 .track-row:hover, .track-row--ctx-active { background: var(--hover-bg); }
 .track-row.playing { background: var(--accent-bg); }
-.track-row.playing .col-title span { color: var(--accent-color); }
-.track-row--ctx-active { background: var(--hover-bg); }
+.track-row.playing .col-title__name { color: var(--accent-color); }
 
 /* 失效条目（文件缺失）：整行灰化，重新导入同指纹歌曲后自动恢复正常显示 */
-.track-row--missing .col-title span,
-.track-row--missing .col-artist,
+.track-row--missing .col-title__name,
+.track-row--missing .col-title__artist,
 .track-row--missing .col-album,
 .track-row--missing .col-index .index-num,
 .track-row--missing .col-time { color: var(--text-tertiary); opacity: 0.6; }
-.track-row--missing .col-artist__link,
 .track-row--missing .col-album .link { color: var(--text-tertiary); }
 .track-row--missing .row-cover { opacity: 0.45; filter: grayscale(0.8); }
 /* 缺失行 hover 无播放图标可显示，序号保持可见 */
@@ -341,7 +328,7 @@ function batchAddQueueNext(tracks) {
 }
 
 .col-index { width: 40px; text-align: center; position: relative; }
-.col-index .index-num { font-size: 12px; color: var(--text-tertiary); transition: opacity 0.12s; }
+.col-index .index-num { font-size: 13px; color: var(--text-tertiary); transition: opacity 0.12s; }
 .col-index .play-icon {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   cursor: pointer; color: var(--accent-color);
@@ -350,21 +337,22 @@ function batchAddQueueNext(tracks) {
 .track-row:hover .col-index .index-num, .track-row--ctx-active .col-index .index-num { opacity: 0; }
 .track-row:hover .col-index .play-icon, .track-row--ctx-active .col-index .play-icon { opacity: 1; pointer-events: auto; }
 
-.col-title { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 13px; overflow: hidden; }
-.col-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row-cover { width: 36px; height: 36px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+.col-title { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 15px; overflow: hidden; }
+.col-title__text { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.col-title__name { font-size: 15px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-title__artist-row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col-title__artist { font-size: 12px; line-height: 1.3; }
+.col-title__sep { font-size: 12px; color: var(--text-tertiary); }
+.row-cover { width: 44px; height: 44px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
 .row-cover--empty {
   background: var(--bg-tertiary); display: flex;
   align-items: center; justify-content: center; color: var(--text-tertiary);
 }
-.col-artist { width: 160px; font-size: 13px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-artist__link { color: var(--text-secondary); text-decoration: none; }
-.col-artist__link:hover { color: var(--accent-color); text-decoration: underline; }
-.col-album { width: 180px; font-size: 13px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-album { font-size: 14px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .link { color: var(--text-secondary); text-decoration: none; }
 .link:hover { color: var(--accent-color); text-decoration: underline; }
-.col-quality { width: 52px; display: flex; align-items: center; justify-content: flex-end; font-size: 11px; }
-.col-time { width: 60px; text-align: right; font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.col-quality { width: 52px; display: flex; align-items: center; justify-content: flex-end; }
+.col-time { width: 60px; text-align: right; font-size: 13px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
 .col-action { width: 40px; text-align: center; }
 
 .empty-state { text-align: center; padding: 80px 0; color: var(--text-tertiary); flex-shrink: 0; }

@@ -46,7 +46,7 @@
             <svg class="search-section__arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3.5L10.5 8 6 12.5"/></svg>
           </button>
 
-          <!-- 歌曲 / 历史 / 播放次数：曲目行 -->
+          <!-- 歌曲 / 历史 / 播放次数：多列曲目行（与列表页 track-row 同一套结构：序号/歌曲/专辑/音质/时长） -->
           <div v-if="sec.type === 'tracks'" class="search-section__body">
             <div
               v-for="(t, i) in sec.display"
@@ -54,22 +54,35 @@
               class="track-row"
               v-ripple
               :class="{ playing: currentTrack?.path === t.path, 'track-row--ctx-active': contextMenuTarget === t.path }"
+              :style="{ gridTemplateColumns: trackGrid(sec) }"
               @dblclick="playSection(sec, i)"
               @contextmenu.prevent="showContextMenu($event, t)"
             >
-              <span class="track-row__main">
+              <span class="col-index">
+                <span class="index-num">{{ i + 1 }}</span>
+                <el-icon class="play-icon" v-ripple size="16" @click.stop="playSection(sec, i)"><VideoPlay /></el-icon>
+              </span>
+              <span class="col-title">
                 <LazyCover v-if="t.cover" :src="t.cover" class="row-cover" :thumb-size="72" />
                 <div v-else class="row-cover row-cover--empty"><el-icon size="14"><Headset /></el-icon></div>
-                <span class="track-row__text">
-                  <span class="track-row__name" v-html="hl(t.title)"></span>
-                  <span class="track-row__sub">
-                    <span v-html="hl(t.artist || '')"></span>
-                    <template v-if="t.album"> · <span v-html="hl(t.album)"></span></template>
+                <div class="col-title__text">
+                  <span class="col-title__name" v-html="hl(t.title)"></span>
+                  <span class="col-title__artist-row">
+                    <template v-for="(name, ai) in (t.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
+                      <router-link :to="`/artist/${encodeURIComponent(name)}`" class="link col-title__artist"><span v-html="hl(name)"></span></router-link>
+                      <span v-if="ai < (t.artist || '').split('/').map(s => s.trim()).filter(Boolean).length - 1" class="col-title__sep"> / </span>
+                    </template>
                   </span>
-                </span>
+                </div>
               </span>
-              <span class="track-row__meta">{{ sec.meta(t) }}</span>
-              <el-icon class="track-row__play" v-ripple size="16" @click.stop="playSection(sec, i)"><VideoPlay /></el-icon>
+              <span class="col-album">
+                <router-link v-if="t.album" :to="`/album/${encodeURIComponent(t.album)}`" class="link"><span v-html="hl(t.album)"></span></router-link>
+              </span>
+              <span v-if="sec.key === 'song'" class="col-quality">
+                <span v-if="t.quality" class="quality-tag" :class="qualityClass(t.quality)">{{ t.quality }}</span>
+              </span>
+              <span v-if="sec.key === 'song'" class="col-time">{{ fmtDur(t) }}</span>
+              <span v-else class="col-time-text">{{ sec.meta(t) }}</span>
             </div>
           </div>
 
@@ -127,6 +140,7 @@ import LazyCover from '@/components/LazyCover.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
 import ListPageHeader from '@/components/music/ListPageHeader.vue'
 import { useTrackList } from '@/composables/useTrackList'
+import { qualityClass } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -296,6 +310,13 @@ function fmtDur(track) {
   const m = Math.floor(d / 60), s = Math.floor(d % 60)
   return `${m}:${String(s).padStart(2, '0')}`
 }
+// 列模板与音乐库页完全对齐：歌曲=音质52+时长60，历史/播放次数=合并统计列112；
+// 末尾固定 40px 操作占位列（搜索页无多选，留白以保持与其它列表行宽一致）
+function trackGrid(sec) {
+  return sec.key === 'song'
+    ? '40px 1fr 1fr 52px 60px 40px'
+    : '40px 1fr 1fr 112px 40px'
+}
 function fmtRel(raw) {
   try {
     const diffMs = Date.now() - new Date(raw).getTime()
@@ -389,30 +410,45 @@ function fmtRel(raw) {
   transform: translateX(2px);
 }
 
-/* 曲目行（与列表页 track-row 同语言；内容落 --page-pad-x 基准线） */
+/* 曲目行：与列表页 track-row 完全同规格（网格列由 trackGrid 按组注入、64px 行高、hover 序号换播放图标） */
 .track-row {
-  display: flex; align-items: center; gap: 12px;
-  height: 56px;
+  display: grid;
+  align-items: center;
+  height: 64px;
   padding: 0 var(--page-pad-x, 12px); border-radius: 6px;
   transition: background 0.15s; cursor: default;
+  content-visibility: auto;
+  contain-intrinsic-size: 64px;
 }
 .track-row:hover, .track-row--ctx-active { background: var(--hover-bg); }
 .track-row.playing { background: var(--accent-bg); }
-.track-row.playing .track-row__name { color: var(--accent-color); }
+.track-row.playing .col-title__name { color: var(--accent-color); }
 
-.track-row__main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
-.row-cover { width: 40px; height: 40px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
-.row-cover--empty { background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); }
-.track-row__text { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
-.track-row__name { font-size: 14px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.track-row__sub { font-size: 12px; line-height: 1.3; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.track-row__meta { font-size: 12.5px; color: var(--text-tertiary); flex-shrink: 0; }
-.track-row__play {
-  opacity: 0; pointer-events: none; flex-shrink: 0;
-  color: var(--accent-color); cursor: pointer; transition: opacity 0.12s;
+.col-index { text-align: center; position: relative; }
+.col-index .index-num { font-size: 13px; color: var(--text-tertiary); transition: opacity 0.12s; }
+.col-index .play-icon {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  cursor: pointer; color: var(--accent-color);
+  opacity: 0; pointer-events: none; transition: opacity 0.12s;
 }
-.track-row:hover .track-row__play { opacity: 1; pointer-events: auto; }
+.track-row:hover .col-index .index-num, .track-row--ctx-active .col-index .index-num { opacity: 0; }
+.track-row:hover .col-index .play-icon, .track-row--ctx-active .col-index .play-icon { opacity: 1; pointer-events: auto; }
+
+.col-title { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 15px; overflow: hidden; }
+.col-title__text { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.col-title__name { font-size: 15px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-title__artist-row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.col-title__artist { font-size: 12px; line-height: 1.3; }
+.col-title__sep { font-size: 12px; color: var(--text-tertiary); }
+.row-cover { width: 44px; height: 44px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+.row-cover--empty { background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); }
+.col-album { font-size: 14px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-quality { width: 52px; display: flex; align-items: center; justify-content: flex-end; }
+.col-time { width: 60px; text-align: right; font-size: 13px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.col-time-text { width: 112px; font-size: 13px; color: var(--text-tertiary); white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+.col-action { width: 40px; text-align: center; }
+.link { color: var(--text-secondary); text-decoration: none; }
+.link:hover { color: var(--accent-color); text-decoration: underline; }
 
 /* 卡片网格（与专辑页卡片同语言；卡片自带 12px 内边距，封面/文字落在基准线） */
 .card-grid { display: flex; flex-wrap: wrap; gap: 8px; }

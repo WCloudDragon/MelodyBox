@@ -71,8 +71,8 @@
                 <span class="col-title__name">{{ track.title }}</span>
                 <span class="col-title__artist-row">
                   <template v-for="(name, ai) in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
-                    <span v-if="ai > 0" class="col-title__sep"> / </span>
                     <router-link :to="`/artist/${encodeURIComponent(name)}`" class="link col-title__artist">{{ name }}</router-link>
+                    <span v-if="ai < (track.artist || '').split('/').map(s => s.trim()).filter(Boolean).length - 1" class="col-title__sep"> / </span>
                   </template>
                 </span>
               </div>
@@ -294,7 +294,8 @@ refresh()
 
 .track-row {
   display: grid;
-  grid-template-columns: 50px 1fr 1fr 72px 48px;
+  /* 112px = 音乐库的音质52+时长60：尾三列宽度与其完全对齐 */
+  grid-template-columns: 40px 1fr 1fr 112px 40px;
   align-items: center;
   /* 内容落在 --page-pad-x 基准线；hover 背景天然从基准线左一个 pad 处开始（呼吸感） */
   padding: 0 var(--page-pad-x, 12px); border-radius: 6px;
@@ -305,13 +306,14 @@ refresh()
 .track-row.playing .col-title__name { color: var(--accent-color); }
 .track-row--ctx-active { background: var(--hover-bg); }
 
-.col-index { width: 50px; text-align: center; position: relative; }
+.col-index { width: 40px; text-align: center; position: relative; }
 .col-index .index-num { font-size: 13px; color: var(--text-tertiary); transition: opacity 0.12s; }
 .col-index .play-icon { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); cursor: pointer; color: var(--accent-color); opacity: 0; pointer-events: none; transition: opacity 0.12s; }
 .track-row:hover .col-index .index-num, .track-row:hover .col-index .rank-badge, .track-row--ctx-active .col-index .index-num, .track-row--ctx-active .col-index .rank-badge { opacity: 0; }
 .track-row:hover .col-index .play-icon, .track-row--ctx-active .col-index .play-icon { opacity: 1; pointer-events: auto; }
 
-.rank-badge { font-size: 18px; transition: opacity 0.12s; }
+/* 前三名奖牌收进 40px 序号列，与其它页序号列同宽 */
+.rank-badge { font-size: 16px; line-height: 1; transition: opacity 0.12s; }
 
 .col-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .col-title__text { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
@@ -325,6 +327,6 @@ refresh()
 .row-cover { width: 44px; height: 44px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
 .row-cover--empty { background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); }
 .col-album { font-size: 14px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-count { font-size: 14px; color: var(--accent-color); font-weight: 600; text-align: center; }
-.col-action { text-align: center; }
+.col-count { width: 112px; font-size: 14px; color: var(--accent-color); font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.col-action { width: 40px; text-align: center; }
 </style>

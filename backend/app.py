@@ -593,6 +593,7 @@ def init_db(app):
         CREATE VIEW all_songs AS
         SELECT id, title, artist, album, file_path, cover_url, lyrics,
                genre, year, duration, lang, fingerprint, embedding, audio_embedding,
+               quality,
                'local' AS source
         FROM songs
         UNION ALL
@@ -606,6 +607,7 @@ def init_db(app):
                COALESCE(cm.genre, cs.genre) AS genre,
                cs.year, cs.duration, cs.lang, cs.fingerprint,
                cs.embedding, cs.audio_embedding,
+               cs.quality,
                'cloud' AS source
         FROM cloud_songs cs
         LEFT JOIN cloud_metadata cm ON cm.cloud_song_id = cs.id

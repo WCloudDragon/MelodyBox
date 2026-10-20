@@ -1,16 +1,6 @@
 <template>
   <div class="track-table">
-    <!-- 表头 -->
-    <div v-if="showHeader" class="track-table__header">
-      <span class="col-index">#</span>
-      <span class="col-title">歌曲</span>
-      <span v-if="showAlbum" class="col-album">专辑</span>
-      <span class="col-quality">音质</span>
-      <span class="col-time">时长</span>
-      <span v-if="multiSelectMode" class="col-action"></span>
-    </div>
-
-    <!-- 列表体（embedded 模式不自建滚动容器，交由外层整页滚动） -->
+    <!-- 列表体（embedded 模式不自建滚动容器，交由外层整页滚动）；无表头，与列表页一致 -->
     <div class="track-table__body" :class="{ 'track-table__body--embedded': embedded }" ref="bodyRef">
       <div v-if="!tracks.length" class="track-table__empty">暂无歌曲</div>
       <div
@@ -18,8 +8,9 @@
         :key="track.path || index"
         class="track-row"
         v-ripple
+        :style="{ gridTemplateColumns: gridTemplate }"
         :class="{
-          'track-row--playing': currentPath === track.path,
+          playing: currentPath === track.path,
           'track-row--ctx-active': contextTarget === track.path,
         }"
         @dblclick="$emit('play', track)"
@@ -38,13 +29,13 @@
           </div>
           <div class="col-title__text">
             <span class="col-title__name">{{ track.title }}</span>
-            <span v-if="showArtist" class="col-title__artist">
+            <!-- 结构与音乐库页一致：row 负责单行截断，artist 只负责字号/行高 -->
+            <span v-if="showArtist" class="col-title__artist-row">
               <template v-for="(name, ai) in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
-                <span v-if="ai > 0" class="col-title__sep"> / </span>
-                <router-link :to="`/artist/${encodeURIComponent(name)}`" class="link col-title__artist__name">{{ name }}</router-link>
+                <router-link :to="`/artist/${encodeURIComponent(name)}`" class="link col-title__artist">{{ name }}</router-link>
+                <span v-if="ai < (track.artist || '').split('/').map(s => s.trim()).filter(Boolean).length - 1" class="col-title__sep"> / </span>
               </template>
             </span>
-            <span v-if="track.reason" class="col-title__reason">{{ track.reason }}</span>
           </div>
         </span>
         <span v-if="showAlbum" class="col-album">
@@ -68,7 +59,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { formatDuration, qualityClass } from '@/utils/format'
 import LazyCover from '@/components/LazyCover.vue'
 
@@ -79,7 +70,6 @@ const props = defineProps({
   currentPath: { type: String, default: null },
   contextTarget: { type: String, default: null },
   showAlbum: { type: Boolean, default: true },
-  showHeader: { type: Boolean, default: true },
   showArtist: { type: Boolean, default: true },
   multiSelectMode: { type: Boolean, default: false },
   // 嵌入模式：列表体不自建滚动容器（外层整页滚动），并用标题渐显时保持自然高度
@@ -90,6 +80,15 @@ const props = defineProps({
 defineEmits(['play', 'contextmenu', 'toggleSelect'])
 
 const bodyRef = ref(null)
+
+// 列模板与列表页 track-row 同一套规格：序号/歌曲/（专辑）/音质/时长/（多选）
+const gridTemplate = computed(() => {
+  const cols = ['40px', '1fr']
+  if (props.showAlbum) cols.push('1fr')
+  cols.push('52px', '60px')
+  if (props.multiSelectMode) cols.push('40px')
+  return cols.join(' ')
+})
 
 function scrollToTop() {
   if (bodyRef.value) bodyRef.value.scrollTop = 0
@@ -104,25 +103,6 @@ defineExpose({ scrollToTop, bodyRef })
   flex-direction: column;
   flex: 1;
   min-height: 0;
-}
-
-.track-table__header {
-  display: grid;
-  grid-template-columns: 40px 1fr 52px 60px;
-  align-items: center;
-  padding: 10px 12px;
-  font-size: 11px;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-.track-table__header:has(.col-album) {
-  grid-template-columns: 40px 1fr 1fr 52px 60px;
-}
-.track-table__header:has(.col-action) {
-  grid-template-columns: 40px 1fr 1fr 52px 60px 40px;
 }
 
 .track-table__body {
@@ -149,9 +129,9 @@ defineExpose({ scrollToTop, bodyRef })
 
 .track-row {
   display: grid;
-  grid-template-columns: 40px 1fr 52px 60px;
   align-items: center;
-  padding: 0 12px;
+  /* 与音乐库页同规格：内容落 --page-pad-x 基准线 */
+  padding: 0 var(--page-pad-x, 12px);
   height: 64px;
   border-radius: 6px;
   transition: background 0.15s;
@@ -159,23 +139,15 @@ defineExpose({ scrollToTop, bodyRef })
   content-visibility: auto;
   contain-intrinsic-size: 64px;
 }
-/* 当有专辑列时 */
-.track-row:has(.col-album) {
-  grid-template-columns: 40px 1fr 1fr 52px 60px;
-}
-/* 当有多选列时 */
-.track-row:has(.col-action) {
-  grid-template-columns: 40px 1fr 1fr 52px 60px 40px;
-}
 
 .track-row:hover,
 .track-row--ctx-active {
   background: var(--hover-bg);
 }
-.track-row--playing {
+.track-row.playing {
   background: var(--accent-bg);
 }
-.track-row--playing .col-title__name {
+.track-row.playing .col-title__name {
   color: var(--accent-color);
 }
 
@@ -211,7 +183,7 @@ defineExpose({ scrollToTop, bodyRef })
   pointer-events: auto;
 }
 
-/* 歌曲列 */
+/* 歌曲列：样式与音乐库页逐字一致 */
 .col-title {
   display: flex;
   align-items: center;
@@ -232,24 +204,16 @@ defineExpose({ scrollToTop, bodyRef })
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.col-title__artist-row {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .col-title__artist {
   font-size: 12px;
   line-height: 1.3;
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.col-title__artist__name { color: var(--text-secondary); text-decoration: none; }
-.col-title__artist__name:hover { color: var(--accent-color); text-decoration: underline; }
 .col-title__sep { font-size: 12px; color: var(--text-tertiary); }
-.col-title__reason {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .row-cover {
   width: 44px;
   height: 44px;

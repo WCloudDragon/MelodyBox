@@ -70,8 +70,8 @@
                 <span class="col-title__name">{{ track.title }}</span>
                 <span class="col-title__artist-row">
                   <template v-for="(name, ai) in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
-                    <span v-if="ai > 0" class="col-title__sep"> / </span>
                     <router-link :to="`/artist/${encodeURIComponent(name)}`" class="link col-title__artist">{{ name }}</router-link>
+                    <span v-if="ai < (track.artist || '').split('/').map(s => s.trim()).filter(Boolean).length - 1" class="col-title__sep"> / </span>
                   </template>
                 </span>
               </div>
@@ -304,7 +304,8 @@ refresh()
 
 .track-row {
   display: grid;
-  grid-template-columns: 40px 1fr 1fr 120px 48px;
+  /* 112px = 音乐库的音质52+时长60：尾三列宽度与其完全对齐 */
+  grid-template-columns: 40px 1fr 1fr 112px 40px;
   align-items: center;
   /* 内容落在 --page-pad-x 基准线；hover 背景天然从基准线左一个 pad 处开始（呼吸感） */
   padding: 0 var(--page-pad-x, 12px); border-radius: 6px;
@@ -333,7 +334,7 @@ refresh()
 .row-cover { width: 44px; height: 44px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
 .row-cover--empty { background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); }
 .col-album { font-size: 14px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-time-text { font-size: 13px; color: var(--text-tertiary); white-space: nowrap; cursor: pointer; user-select: none; }
+.col-time-text { width: 112px; font-size: 13px; color: var(--text-tertiary); white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; cursor: pointer; user-select: none; }
 .col-time-text:hover { color: var(--accent-color); }
-.col-action { text-align: center; }
+.col-action { width: 40px; text-align: center; }
 </style>

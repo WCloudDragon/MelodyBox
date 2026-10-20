@@ -235,9 +235,6 @@
             @click="playAiTrack(track)"
           >
             <MusicCard :track="track" @play="playAiTrack(track)" />
-            <div class="ai-track-card__reason" :title="'匹配度: ' + (track.score * 100).toFixed(1) + '%'">
-              {{ track.reason }}
-            </div>
           </div>
         </div>
 
@@ -955,18 +952,6 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
 .ai-track-card {
   position: relative;
   width: var(--home-card-w, 170px);
-}
-.ai-track-card__reason {
-  position: absolute; bottom: 8px; left: 8px; right: 8px;
-  background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(6px);
-  border-radius: 6px; padding: 4px 8px;
-  font-size: 11px; color: #fff; text-align: center;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  opacity: 0; transition: opacity 0.2s;
-  pointer-events: none;
-}
-.ai-track-card:hover .ai-track-card__reason {
-  opacity: 1;
 }
 
 .loading-hint {

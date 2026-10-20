@@ -92,7 +92,7 @@ class VectorStore:
         cursor = self.db.cursor()
         cursor.execute('''
             SELECT id, title, artist, album, cover_url, file_path, genre, year,
-                   duration, lang, lyrics, fingerprint, source
+                   duration, lang, lyrics, fingerprint, source, quality
             FROM all_songs
         ''')
         rows = [dict(r) for r in cursor.fetchall()]

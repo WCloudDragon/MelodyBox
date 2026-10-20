@@ -88,9 +88,9 @@
               <div class="col-title__text">
                 <span class="col-title__name">{{ track.title }}</span>
                 <span class="col-title__artist-row">
-                  <template v-for="(artist, ai) in track.artist.split('/')" :key="ai">
-                    <router-link :to="`/artist/${encodeURIComponent(artist.trim())}`" class="link col-title__artist">{{ artist.trim() }}</router-link>
-                    <span v-if="ai < track.artist.split('/').length - 1" class="col-title__sep"> / </span>
+                  <template v-for="(name, ai) in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
+                    <router-link :to="`/artist/${encodeURIComponent(name)}`" class="link col-title__artist">{{ name }}</router-link>
+                    <span v-if="ai < (track.artist || '').split('/').map(s => s.trim()).filter(Boolean).length - 1" class="col-title__sep"> / </span>
                   </template>
                 </span>
               </div>

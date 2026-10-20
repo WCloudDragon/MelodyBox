@@ -63,12 +63,10 @@
             <span class="col-title__name">{{ track.title }}</span>
           </span>
           <span class="col-artist">
-            <router-link
-              v-for="name in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)"
-              :key="name"
-              :to="`/artist/${encodeURIComponent(name)}`"
-              class="link"
-            >{{ name }}</router-link>
+            <template v-for="(name, ai) in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
+              <router-link :to="`/artist/${encodeURIComponent(name)}`" class="link">{{ name }}</router-link>
+              <span v-if="ai < (track.artist || '').split('/').map(s => s.trim()).filter(Boolean).length - 1" class="col-title__sep"> / </span>
+            </template>
           </span>
           <span class="col-quality">
             <span v-if="track.quality" class="quality-tag" :class="qualityClass(track.quality)">{{ track.quality }}</span>
@@ -233,10 +231,12 @@ function batchAddQueueNext(tracks) {
   display: grid;
   grid-template-columns: 40px 1fr 1fr 52px 60px 40px;
   align-items: center;
-  padding: 0 12px;
+  /* 与音乐库页同规格：内容落 --page-pad-x 基准线 */
+  padding: 0 var(--page-pad-x, 12px);
   height: 64px;
   border-radius: 6px;
   transition: background 0.15s;
+  cursor: default;
   content-visibility: auto;
   contain-intrinsic-size: 64px;
   contain: layout style paint;
@@ -245,19 +245,28 @@ function batchAddQueueNext(tracks) {
 .track-row.playing { background: var(--accent-bg); }
 .track-row.playing .col-title__name { color: var(--accent-color); }
 
-.col-index { width: 40px; text-align: center; }
-.col-index .index-num { font-size: 13px; color: var(--text-tertiary); }
-.col-index .play-icon { display: none; cursor: pointer; color: var(--accent-color); }
-.track-row:hover .col-index .index-num, .track-row--ctx-active .col-index .index-num { display: none; }
-.track-row:hover .col-index .play-icon, .track-row--ctx-active .col-index .play-icon { display: inline-flex; }
+.col-index { width: 40px; text-align: center; position: relative; }
+.col-index .index-num { font-size: 13px; color: var(--text-tertiary); transition: opacity 0.12s; }
+.col-index .play-icon {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  cursor: pointer; color: var(--accent-color);
+  opacity: 0; pointer-events: none; transition: opacity 0.12s;
+}
+.track-row:hover .col-index .index-num, .track-row--ctx-active .col-index .index-num { opacity: 0; }
+.track-row:hover .col-index .play-icon, .track-row--ctx-active .col-index .play-icon { opacity: 1; pointer-events: auto; }
 
 .col-title { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 15px; overflow: hidden; }
-.col-title__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-artist { font-size: 14px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+.col-title__name { font-size: 15px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 专辑详情不显示封面（特性保留）；歌手占第三列，字号对齐音乐库的专辑列 */
+.col-artist { font-size: 14px; line-height: 1.3; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; }
+/* 多歌手分隔符跟随本列字号（14px）。
+   col-artist 是 flex 容器，文本节点首尾空格会被折叠——斜杠两侧用 margin 显式补间距，
+   0.28em≈3.9px（对齐 14px 文本的空白宽度；其它页为 inline 容器，空格天然保留） */
+.col-artist .col-title__sep { font-size: 14px; line-height: 1.3; color: var(--text-tertiary); margin: 0 0.28em; }
 .col-quantity { width: 52px; display: flex; align-items: center; justify-content: flex-end; }
 .col-quality { width: 52px; display: flex; align-items: center; justify-content: flex-end; }
 .col-time { width: 60px; text-align: right; font-size: 13px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
-.col-action { text-align: center; }
+.col-action { width: 40px; text-align: center; }
 .link { color: var(--text-secondary); text-decoration: none; }
 .link:hover { color: var(--accent-color); text-decoration: underline; }
 

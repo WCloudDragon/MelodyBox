@@ -189,6 +189,7 @@ def _build_result(store, song, score, reason):
         'genre': song.get('genre') or '',
         'year': song.get('year') or 0,
         'duration': song.get('duration') or 0,
+        'quality': song.get('quality') or '',
         'lang': song.get('lang') or '',
         'lyrics': song.get('lyrics') or '',
         'reason': reason,
@@ -403,7 +404,7 @@ def _mood_from_table(db, mood, exclude, limit):
     cursor = db.cursor()
     cursor.execute(f'''
         SELECT s.id, s.title, s.artist, s.album, s.cover_url, s.file_path,
-               s.genre, s.year, s.duration, s.lang, s.lyrics,
+               s.genre, s.year, s.duration, s.quality, s.lang, s.lyrics,
                s.fingerprint, 'local' AS source, ms.score, ms.audio_score
         FROM song_mood_scores ms
         JOIN songs s ON ms.song_id = s.id

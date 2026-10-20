@@ -75,9 +75,9 @@
               <span class="col-title__name">{{ track.title }}</span>
               <span class="col-title__artist-row">
                 <template v-for="(name, ai) in (track.artist || '').split('/').map(s => s.trim()).filter(Boolean)" :key="ai">
-                  <span v-if="ai > 0" class="col-title__sep"> / </span>
                   <router-link v-if="name !== artist?.name" :to="`/artist/${encodeURIComponent(name)}`" class="link col-title__artist">{{ name }}</router-link>
                   <span v-else class="col-title__artist">{{ name }}</span>
+                  <span v-if="ai < (track.artist || '').split('/').map(s => s.trim()).filter(Boolean).length - 1" class="col-title__sep"> / </span>
                 </template>
               </span>
             </div>
@@ -309,7 +309,8 @@ function batchAddQueueNext(tracks) {
   display: grid;
   grid-template-columns: 40px 1fr 1fr 52px 60px 40px;
   align-items: center;
-  padding: 0 12px;
+  /* 与音乐库页同规格：内容落 --page-pad-x 基准线 */
+  padding: 0 var(--page-pad-x, 12px);
   height: 64px;
   border-radius: 6px;
   transition: background 0.15s;
@@ -322,15 +323,19 @@ function batchAddQueueNext(tracks) {
 .track-row.playing .col-title { color: var(--accent-color); }
 .track-row--ctx-active { background: var(--hover-bg); }
 
-.col-index { width: 40px; text-align: center; }
-.col-index .index-num { font-size: 13px; color: var(--text-tertiary); }
-.col-index .play-icon { display: none; cursor: pointer; color: var(--accent-color); }
-.track-row:hover .col-index .index-num, .track-row--ctx-active .col-index .index-num { display: none; }
-.track-row:hover .col-index .play-icon, .track-row--ctx-active .col-index .play-icon { display: inline-flex; }
+.col-index { width: 40px; text-align: center; position: relative; }
+.col-index .index-num { font-size: 13px; color: var(--text-tertiary); transition: opacity 0.12s; }
+.col-index .play-icon {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  cursor: pointer; color: var(--accent-color);
+  opacity: 0; pointer-events: none; transition: opacity 0.12s;
+}
+.track-row:hover .col-index .index-num, .track-row--ctx-active .col-index .index-num { opacity: 0; }
+.track-row:hover .col-index .play-icon, .track-row--ctx-active .col-index .play-icon { opacity: 1; pointer-events: auto; }
 
 .col-title { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 15px; overflow: hidden; }
 .col-title__text { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
-.col-title__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-title__name { font-size: 15px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .col-title__artist-row { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .col-title__artist { font-size: 12px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .col-title__sep { font-size: 12px; color: var(--text-tertiary); }
@@ -342,7 +347,7 @@ function batchAddQueueNext(tracks) {
 .col-album { font-size: 14px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .col-quality { width: 52px; display: flex; align-items: center; justify-content: flex-end; }
 .col-time { width: 60px; text-align: right; font-size: 13px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
-.col-action { text-align: center; }
+.col-action { width: 40px; text-align: center; }
 .link { color: var(--text-secondary); text-decoration: none; }
 .link:hover { color: var(--accent-color); text-decoration: underline; }
 
