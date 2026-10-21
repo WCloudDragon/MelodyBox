@@ -60,7 +60,7 @@
               <div class="lyrics-scroll" :key="currentTrack?.path" ref="scrollRef">
               <!-- 空区长间隔提示（仅三点）：首行前显示在列表顶部 -->
               <div v-if="hintVisible && hintAnchorIndex < 0" :key="'hint-top'"
-                   class="upcoming-hint-line" :class="{ 'upcoming-hint-line--leaving': hintLeaving }">
+                   class="upcoming-hint-line" :class="{ 'upcoming-hint-line--enter': dotsEntering, 'upcoming-hint-line--leaving': hintLeaving }">
                 <p class="upcoming-hint-dots">
                   <span v-for="i in 3" :key="i" class="upcoming-hint-dot"
                         :class="{ 'upcoming-hint-dot--fade': dotFading(i) }">
@@ -104,7 +104,7 @@
                 </div>
                 <!-- 句中空区：三点插在刚结束的上一行之后（上一行保留显示） -->
                 <div v-if="hintVisible && index === hintAnchorIndex" :key="'hint-' + index"
-                     class="upcoming-hint-line" :class="{ 'upcoming-hint-line--leaving': hintLeaving }">
+                     class="upcoming-hint-line" :class="{ 'upcoming-hint-line--enter': dotsEntering, 'upcoming-hint-line--leaving': hintLeaving }">
                   <p class="upcoming-hint-dots">
                     <span v-for="i in 3" :key="i" class="upcoming-hint-dot"
                           :class="{ 'upcoming-hint-dot--fade': dotFading(i) }">
@@ -464,6 +464,8 @@ async function repositionToCurrent() {
   const now = player.getLiveTime()
   if (showUpcomingHint.value) {
     hintAnchorIndex.value = hintLineIndex.value
+    // 面板打开/重排定位：三点直接以最终高度就位，不做入场展开
+    dotsEntering.value = false
     hintVisible.value = true
     hintLeaving.value = false
     _dotsScrollDone = false
@@ -493,6 +495,8 @@ function onResize() {
 }
 onMounted(() => window.addEventListener('resize', onResize))
 onBeforeUnmount(() => window.removeEventListener('resize', onResize))
+// 面板初始即可见（非由 watch 打开）时启动歌词高频采样
+onMounted(() => { if (props.visible) startLyricTicker() })
 
 function setLineRef(el, index) {
   if (el) lineRefs.value[index] = el
@@ -1148,6 +1152,9 @@ function stopDotsScaleLoop() {
 // 三点行的显示/收起状态：收起时保持挂载做 0.25s 平滑折叠，避免下方行闪现
 const hintVisible = ref(false)
 const hintLeaving = ref(false)
+// 三点行展开动画开关：切歌时三点与新歌词同帧以最终高度出现（不做高度动画，
+// 否则切歌重活阻塞首帧时，0.3s 展开动画会被跳帧压缩成瞬间让位）；仅句中空区后插入时才展开
+const dotsEntering = ref(false)
 // 三点行位置锚点：显示时冻结，收起期间不随时间变化，避免位置被“偷换”导致闪烁
 const hintAnchorIndex = ref(-1)
 let _dotsScrollDone = false
@@ -1159,10 +1166,20 @@ let _dotsCascadePending = false
 let _dotsH = 0
 // 三点行收起定时器：跳转/切歌时需清除，避免残留定时器把新空区的三点误删
 let _dotsLeaveTimer = null
+// 句中空区后插入：先以 max-height:0 挂载，下一帧撤掉 --enter 触发高度过渡
+function playDotsEnter() {
+  dotsEntering.value = true
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => { dotsEntering.value = false })
+  })
+}
 watch(showUpcomingHint, (val) => {
   if (val) {
     _dotsHandoff = false
     hintLeaving.value = false
+    // 仅当三点行此前不在 DOM（句中空区后插入）时播展开动画；
+    // 已在显示中（含正在收起）时只恢复状态，交给 CSS 过渡
+    if (!hintVisible.value) playDotsEnter()
     hintVisible.value = true
     hintAnchorIndex.value = hintLineIndex.value
     startDotsScaleLoop()
@@ -1259,6 +1276,7 @@ const lyricsVars = computed(() => {
 // 面板打开时初始化歌词定位 + 封面飞行动画
 watch(() => props.visible, async (val) => {
   if (val) {
+    startLyricTicker()
     await nextTick()
     await nextTick()
     flyCoverIn()
@@ -1270,6 +1288,7 @@ watch(() => props.visible, async (val) => {
     const act = activeIndexes.value
     if (act.length > 0 && _lastWordIndex(act) >= 0) startWordAnimLoop()
   } else {
+    stopLyricTicker()
     flyCoverOut()
     stopWordAnimLoop()
     if (jumpPending.value >= 0) jumpPending.value = -1
@@ -1292,7 +1311,8 @@ watch(() => props.visible, async (val) => {
 })
 
 // 播放中活跃行集合变化（公平模型：多行同时播放时全部保留，滚动中心取组中心）
-watch(currentTime, async (time) => {
+// 由 rAF 以 audio.currentTime 高频驱动（timeupdate 仅约 250ms，90ms 级密集歌词会漏行）
+async function handleTimeUpdate(time) {
   if (!props.visible || !hasLyrics.value || !scrollRef.value) return
 
   if (!showUpcomingHint.value) _dotsScrollDone = false
@@ -1405,6 +1425,38 @@ watch(currentTime, async (time) => {
   scrollToActiveGroup(true)
   await nextTick()
   if (nextWord >= 0) startWordAnimLoop()
+}
+
+// 高频采样：每帧读取 audio.currentTime（绕过 timeupdate 节流），逐行捕捉密集切句；
+// 重入保护避免 await 期间堆积，暂停/隐藏时零开销
+let _lyricRaf = 0
+let _lastLyricClock = -1
+let _lyricBusy = false
+
+async function lyricTick() {
+  _lyricRaf = requestAnimationFrame(lyricTick)
+  if (!props.visible || !hasLyrics.value || !scrollRef.value) return
+  const t = player.getLiveTime()
+  if (t === _lastLyricClock) return
+  _lastLyricClock = t
+  if (_lyricBusy) return
+  _lyricBusy = true
+  try { await handleTimeUpdate(t) } finally { _lyricBusy = false }
+}
+
+function startLyricTicker() {
+  if (!_lyricRaf) _lyricRaf = requestAnimationFrame(lyricTick)
+}
+function stopLyricTicker() {
+  if (_lyricRaf) { cancelAnimationFrame(_lyricRaf); _lyricRaf = 0 }
+  _lyricBusy = false
+}
+
+// timeupdate 兜底：仅在时间跳变（seek / FLAC 流重载 / 切歌）时强制重同步
+watch(currentTime, async (time) => {
+  if (Math.abs(time - _lastLyricClock) < 1) return
+  _lastLyricClock = time
+  await handleTimeUpdate(time)
 })
 
 // 三点显示：滚动到“三点收起后下一句恰好居中”的位置。
@@ -1616,8 +1668,23 @@ function animateScrollTo(targetScroll, index, animate = true) {
     : (isInitial ? 'initial' : (Math.abs(scrollDelta) > containerHeight ? 'smooth' : 'domino'))
   targetScrollPos = targetScroll
 
-  // 大跨度（>容器高度）用平滑滚动，避免闪现；中小跨度用多米诺
-  const useDomino = enableDominoScroll.value && !isInitial && Math.abs(scrollDelta) > 0.5 && totalLines > 1 && Math.abs(scrollDelta) <= containerHeight
+  // 目标句时长：用于判定是否降级为普通滚动（密集短句不适用多米诺）
+  const lyricsArr = parsedLyrics.value || []
+  const lineStart = lyricsArr[index]?.time
+  const nextStart = lyricsArr[index + 1]?.time
+  const lineSpan = (lineStart != null && nextStart != null && nextStart > lineStart)
+    ? nextStart - lineStart
+    : Infinity
+  // 单句时长不足一笔级联动画（含波前延迟）时，降级为普通平滑滚动
+  const shortLine = lineSpan * 1000 < STAGGER_DURATION
+  // 降级动画时长与句时间戳长度匹配（下限 60ms 保证可感知，上限即级联阈值）
+  const matchedMs = shortLine
+    ? Math.max(60, Math.round(lineSpan * 1000))
+    : 500
+
+  // 大跨度（>容器高度）用平滑滚动，避免闪现；中小跨度用多米诺；短句一律普通滚动
+  const useDomino = enableDominoScroll.value && !isInitial && Math.abs(scrollDelta) > 0.5
+    && totalLines > 1 && Math.abs(scrollDelta) <= containerHeight && !shortLine
   if (animate && useDomino) {
     // 多米诺分支：先瞬跳 scrollRef，再由行级联动画接管视觉效果
     scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
@@ -1688,8 +1755,9 @@ function animateScrollTo(targetScroll, index, animate = true) {
         lyricsScrollCleanup = null
       }
     } else {
-      // 关闭多米诺时：CSS transition 简单平滑滚动，零 JS 动画开销
-      scrollRef.value.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
+      // 关闭多米诺 / 密集短句：CSS transition 简单平滑滚动，零 JS 动画开销；
+      // 时长跟随句时间戳长度，使下一次切句到来时本次滚动刚好走完
+      scrollRef.value.style.transition = `transform ${matchedMs}ms cubic-bezier(0.2, 0.9, 0.3, 1.0)`
       scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
       currentScrollY = -targetScroll
       const cleanup = () => {
@@ -1697,7 +1765,7 @@ function animateScrollTo(targetScroll, index, animate = true) {
         if (jumpPending.value >= 0) jumpPending.value = -1
         lyricsScrollCleanup = null
       }
-      const timer = setTimeout(cleanup, 550)
+      const timer = setTimeout(cleanup, matchedMs + 50)
       lyricsScrollCleanup = () => { clearTimeout(timer); cleanup() }
     }
   } else {
@@ -1778,14 +1846,18 @@ watch(() => currentTrack.value?.path, () => {
   targetScrollPos = 0
   prevLineIndex = -1
   if (scrollRef.value) { scrollRef.value.style.transform = 'translate3d(0, 0, 0)'; currentScrollY = 0 }
-  // 新歌一开始就处于长空区时立即恢复三点显示：
-  // 否则 showUpcomingHint 全程无翻转，三点要等播过首行再跳回才会出现
-  // 守卫 hintLineIndex < 0：切歌瞬间 currentTime 仍是上一首的播放位置，
-  // 用旧时间对长间奏歌算出的 hintLineIndex≥0 是假锚点，会误显三点随后闪灭
-  if (showUpcomingHint.value && hintLineIndex.value < 0) {
+  // 首句前长空区：三点与切歌同帧渲染（不依赖 currentTime——切歌瞬间它仍是上一首位置，
+  // 用旧时间判定会让三点延迟 1~2 帧才插入，插入时把下方行瞬移让位）
+  // 播放总是从 0 开始，只要新歌首句时间达到空区阈值，切歌后必然处于首句前
+  const firstStart = parsedLyrics.value[0]?.time ?? 0
+  if (hasLyrics.value && firstStart >= LYRIC_GAP_FILL_LIMIT
+      && !/纯音乐/.test(currentTrack.value?.lyrics || '')) {
+    // 与歌词块首帧一起以最终高度出现：切歌期间主线程重活多，
+    // 高度展开动画会被跳帧压缩成瞬间让位，这里直接跳过入场动画
+    dotsEntering.value = false
     hintVisible.value = true
     hintLeaving.value = false
-    hintAnchorIndex.value = hintLineIndex.value
+    hintAnchorIndex.value = -1
     _dotsScrollDone = false
     startDotsScaleLoop()
   }
@@ -1804,6 +1876,7 @@ watch(songChangeDirection, (dir) => {
 })
 
 onBeforeUnmount(() => {
+  stopLyricTicker()
   stopWordAnimLoop()
   stopRhythmLoop()
   stopDotsScaleLoop()
@@ -2130,26 +2203,24 @@ onBeforeUnmount(() => {
   align-items: center;
   pointer-events: none;
   user-select: none;
-  /* 挂载即播放入场：展开 + 模糊收拢（离场直接 v-if 移除，保证滚动测量布局正确） */
-  animation: upcoming-hint-in 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0);
+  /* 高度过渡：句中空区后插入时由 --enter 展开；
+     切歌时三点随歌词块首帧直接以最终高度出现（不挂 --enter），
+     避免切歌重活阻塞首帧时动画被跳帧压缩成瞬间让位 */
+  transition: max-height 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              padding-top 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              padding-bottom 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              opacity 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
-@keyframes upcoming-hint-in {
-  from {
-    max-height: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    opacity: 0;
-    filter: blur(6px);
-    transform: scale(0.92);
-  }
-  to {
-    max-height: calc(var(--lyrics-active-original, 24px) * 1.4 + 16px);
-    padding-top: 8px;
-    padding-bottom: 8px;
-    opacity: 1;
-    filter: blur(0);
-    transform: scale(1);
-  }
+/* 入场起始态：以 0 高度 + 模糊收拢挂载，下一帧撤掉该类触发高度过渡 */
+.upcoming-hint-line--enter {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  filter: blur(6px);
+  transform: scale(0.92);
 }
 /* 离场：0.25s 平滑收起（下方行连续上滑）。
    缓动与滚动动画一致（B1 同步滚动），点行高度同步收缩，
