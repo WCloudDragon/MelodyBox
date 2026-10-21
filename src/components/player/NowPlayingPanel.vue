@@ -1481,19 +1481,18 @@ function runDotsCascade(nextIndex) {
   const csAfterOffset = getComputedStyle(nextEl).transform
   void csAfterOffset
 
-  // 归位：与普通切句一致的视口波前编排（三点结束恒向下播放，由上至下扫过）
+  // 归位：固定每行 30ms 的触发间隔（三点结束恒向下播放，由视口首行起推进）
   const viewportTop = targetScroll
   const viewportH = Math.max(1, containerHeight)
+  const { delays, totalStagger } = staggerDelays(totalLines, viewportTop, viewportH, true, nextIndex)
   for (let i = 0; i < totalLines; i++) {
     const el = lineRefs.value[i]
     if (!el) continue
-    const rel = Math.min(Math.max((el.offsetTop - viewportTop) / viewportH, 0), 1)
-    const delay = rel * MAX_STAGGER_TOTAL
-    el.style.transition = `transform ${STAGGER_DURATION}ms cubic-bezier(0.2, 0.9, 0.3, 1.0) ${delay}s, opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0), filter 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0)`
+    el.style.transition = `transform ${STAGGER_DURATION}ms cubic-bezier(0.2, 0.9, 0.3, 1.0) ${delays[i]}s, opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0), filter 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0)`
     el.style.transform = 'translate3d(0, 0, 0)'
   }
 
-  const totalDuration = STAGGER_DURATION + MAX_STAGGER_TOTAL * 1000 + 60
+  const totalDuration = STAGGER_DURATION + totalStagger * 1000 + 60
   const cleanup = () => {
     for (let i = 0; i < totalLines; i++) {
       const el = lineRefs.value[i]
@@ -1507,10 +1506,39 @@ function runDotsCascade(nextIndex) {
   lyricsScrollCleanup = () => { clearTimeout(timer); cleanup() }
 }
 
-const STAGGER_DURATION = 480
-// 视口波前总扫过时长：延迟按「行的视口位置」线性展开（上下边界外 clamp），
-// 向下播放由上至下、向上播放由下至上，上下行遵循同一条波前
-const MAX_STAGGER_TOTAL = 0.42
+// 每行多米诺滚动动画时长（固定值，不随位移距离/行数/视口变化）
+const STAGGER_DURATION = 800
+// 相邻行的触发间隔：固定 70ms/行，级联节奏与视口高度无关；
+// 视口外的行钳制到可见范围边界，避免延迟随总行数无限增长
+const STAGGER_STEP = 0.07
+
+// 计算每行延迟：向下播放以视口首行为波前起点、向上播放以末行为起点，
+// 延迟只取决于「行与起点的索引距离」，与视口高度无关
+function staggerDelays(totalLines, viewportTop, viewportH, forward, fallbackIndex) {
+  let first = -1
+  let last = -1
+  for (let i = 0; i < totalLines; i++) {
+    const el = lineRefs.value[i]
+    if (!el) continue
+    const rel = (el.offsetTop - viewportTop) / viewportH
+    if (rel >= 0 && rel <= 1) {
+      if (first < 0) first = i
+      last = i
+    }
+  }
+  if (first < 0) first = last = Math.max(0, Math.min(totalLines - 1, fallbackIndex))
+  const anchor = forward ? first : last
+  const span = Math.max(1, last - first)
+  const delays = new Array(totalLines)
+  let maxSteps = 0
+  for (let i = 0; i < totalLines; i++) {
+    if (!lineRefs.value[i]) continue
+    const steps = Math.min(Math.abs(i - anchor), span)
+    delays[i] = steps * STAGGER_STEP
+    if (steps > maxSteps) maxSteps = steps
+  }
+  return { delays, totalStagger: maxSteps * STAGGER_STEP }
+}
 
 function scrollToLine(index, animate = true) {
   if (index < 0 || !scrollRef.value || !mainRef.value) return
@@ -1607,22 +1635,20 @@ function animateScrollTo(targetScroll, index, animate = true) {
     const csAfterOffset = getComputedStyle(lineEl).transform
     void csAfterOffset
 
-    // 归位编排：波前按「行的视口位置」展开——向下播放由上至下扫过、
-    // 向上播放由下至上，上方行与下方行遵循同一条波前（视口外行 clamp 到两端）
+    // 归位编排：固定每行 30ms 的触发间隔——向下播放由视口首行向末行推进、
+    // 向上播放由末行向首行推进；视口外行钳制到可见边界（延迟与视口高度无关）
     // 注意：offsetTop 是内容坐标，视口顶部在内容坐标中 = targetScroll（滚动值本身）
     const viewportTop = targetScroll
     const viewportH = Math.max(1, containerHeight)
+    const { delays, totalStagger } = staggerDelays(totalLines, viewportTop, viewportH, forward, index)
     for (let i = 0; i < totalLines; i++) {
       const el = lineRefs.value[i]
       if (!el) continue
-      const rel = (el.offsetTop - viewportTop) / viewportH
-      const progress = forward ? rel : 1 - rel
-      const delay = Math.min(Math.max(progress, 0), 1) * MAX_STAGGER_TOTAL
-      el.style.transition = `transform ${STAGGER_DURATION}ms cubic-bezier(0.2, 0.9, 0.3, 1.0) ${delay}s, opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0), filter 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0)`
+      el.style.transition = `transform ${STAGGER_DURATION}ms cubic-bezier(0.2, 0.9, 0.3, 1.0) ${delays[i]}s, opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0), filter 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0)`
       el.style.transform = 'translate3d(0, 0, 0)'
     }
 
-    const totalDuration = STAGGER_DURATION + MAX_STAGGER_TOTAL * 1000 + 60
+    const totalDuration = STAGGER_DURATION + totalStagger * 1000 + 60
 
     const cleanup = () => {
       for (let i = 0; i < totalLines; i++) {
