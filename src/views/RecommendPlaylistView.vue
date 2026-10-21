@@ -19,12 +19,12 @@
         <h2 class="page-content-title">{{ headerInfo.title }}</h2>
         <p v-if="headerInfo.subtitle">{{ headerInfo.subtitle }}</p>
         <p>{{ tracks.length }} 首推荐歌曲</p>
-      </div>
-      <div class="recommend-header__actions">
-        <el-button type="primary" @click="playAll" :disabled="tracks.length === 0">
-          <el-icon><VideoPlay /></el-icon>
-          播放全部
-        </el-button>
+        <!-- 操作按钮在信息列内：靠左下贴底、横向排布 -->
+        <div class="recommend-header__actions">
+          <el-button type="primary" @click="playAll" :disabled="tracks.length === 0">
+            播放全部
+          </el-button>
+        </div>
       </div>
     </div>
 
@@ -285,7 +285,8 @@ watch(() => route.fullPath, fetchRecommendations, { immediate: true })
 .recommend-view :deep(.list-page-header) { top: 0; }
 
 .recommend-header {
-  display: flex; align-items: flex-end; gap: 24px;
+  /* 信息区居左靠上：stretch 让信息列与封面等高，标题贴顶、按钮贴底 */
+  display: flex; align-items: stretch; gap: 24px;
   margin-bottom: 32px;
   padding-left: var(--page-pad-x, 12px);
 }
@@ -295,8 +296,10 @@ watch(() => route.fullPath, fetchRecommendations, { immediate: true })
   flex-shrink: 0; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
 }
 .recommend-header__icon { font-size: 52px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3)); }
+.recommend-header__info { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
 .recommend-header__info p { color: var(--text-tertiary); margin: 0 0 2px; font-size: 14px; }
-.recommend-header__actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
+/* 操作按钮：靠左下、横向排布 */
+.recommend-header__actions { margin-top: auto; display: flex; gap: 8px; flex-shrink: 0; }
 
 .loading-hint {
   display: flex; align-items: center; justify-content: center; gap: 8px;

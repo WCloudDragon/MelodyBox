@@ -20,13 +20,14 @@
           <h2 class="page-content-title">{{ album?.name }}</h2>
           <p>{{ album.artist }} · {{ album.tracks.length }} 首歌曲</p>
           <p v-if="album.year">发行年份：{{ album.year }}</p>
-        </div>
-        <div class="album-header__actions">
-          <el-button type="primary" @click="playAll">播放全部</el-button>
-          <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
-            <el-icon><Select /></el-icon>
-            多选
-          </el-button>
+          <!-- 操作按钮在信息列内：靠左下贴底、横向排布 -->
+          <div class="album-header__actions">
+            <el-button type="primary" @click="playAll">播放全部</el-button>
+            <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
+              <el-icon><Select /></el-icon>
+              {{ multiSelectMode ? '退出多选' : '多选' }}
+            </el-button>
+          </div>
         </div>
       </div>
 
@@ -192,7 +193,8 @@ function batchAddQueueNext(tracks) {
 .album-view :deep(.list-page-header) { top: 0; }
 
 .album-header {
-  display: flex; align-items: flex-end; gap: 24px;
+  /* 信息区居左靠上：stretch 让信息列与封面等高，标题贴顶、按钮贴底 */
+  display: flex; align-items: stretch; gap: 24px;
   padding-left: var(--page-pad-x, 12px);
   margin-bottom: 32px;
 }
@@ -209,8 +211,10 @@ function batchAddQueueNext(tracks) {
   display: flex; align-items: center; justify-content: center;
   color: var(--text-tertiary);
 }
+.album-info { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
 .album-info p { color: var(--text-tertiary); margin: 0 0 2px; font-size: 14px; }
-.album-header__actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
+/* 操作按钮：靠左下、横向排布 */
+.album-header__actions { margin-top: auto; display: flex; gap: 8px; flex-shrink: 0; }
 
 .section-header {
   display: flex; align-items: center; justify-content: space-between;

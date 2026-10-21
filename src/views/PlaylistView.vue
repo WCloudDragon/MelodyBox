@@ -20,21 +20,21 @@
           <h2 class="page-content-title">{{ playlist?.name }}</h2>
           <p v-if="playlist.description">{{ playlist.description }}</p>
           <p>{{ playlist.tracks.length }} 首歌曲</p>
-        </div>
-        <div class="playlist-actions">
-          <el-button type="primary" @click="playAll" :disabled="playlist.tracks.length === 0">
-            <el-icon><VideoPlay /></el-icon>
-            播放全部
-          </el-button>
-          <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
-            <el-icon><Select /></el-icon>
-            {{ multiSelectMode ? '退出多选' : '多选' }}
-          </el-button>
-          <!-- 系统歌单（我的收藏）不可重命名/删除 -->
-          <template v-if="!playlistStore.isSystemPlaylist(playlist.id)">
-            <el-button @click="showRenameDialog">重命名</el-button>
-            <el-button type="danger" plain @click="handleDelete">删除歌单</el-button>
-          </template>
+          <!-- 操作按钮在信息列内：靠左下贴底、横向排布 -->
+          <div class="playlist-actions">
+            <el-button type="primary" @click="playAll" :disabled="playlist.tracks.length === 0">
+              播放全部
+            </el-button>
+            <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
+              <el-icon><Select /></el-icon>
+              {{ multiSelectMode ? '退出多选' : '多选' }}
+            </el-button>
+            <!-- 系统歌单（我的收藏）不可重命名/删除 -->
+            <template v-if="!playlistStore.isSystemPlaylist(playlist.id)">
+              <el-button @click="showRenameDialog">重命名</el-button>
+              <el-button type="danger" plain @click="handleDelete">删除歌单</el-button>
+            </template>
+          </div>
         </div>
       </div>
 
@@ -265,7 +265,8 @@ function batchAddQueueNext(tracks) {
 .playlist-content { min-height: 0; }
 
 .playlist-header {
-  display: flex; align-items: flex-end; gap: 24px;
+  /* 信息区居左靠上：stretch 让信息列与封面等高，标题贴顶、按钮贴底 */
+  display: flex; align-items: stretch; gap: 24px;
   padding-left: var(--page-pad-x, 12px);
   margin-bottom: 32px;
 }
@@ -282,8 +283,10 @@ function batchAddQueueNext(tracks) {
   display: flex; align-items: center; justify-content: center;
   color: var(--text-tertiary);
 }
+.playlist-info { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
 .playlist-info p { color: var(--text-tertiary); margin: 0 0 2px; font-size: 14px; }
-.playlist-actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
+/* 操作按钮：靠左下、横向排布 */
+.playlist-actions { margin-top: auto; display: flex; gap: 8px; flex-shrink: 0; }
 
 /* 列表视图（与音乐库/专辑/艺术家页同一套行规格，无表头） */
 .tracks-list { display: flex; flex-direction: column; }

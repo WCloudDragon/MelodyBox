@@ -19,13 +19,14 @@
         <div class="artist-info">
           <h2 class="page-content-title">{{ artist?.name }}</h2>
           <p>{{ artist.tracks.length }} 首歌曲</p>
-        </div>
-        <div class="artist-header__actions">
-          <el-button type="primary" @click="playAll">播放全部</el-button>
-          <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
-            <el-icon><Select /></el-icon>
-            多选
-          </el-button>
+          <!-- 操作按钮在信息列内：靠左下贴底、横向排布 -->
+          <div class="artist-header__actions">
+            <el-button type="primary" @click="playAll">播放全部</el-button>
+            <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
+              <el-icon><Select /></el-icon>
+              {{ multiSelectMode ? '退出多选' : '多选' }}
+            </el-button>
+          </div>
         </div>
       </div>
 
@@ -279,13 +280,15 @@ function batchAddQueueNext(tracks) {
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .artist-header {
-  display: flex; align-items: flex-end; gap: 24px;
+  /* 信息区居左靠上：stretch 让信息列与头像等高，标题贴顶、按钮贴底 */
+  display: flex; align-items: stretch; gap: 24px;
   padding-left: var(--page-pad-x, 12px);
   margin-bottom: 32px;
 }
 .artist-avatar {
   width: 200px; height: 200px; border-radius: 50%;
   overflow: hidden; flex-shrink: 0;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
 }
 .artist-avatar img,
 .artist-avatar .lazy-cover { width: 100%; height: 100%; object-fit: cover; }
@@ -295,8 +298,10 @@ function batchAddQueueNext(tracks) {
   display: flex; align-items: center; justify-content: center;
   color: var(--text-tertiary);
 }
+.artist-info { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
 .artist-info p { color: var(--text-tertiary); margin: 0; font-size: 14px; }
-.artist-header__actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
+/* 操作按钮：靠左下、横向排布 */
+.artist-header__actions { margin-top: auto; display: flex; gap: 8px; flex-shrink: 0; }
 
 .section-header {
   display: flex; align-items: center; justify-content: space-between;

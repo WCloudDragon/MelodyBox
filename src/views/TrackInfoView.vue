@@ -1,10 +1,12 @@
 <template>
   <div class="track-info-view">
-    <div class="back-link">
-      <button class="track-back-btn" title="返回" @click="onBack">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-      </button>
-    </div>
+    <ListPageHeader
+      :title="track?.title || '音轨信息'"
+      :show-play-mode="false"
+      show-back
+      back-fallback="/library"
+      fog-title
+    />
 
     <!-- 加载中 -->
     <div v-if="loading" class="loading-state">
@@ -25,11 +27,11 @@
         <div class="hero-cover">
           <LazyCover v-if="track.cover" :src="track.cover" />
           <div v-else class="hero-cover--empty">
-            <el-icon size="64"><Headset /></el-icon>
+            <el-icon size="48"><Headset /></el-icon>
           </div>
         </div>
         <div class="hero-info">
-          <h1 class="hero-title" v-ripple @click="copyText(track.title)" title="点击复制">{{ track.title }}</h1>
+          <h1 class="hero-title page-content-title" v-ripple @click="copyText(track.title)" title="点击复制">{{ track.title }}</h1>
           <p class="hero-artist" v-ripple @click="copyText(track.artist)" title="点击复制">{{ track.artist }}</p>
           <p class="hero-album" v-if="track.album && track.album !== '未知专辑'">{{ track.album }}</p>
           <div class="hero-meta">
@@ -37,12 +39,6 @@
             <span v-if="track.genre && track.genre !== '未知'" class="hero-meta__item">{{ track.genre }}</span>
             <span class="hero-meta__item">{{ formatDuration(track.duration) }}</span>
             <span v-if="track.quality" class="quality-tag" :class="qualityClass(track.quality)">{{ track.quality }}</span>
-          </div>
-          <div class="hero-actions">
-            <el-button size="small" round type="primary" plain :disabled="!track.id" @click="goSimilar">
-              <el-icon><Aim /></el-icon>
-              相似歌曲
-            </el-button>
           </div>
         </div>
       </div>
@@ -158,11 +154,12 @@
 <script setup>
 defineOptions({ name: 'TrackInfoView' })
 import { ref, computed, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useLibraryStore } from '@/stores/library'
 import { formatDuration, qualityClass } from '@/utils/format'
 import { ElMessage } from '@/utils/toast'
 import LazyCover from '@/components/LazyCover.vue'
+import ListPageHeader from '@/components/music/ListPageHeader.vue'
 
 const route = useRoute()
 const libraryStore = useLibraryStore()
@@ -222,27 +219,6 @@ function qualityLabel(quality) {
   return map[quality] || quality
 }
 
-const router = useRouter()
-
-// 返回：有浏览历史则 back，否则兜底首页（来源页面多样，无法假定语义父级）
-function onBack() {
-  if (window.history.state?.back) {
-    router.back()
-  } else {
-    router.replace('/')
-  }
-}
-
-/** 跳转到相似歌曲推荐页（AI similar 模式） */
-function goSimilar() {
-  const t = track.value
-  if (!t?.id) return
-  router.push({
-    path: '/recommend',
-    query: { mode: 'similar', song_id: t.id, title: t.title || '' },
-  })
-}
-
 async function fetchTrack(path) {
   loading.value = true
   track.value = null
@@ -282,36 +258,23 @@ watch(() => route.query.path, (p) => {
 .track-info-view {
   padding-bottom: 100px;
 }
-/* 返回按钮：与 ListPageHeader 的 lph-btn--back 同款视觉语言 */
-.track-back-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.track-back-btn:hover { background: var(--hover-bg-strong); }
-.back-link { margin-bottom: 12px; padding-left: var(--page-pad-x, 12px); }
+/* 与其它详情页一致：sticky 页头贴滚动视口顶（窗口顶） */
+.track-info-view :deep(.list-page-header) { top: 0; }
 
 .loading-state, .empty-state { text-align: center; padding: 80px 32px; color: var(--text-tertiary); }
 .loading-state p, .empty-state p { margin: 16px 0; font-size: 15px; }
 
-/* 英雄区域 */
+/* 英雄区域：与专辑详情页同规格（封面 200、gap 24、左内边距、下边距 32）；
+   信息区居左靠上，标题顶部与封面顶部对齐 */
 .hero {
-  display: flex; gap: 32px; align-items: center;
-  margin-bottom: 40px;
+  display: flex; align-items: stretch; gap: 24px;
+  padding-left: var(--page-pad-x, 12px);
+  margin-bottom: 32px;
 }
 .hero-cover {
-  width: 280px; height: 280px; border-radius: 16px;
+  width: 200px; height: 200px; border-radius: 12px;
   overflow: hidden; flex-shrink: 0;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
 }
 .hero-cover img, .hero-cover .lazy-cover { width: 100%; height: 100%; object-fit: cover; }
 .hero-cover--empty {
@@ -320,12 +283,14 @@ watch(() => route.query.path, (p) => {
   display: flex; align-items: center; justify-content: center;
   color: var(--text-tertiary);
 }
-.hero-info { flex: 1; min-width: 0; }
-.hero-title { font-size: 32px; font-weight: 700; margin: 0 0 8px; line-height: 1.2; cursor: pointer; }
-.hero-artist { font-size: 18px; color: var(--text-secondary); margin: 0 0 4px; cursor: pointer; }
-.hero-album { font-size: 15px; color: var(--text-tertiary); margin: 0 0 16px; }
+.hero-info { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+.hero-title {
+  font-size: 28px; font-weight: 700; margin: 0 0 6px; line-height: 1.2; cursor: pointer;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hero-artist { font-size: 14px; color: var(--text-tertiary); margin: 0 0 2px; cursor: pointer; }
+.hero-album { font-size: 14px; color: var(--text-tertiary); margin: 0 0 12px; }
 .hero-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.hero-actions { margin-top: 16px; display: flex; gap: 8px; align-items: center; }
 .hero-meta__item {
   padding: 4px 10px; font-size: 12px; border-radius: 4px;
   background: var(--bg-tertiary); color: var(--text-secondary);
