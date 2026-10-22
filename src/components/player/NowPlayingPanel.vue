@@ -901,9 +901,12 @@ function startWordAnimLoop() {
       wordAnimRaf = null
       return
     }
-    // 重新缓存（word-seg 仅在活跃行渲染，切句后旧引用失效）
+    // 逐字元素缓存：仅在切句（活跃逐字行变化）或旧引用已脱离 DOM 时重建，
+    // 避免每帧 querySelectorAll 重新遍历整行字符
     const lineEl = lineRefs.value[idx]
-    line._wordSegEls = lineEl ? [...lineEl.querySelectorAll('.word-seg')] : []
+    if (!line._wordSegEls?.length || !line._wordSegEls[0].isConnected) {
+      line._wordSegEls = lineEl ? [...lineEl.querySelectorAll('.word-seg')] : []
+    }
 
     const now = performance.now()
     const interval = 1000 / fpz
@@ -2095,15 +2098,20 @@ onBeforeUnmount(() => {
 }
 .lyric-line {
   text-align: left; padding: 8px 0;
+  /* filter 只做短过渡：文字滤镜每帧都要重新栅格化离屏层，
+     与活跃行字号放大的 0.8s 完全重叠时会明显抢帧，这里压缩到 0.18s */
   transition: padding 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               min-height 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              filter 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               background 0.15s ease,
               transform 0.12s ease;
   letter-spacing: 1px; user-select: none;
   min-height: 48px; display: flex; align-items: center;
   cursor: pointer; border-radius: 10px; position: relative;
+  /* 把内容变化（字号/逐字/滤镜）的重排与重绘限制在本行内，
+     避免活跃行缩放时整块歌词容器反复失效 */
+  contain: layout paint;
 }
 .lyric-line:hover {
   background: rgba(255,255,255,0.04);
@@ -2120,9 +2128,9 @@ onBeforeUnmount(() => {
   margin: 0; font-size: var(--lyrics-base-original, 16px); line-height: 1.4;
   font-weight: var(--lyrics-weight, 700); color: rgba(255,255,255,0.25);
   max-width: var(--lyrics-ch-limit);
+  /* 字重两端取同一变量、不会变化，去掉无意义的 font-weight 过渡 */
   transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               font-size 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
-              font-weight 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0),
               max-width 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .lyric-line__translation {
