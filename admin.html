@@ -4,6 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MelodyBox 管理后台</title>
+    <script>
+      // 首屏渲染前应用已保存的主题，避免浅/深色切换时闪屏
+      ;(function () {
+        try {
+          var mode = localStorage.getItem('melodybox.admin-theme') || 'system'
+          var dark = mode === 'dark' ||
+            (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
+          document.documentElement.classList.toggle('dark', dark)
+        } catch (e) {}
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>

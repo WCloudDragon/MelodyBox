@@ -2,6 +2,7 @@
   <div id="admin-app">
     <!-- 登录页：无管理壳 -->
     <router-view v-if="isLoginRoute" />
+    <ThemeToggle v-if="isLoginRoute" floating />
 
     <!-- 管理壳：顶栏 + 内容区 -->
     <div v-else class="admin-shell">
@@ -15,10 +16,13 @@
           <router-link to="/" class="admin-nav-link" :class="{ active: route.path === '/' }">云端曲库</router-link>
           <router-link to="/folders" class="admin-nav-link" :class="{ active: route.path === '/folders' }">文件夹管理</router-link>
         </nav>
-        <div class="admin-topbar__user" v-if="auth.isLoggedIn">
-          <el-icon><UserFilled /></el-icon>
-          <span class="admin-topbar__username">{{ auth.user?.username }}</span>
-          <el-button size="small" text @click="handleLogout">退出登录</el-button>
+        <div class="admin-topbar__right">
+          <ThemeToggle />
+          <div class="admin-topbar__user" v-if="auth.isLoggedIn">
+            <el-icon><UserFilled /></el-icon>
+            <span class="admin-topbar__username">{{ auth.user?.username }}</span>
+            <el-button size="small" text @click="handleLogout">退出登录</el-button>
+          </div>
         </div>
       </header>
       <main class="admin-main">
@@ -32,6 +36,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import ThemeToggle from './components/ThemeToggle.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -76,6 +81,11 @@ html, body, #admin-app {
   align-items: center;
   gap: 8px;
   color: var(--text-secondary);
+}
+.admin-topbar__right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .admin-topbar__nav {
   display: flex;
