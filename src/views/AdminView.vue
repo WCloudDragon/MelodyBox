@@ -1036,6 +1036,8 @@ watch(() => playlistStore.playlists, () => {
   overflow-y: auto;
   padding-bottom: 24px;
 }
+/* 页头吸附基准对齐全站：默认 sticky top 为 --content-top，会整体下移一个页头上方背景带 */
+.admin-page :deep(.list-page-header) { top: 0; }
 
 .admin-badge {
   font-size: 11px;

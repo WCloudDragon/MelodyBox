@@ -641,6 +641,8 @@ useScrollMemory('settings', () => document.querySelector('.main-content'))
 
 <style scoped>
 .settings-view { padding: 0 0 100px; }
+/* 页头吸附基准对齐全站：默认 sticky top 为 --content-top，会整体下移一个页头上方背景带 */
+.settings-view :deep(.list-page-header) { top: 0; }
 
 /* ===== 一级菜单页 ===== */
 .settings-view > h1 { font-size: 28px; font-weight: 700; margin: 0 0 28px; letter-spacing: -0.3px; }

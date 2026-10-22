@@ -334,6 +334,8 @@ function fmtRel(raw) {
 
 <style scoped>
 .search-view { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+/* 页头吸附基准对齐全站：默认 sticky top 为 --content-top，会整体下移一个页头上方背景带 */
+.search-view :deep(.list-page-header) { top: 0; }
 
 /* 类别 tab（网易云式：文字 + 底部指示条）。
    容器无 padding，按钮自带 12px 水平内边距 → 首个文字恰落 --page-pad-x 基准线 */
