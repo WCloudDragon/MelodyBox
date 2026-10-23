@@ -1562,7 +1562,7 @@ function runDotsCascade(nextIndex) {
   const csAfterOffset = getComputedStyle(nextEl).transform
   void csAfterOffset
 
-  // 归位：固定每行 30ms 的触发间隔（三点结束恒向下播放，由视口首行起推进）
+  // 归位：固定每行 STAGGER_STEP 的触发间隔（三点结束恒向下播放，由视口首行起推进）
   const viewportTop = targetScroll
   const viewportH = Math.max(1, containerHeight)
   const { delays, totalStagger } = staggerDelays(totalLines, viewportTop, viewportH, true, nextIndex)
@@ -1590,10 +1590,10 @@ function runDotsCascade(nextIndex) {
 }
 
 // 每行多米诺滚动动画时长（固定值，不随位移距离/行数/视口变化）
-const STAGGER_DURATION = 800
-// 相邻行的触发间隔：固定 70ms/行，级联节奏与视口高度无关；
+const STAGGER_DURATION = 700
+// 相邻行的触发间隔：固定 60ms/行，级联节奏与视口高度无关；
 // 视口外的行钳制到可见范围边界，避免延迟随总行数无限增长
-const STAGGER_STEP = 0.07
+const STAGGER_STEP = 0.06
 
 // 计算每行延迟：向下播放以视口首行为波前起点、向上播放以末行为起点，
 // 延迟只取决于「行与起点的索引距离」，与视口高度无关
@@ -1774,7 +1774,7 @@ function animateScrollTo(targetScroll, index, animate = true) {
     const csAfterOffset = getComputedStyle(lineEl).transform
     void csAfterOffset
 
-    // 归位编排：固定每行 30ms 的触发间隔——向下播放由视口首行向末行推进、
+    // 归位编排：固定每行 STAGGER_STEP 的触发间隔——向下播放由视口首行向末行推进、
     // 向上播放由末行向首行推进；视口外行钳制到可见边界（延迟与视口高度无关）
     // 注意：offsetTop 是内容坐标，视口顶部在内容坐标中 = targetScroll（滚动值本身）
     const viewportTop = targetScroll
