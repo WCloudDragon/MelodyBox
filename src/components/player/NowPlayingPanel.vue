@@ -945,8 +945,11 @@ function segState(segments, idx, time, nextLineTime = 0) {
 }
 
 // 跳转到指定歌词行的播放时间
+// 点击跳转标记：目标行就在视口内（用户刚点击它），放大高亮不必等滚动落地
+let _clickSeekAt = 0
 function seekToLine(time) {
   exitUserScrollMode()
+  _clickSeekAt = performance.now()
   if (player.duration > 0) {
     player.seek((time / player.duration) * 100)
   }
@@ -1372,7 +1375,17 @@ async function handleTimeUpdate(time) {
   if (prevFirst >= 0 && nextFirst >= 0 && Math.abs(nextFirst - prevFirst) > 1) {
     jumpPending.value = prevFirst
     // jumpPending 保持到滚动/级联动画结束（由 animateScrollTo 的完成回调释放），
-    // 让目标行的放大/淡入发生在滚动到位、行可见之后，而不是在屏幕外悄悄完成
+    // 让目标行的放大/淡入发生在滚动到位、行可见之后，而不是在屏幕外悄悄完成。
+    // 例外：歌词行点击跳转——目标行就在视口内（用户刚点击它），放大等滚动落地
+    // 会产生可感知的延迟；这里仅保留一帧缓冲让词级 span 先以非活跃态挂载，
+    // 随后立即释放 .active，使放大过渡与滚动动画同步开始（进度条拖拽的远跳不受影响）
+    if (performance.now() - _clickSeekAt < 500) {
+      _clickSeekAt = 0
+      const pending = prevFirst
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (jumpPending.value === pending) jumpPending.value = -1
+      }))
+    }
     // 旧行逐字 DOM 延后销毁，留 0.4s 给 fadeOutWordSegs 的颜色过渡
     if (fadingTimer) clearTimeout(fadingTimer)
     fadingLineIndex.value = prevWord >= 0 ? prevWord : prevFirst
