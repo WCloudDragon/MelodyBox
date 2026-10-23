@@ -1420,6 +1420,11 @@ async function handleTimeUpdate(time) {
       _dotsScrollDone = true
       await nextTick()
       if (!isUserScrolling.value) scrollToLine(0, true)
+    } else {
+      // 短空区 / 末尾空区（不触发三点提示）：进度条拖拽跳转后视口可能
+      // 停在很远的位置，这里补偿一次定位；自然播放时视口本就在附近，
+      // 偏差小于半屏不会触发，避免句间空隙来回抖动
+      await repositionToEmptyZoneAnchor()
     }
     return
   }
@@ -1659,6 +1664,23 @@ function scrollToActiveGroup(animate = true) {
     targetScroll = (top + bottom) / 2 - containerHeight / 2
   }
   animateScrollTo(targetScroll, active[active.length - 1], animate)
+}
+
+// 无活跃行的短空区 / 末尾空区：视口偏离锚点半屏以上时补一次定位。
+// 锚点取空区之后的第一句（末尾空区取最后一句），使其居中显示
+async function repositionToEmptyZoneAnchor() {
+  if (isUserScrolling.value || !mainRef.value || !scrollRef.value) return
+  const list = parsedLyrics.value
+  const anchor = hintLineIndex.value
+  if (anchor < 0) return
+  const targetIndex = anchor + 1 < list.length ? anchor + 1 : anchor
+  const el = lineRefs.value[targetIndex]
+  if (!el) return
+  const containerHeight = mainRef.value.clientHeight
+  const desired = el.offsetTop - containerHeight / 2 + el.offsetHeight / 2
+  if (Math.abs(desired - targetScrollPos) <= containerHeight * 0.5) return
+  await nextTick()
+  scrollToLine(targetIndex, true)
 }
 
 function animateScrollTo(targetScroll, index, animate = true) {

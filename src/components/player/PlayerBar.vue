@@ -3,6 +3,8 @@
     <!-- 顶部进度条（全宽） -->
     <div class="progress-top" ref="progressRef"
          @mousedown="onProgressMouseDown"
+         @mousemove="onProgressHover"
+         @contextmenu.prevent="onProgressContextMenu"
          @mouseenter="progressHovered = true" @mouseleave="progressHovered = false">
       <div class="progress-top__buffer" v-show="currentTrack?.source === 'cloud'" :style="{ width: bufferedPercent + '%' }"></div>
       <div class="progress-top__bg" :style="{ width: displayProgress + '%' }"></div>
@@ -12,6 +14,11 @@
       <div class="progress-top__time progress-top__time--total" v-show="progressHovered">
         {{ formatDuration(duration) }}
       </div>
+    </div>
+    <!-- 悬停/拖拽进度条：在鼠标横向位置上方显示该处对应的时间 -->
+    <div v-if="(progressHovered || isDraggingProgress) && duration > 0"
+         class="progress-tip" :style="{ left: tipLeft }">
+      {{ formatDuration(hoverTime) }}
     </div>
 
     <div class="player-bar__inner">
@@ -280,6 +287,12 @@ const displayCurrentTime = computed(() => {
   return currentTime.value
 })
 
+// 悬停/拖拽时的鼠标横向百分比与对应时间，用于进度气泡
+const hoverPercent = ref(0)
+const hoverTime = computed(() => duration.value > 0 ? (hoverPercent.value / 100) * duration.value : 0)
+// 气泡中心跟随鼠标，两端各留 34px 保证不越出窗口
+const tipLeft = computed(() => `clamp(34px, ${hoverPercent.value}%, calc(100% - 34px))`)
+
 const playModeLabel = computed(() =>
   PLAY_MODES.find(m => m.key === playMode.value)?.label || '顺序播放'
 )
@@ -304,22 +317,37 @@ function calcProgress(e) {
   return Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100))
 }
 
+function onProgressHover(e) {
+  hoverPercent.value = calcProgress(e)
+}
+
+// 右键单击进度条：从头播放
+function onProgressContextMenu() {
+  dragProgress.value = 0
+  hoverPercent.value = 0
+  player.seek(0)
+  player.resume()
+}
+
 function onProgressMouseDown(e) {
+  if (e.button !== 0) return
   isDraggingProgress.value = true
   dragProgress.value = calcProgress(e)
+  hoverPercent.value = dragProgress.value
   document.addEventListener('mousemove', onProgressDrag)
   document.addEventListener('mouseup', onProgressMouseUp)
 }
 
 function onProgressDrag(e) {
   dragProgress.value = calcProgress(e)
+  hoverPercent.value = dragProgress.value
 }
 
 function onProgressMouseUp() {
-  player.seek(dragProgress.value)
-  isDraggingProgress.value = false
   document.removeEventListener('mousemove', onProgressDrag)
   document.removeEventListener('mouseup', onProgressMouseUp)
+  player.seek(dragProgress.value)
+  isDraggingProgress.value = false
 }
 
 // ===== 音量拖拽（本地即时视觉） =====
@@ -381,8 +409,22 @@ function onVolumeWheel(e) {
   background: var(--bg-tertiary);
   transform-origin: top;
 }
+/* 上下拓宽悬停/拖拽命中区：视觉仍是 4px 细条，命中区约 16px 高 */
+.progress-top::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  bottom: -6px;
+}
 .progress-top:hover {
   transform: scaleY(2);
+}
+/* hover 时条体已被 scaleY(2) 拉伸，伪元素同比收窄，避免命中区继续外扩 */
+.progress-top:hover::before {
+  top: -3px;
+  bottom: -3px;
 }
 .progress-top:hover .progress-top__time {
   transform: scaleY(0.5);
@@ -421,6 +463,34 @@ function onVolumeWheel(e) {
 }
 .progress-top__time--current { left: 8px; }
 .progress-top__time--total { right: 8px; }
+
+/* 悬停/拖拽时间气泡：跟随鼠标横向位置，浮在进度条上方 */
+.progress-tip {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 11px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 3;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: background 0.4s, color 0.4s;
+}
+/* 沉浸模式进度条贴在栏底，气泡改为浮在栏内底部之上 */
+.player-bar.immersive .progress-tip {
+  bottom: 10px;
+}
+/* 面板打开时栏内为深色背景，气泡用半透明黑底白字与两端时间协调 */
+.player-bar.panel-active .progress-tip {
+  background: rgba(0, 0, 0, 0.72);
+  color: rgba(255, 255, 255, 0.92);
+}
 
 /* ===== 内部主体（三栏 Grid 布局） ===== */
 .player-bar__inner {

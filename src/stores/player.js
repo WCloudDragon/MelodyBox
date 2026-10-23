@@ -287,6 +287,9 @@ export const usePlayerStore = defineStore('player', () => {
     }
 
     currentIndex.value = index
+    // 立即归零：audio.src 切换后 timeupdate 尚未触发，currentTime ref 会残留
+    // 上一曲的位置，导致「上一曲」误判为当前曲已播 >3s 而只把本曲倒回开头
+    currentTime.value = 0
     const track = queue.value[index]
     _trackStartedAt = Date.now()
     _lastTrackInfo = track
@@ -336,17 +339,12 @@ export const usePlayerStore = defineStore('player', () => {
     play(nextIndex)
   }
 
-  // 上一首
+  // 上一首：始终切到上一曲
   function prev() {
     if (queue.value.length === 0) return
-    if (currentTime.value > 3) {
-      // 从头播放当前曲目：直接 seek 到 0 避免 URL 未变时浏览器不重载
-      if (audio.value) audio.value.currentTime = 0
-      _seekOffset = 0
-      currentTime.value = 0
-      resume()
-      return
-    }
+    // 不再做「当前曲已播 >3s 则倒回本曲开头」的判定：该行为会随进度条被
+    // 人为拖动而变化（拖到后半段后按上一曲必然变成重播本曲），与「上一曲」
+    // 按钮的语义冲突。需要重听当前曲时直接拖进度条回 0 即可
     songChangeDirection.value = 'prev'
     let prevIndex = currentIndex.value - 1
     if (prevIndex < 0) {
@@ -359,6 +357,9 @@ export const usePlayerStore = defineStore('player', () => {
   function seek(percent) {
     if (!audio.value || !duration.value) return
     const target = (percent / 100) * duration.value
+    // 立即同步状态时间：否则 UI 会等 timeupdate（约 250ms）才更新，
+    // 拖拽结束/双击回零时进度条会先闪回旧位置
+    currentTime.value = target
     const distance = Math.abs(target - (audio.value.currentTime + _seekOffset))
 
     const track = currentTrack.value
