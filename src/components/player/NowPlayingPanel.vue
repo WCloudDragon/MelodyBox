@@ -894,30 +894,30 @@ function startWordAnimLoop() {
   if (wordAnimRaf) return
   let lastStyleTime = 0
   const loop = () => {
-    const idx = _lastWordIndex(activeIndexes.value)
-    const line = parsedLyrics.value[idx]
+    // 多行同播时可能同时有多个逐字行（duet 重叠句），逐行全部驱动
+    const wordLines = activeIndexes.value.filter(i => parsedLyrics.value[i]?.wordLevel)
     const fpz = Number(settings.effectiveWordAnimFps.value) || 60
-    if (!props.visible || idx < 0 || !line?.wordLevel || fpz <= 0) {
+    if (!props.visible || !wordLines.length || fpz <= 0) {
       wordAnimRaf = null
       return
     }
-    // 逐字元素缓存：仅在切句（活跃逐字行变化）或旧引用已脱离 DOM 时重建，
-    // 避免每帧 querySelectorAll 重新遍历整行字符
-    const lineEl = lineRefs.value[idx]
-    if (!line._wordSegEls?.length || !line._wordSegEls[0].isConnected) {
-      line._wordSegEls = lineEl ? [...lineEl.querySelectorAll('.word-seg')] : []
-    }
-
     const now = performance.now()
     const interval = 1000 / fpz
     // CSS var / class（卡拉OK扫过）按用户设定帧率节流
-    if (now - lastStyleTime >= interval) {
-      updateWordSegStyles(idx, player.getLiveTime())
-      lastStyleTime = now
-    }
-    // transform 上浮位移每 RAF 帧更新，与显示器刷新率同步，保证丝滑
-    if (enableWordLift.value) {
-      updateWordSegTransforms(idx, player.getLiveTime())
+    const shouldStyle = now - lastStyleTime >= interval
+    if (shouldStyle) lastStyleTime = now
+    const time = player.getLiveTime()
+    for (const idx of wordLines) {
+      const line = parsedLyrics.value[idx]
+      // 逐字元素缓存：仅在切句（活跃逐字行变化）或旧引用已脱离 DOM 时重建，
+      // 避免每帧 querySelectorAll 重新遍历整行字符
+      const lineEl = lineRefs.value[idx]
+      if (!line._wordSegEls?.length || !line._wordSegEls[0].isConnected) {
+        line._wordSegEls = lineEl ? [...lineEl.querySelectorAll('.word-seg')] : []
+      }
+      if (shouldStyle) updateWordSegStyles(idx, time)
+      // transform 上浮位移每 RAF 帧更新，与显示器刷新率同步，保证丝滑
+      if (enableWordLift.value) updateWordSegTransforms(idx, time)
     }
     wordAnimRaf = requestAnimationFrame(loop)
   }
@@ -1354,12 +1354,14 @@ async function handleTimeUpdate(time) {
     return
   }
 
-  // 卡拉OK行：活跃集合中最后一个逐字行；逐字行变化才重启动画
+  // 逐字行：多行同播时可有多个逐字行同时活跃（duet 重叠句）。
+  // 只有真正离开活跃集合的逐字行才淡出收尾，仍活跃的行保持卡拉OK高亮；
+  // 动画循环每帧重读活跃集合，行增减无需停止/重启
   const prevWord = _lastWordIndex(prevActive)
   const nextWord = _lastWordIndex(nextActive)
-  if (nextWord !== prevWord) {
-    stopWordAnimLoop()
-    if (prevWord >= 0 && parsedLyrics.value[prevWord]?.wordLevel) fadeOutWordSegs(prevWord)
+  const prevWordLines = prevActive.filter(i => parsedLyrics.value[i]?.wordLevel)
+  for (const i of prevWordLines) {
+    if (!nextActive.includes(i)) fadeOutWordSegs(i)
   }
 
   // 末行（逐字）结束进入无活跃区：保留其逐字 DOM 片刻，让字号收缩过渡可见
@@ -1369,10 +1371,20 @@ async function handleTimeUpdate(time) {
     fadingTimer = setTimeout(() => { fadingLineIndex.value = -1 }, 400)
   }
 
-  // 远距离跳转（seek）：保留旧行淡出缓冲
+  // 远距离跳转（seek）：保留旧行淡出缓冲。
+  // 判定用「集合可达性」而非首元素差：双行重叠歌词（duet 曲目）轮转时，
+  // 旧集合多行同时退役会让 nextFirst 一次前进 ≥2 行（如 [B,C]→[D]），
+  // 只比较 prevFirst/nextFirst 会把自然连续播放误判为 seek。
+  // 自然演进只会从旧集合尾部延伸、头部退役，因此正反向均可达才算自然：
+  //   正向可达 = nextFirst ≤ prevLast + 1（新首行紧接旧末行）
+  //   反向可达 = nextLast ≥ prevFirst - 1（新末行不早于旧首行的前一行）
+  const prevLast = prevActive.length ? prevActive[prevActive.length - 1] : -1
   const prevFirst = prevActive.length ? prevActive[0] : -1
   const nextFirst = nextActive.length ? nextActive[0] : -1
-  if (prevFirst >= 0 && nextFirst >= 0 && Math.abs(nextFirst - prevFirst) > 1) {
+  const nextLast = nextActive.length ? nextActive[nextActive.length - 1] : -1
+  const naturalForward = nextFirst <= prevLast + 1
+  const naturalBackward = nextLast >= prevFirst - 1
+  if (prevFirst >= 0 && nextFirst >= 0 && !(naturalForward && naturalBackward)) {
     jumpPending.value = prevFirst
     // jumpPending 保持到滚动/级联动画结束（由 animateScrollTo 的完成回调释放），
     // 让目标行的放大/淡入发生在滚动到位、行可见之后，而不是在屏幕外悄悄完成。
@@ -1691,8 +1703,11 @@ function animateScrollTo(targetScroll, index, animate = true) {
   const lineSpan = (lineStart != null && nextStart != null && nextStart > lineStart)
     ? nextStart - lineStart
     : Infinity
-  // 单句时长不足一笔级联动画（含波前延迟）时，降级为普通平滑滚动
-  const shortLine = lineSpan * 1000 < STAGGER_DURATION
+  // 单句时长不足一笔级联动画（含波前延迟）时，降级为普通平滑滚动。
+  // 多行同播除外：重叠句的 lineSpan 天然偏短，若照常降级会把双行同播
+  // 误判为密集快滚；此时保持多米诺节奏（开关关闭时为普通 500ms 平滑）
+  const multiLine = activeIndexes.value.length > 1
+  const shortLine = !multiLine && lineSpan * 1000 < STAGGER_DURATION
   // 降级动画时长与句时间戳长度匹配（下限 60ms 保证可感知，上限即级联阈值）
   const matchedMs = shortLine
     ? Math.max(60, Math.round(lineSpan * 1000))
