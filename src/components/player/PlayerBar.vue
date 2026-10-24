@@ -329,8 +329,14 @@ function onProgressContextMenu() {
   player.resume()
 }
 
+// 区分单击与拖拽：移动超过 3px 才算拖拽，单击沿用原有 seek 动画体系
+let _progressDownX = 0
+let _progressMoved = false
+
 function onProgressMouseDown(e) {
   if (e.button !== 0) return
+  _progressDownX = e.clientX
+  _progressMoved = false
   isDraggingProgress.value = true
   dragProgress.value = calcProgress(e)
   hoverPercent.value = dragProgress.value
@@ -339,8 +345,12 @@ function onProgressMouseDown(e) {
 }
 
 function onProgressDrag(e) {
+  // 抖动容差：未超过 3px 不进入拖拽预览，保持单击语义
+  if (!_progressMoved && Math.abs(e.clientX - _progressDownX) < 3) return
+  _progressMoved = true
   dragProgress.value = calcProgress(e)
   hoverPercent.value = dragProgress.value
+  player.seekPreviewPercent = dragProgress.value
 }
 
 function onProgressMouseUp() {
@@ -348,6 +358,9 @@ function onProgressMouseUp() {
   document.removeEventListener('mouseup', onProgressMouseUp)
   player.seek(dragProgress.value)
   isDraggingProgress.value = false
+  // 放在 seek 之后：先让播放位置落地，再通知歌词面板退出预览
+  if (_progressMoved) player.seekPreviewPercent = null
+  _progressMoved = false
 }
 
 // ===== 音量拖拽（本地即时视觉） =====

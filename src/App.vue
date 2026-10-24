@@ -62,6 +62,8 @@ import { ref, computed, onMounted, onBeforeUnmount, provide, watch, nextTick } f
 import { useRoute, useRouter } from 'vue-router'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
+import { useAuthStore } from '@/stores/auth'
+import { useLibraryStore } from '@/stores/library'
 import { initMediaSession } from '@/utils/mediaSession'
 import TitleBar from '@/components/layout/TitleBar.vue'
 import Sidebar from '@/components/layout/Sidebar.vue'
@@ -75,6 +77,8 @@ import { registerOverlaysCloser } from '@/utils/overlays'
 
 const playerStore = usePlayerStore()
 const settingsStore = useSettingsStore()
+const authStore = useAuthStore()
+const libraryStore = useLibraryStore()
 const route = useRoute()
 const router = useRouter()
 // 直接用 location.hash 判断，避免路由初始化时序导致 route.name 为 undefined
@@ -83,6 +87,20 @@ const isDesktopLyricsRoute = computed(() => {
 })
 const currentTrack = computed(() => playerStore.currentTrack)
 const isElectron = computed(() => !!window.electronAPI)
+
+// 会员状态变化：升级后拉取云端曲库；降级或到期后清空云端曲库，
+// 并移除播放队列中残留的在线曲目，避免降级后仍能继续播放会员内容。
+// 桌面歌词独立窗口不参与（其 store 为轻量实例）
+watch(() => authStore.isVip, (vip) => {
+  if (isDesktopLyricsRoute.value) return
+  if (vip) {
+    libraryStore.loadCloudSongs()
+    return
+  }
+  if (libraryStore.cloudTracks.length) libraryStore.cloudTracks = []
+  if (libraryStore.sourceFilter === 'cloud') libraryStore.sourceFilter = 'all'
+  playerStore.purgeCloudTracks()
+})
 
 const panelVisible = ref(false)
 const panelOpen = ref(false)

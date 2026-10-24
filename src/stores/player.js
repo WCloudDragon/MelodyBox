@@ -3,8 +3,6 @@ import { ref, computed, watch } from 'vue'
 import { useAiStore } from './ai'
 import { useLibraryStore } from './library'
 import { apiUrl, audioUrl } from '@/config/api'
-import { useAuthStore } from './auth'
-import { ElMessage } from '@/utils/toast'
 
 // ==================== 播放模式注册表（单一定义源） ====================
 // inList: 是否出现在「列表页顶栏」的模式菜单中——
@@ -30,6 +28,9 @@ export const usePlayerStore = defineStore('player', () => {
   const volume = ref(0.7)
   const isMuted = ref(false)
   const bufferedPercent = ref(0)
+  // 进度条拖拽预览位置（0-100）：非 null 表示正在拖拽。
+  // 供歌词面板跟随滚动但不激活高亮，松手后恢复
+  const seekPreviewPercent = ref(null)
 
   // Web Audio API — 频谱分析（音频律动驱动动态背景）
   const audioCtx = ref(null)
@@ -424,13 +425,8 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  // 切换桌面歌词
+  // 切换桌面歌词（所有用户可用，不设会员限制）
   function toggleDesktopLyrics() {
-    // 桌面歌词为会员功能
-    if (!useAuthStore().isVip) {
-      ElMessage.warning('桌面歌词为会员专享，请先在用户中心升级')
-      return
-    }
     showDesktopLyrics.value = !showDesktopLyrics.value
   }
 
@@ -526,6 +522,43 @@ export const usePlayerStore = defineStore('player', () => {
     originalQueue.value = []
   }
 
+  // 会员失效：清理队列中的云端曲目，避免降级后仍能继续播放会员内容。
+  // 当前曲若正被移除，停在队列中的下一个有效曲目上但不自动播放
+  function purgeCloudTracks() {
+    const q = queue.value
+    if (!q.some(t => t.source === 'cloud')) return
+    const cur = currentIndex.value >= 0 ? q[currentIndex.value] : null
+    const curIsCloud = !!cur && cur.source === 'cloud'
+    const filtered = q.filter(t => t.source !== 'cloud')
+    queue.value = filtered
+    if (originalQueue.value.length) {
+      originalQueue.value = originalQueue.value.filter(t => t.source !== 'cloud')
+    }
+    if (!cur) {
+      currentIndex.value = -1
+      return
+    }
+    if (!curIsCloud) {
+      const idx = filtered.findIndex(t => t === cur)
+      currentIndex.value = idx !== -1 ? idx : (filtered.length ? 0 : -1)
+      return
+    }
+    audio.value?.pause()
+    isPlaying.value = false
+    currentTime.value = 0
+    _seekOffset = 0
+    if (!filtered.length) {
+      currentIndex.value = -1
+      return
+    }
+    currentIndex.value = Math.max(0, Math.min(currentIndex.value, filtered.length - 1))
+    const nt = queue.value[currentIndex.value]
+    if (nt && audio.value) {
+      audio.value.src = nt.url
+      if (nt.duration) duration.value = nt.duration
+    }
+  }
+
   // 拖拽调整队列顺序：保持当前播放曲不变
   function moveInQueue(from, to) {
     const q = queue.value
@@ -554,6 +587,10 @@ export const usePlayerStore = defineStore('player', () => {
     if (curIdx === -1) return
     next.splice(curIdx + 1, 0, item)
     queue.value = next
+    // 被插播项原在当前曲之前时，移除它会让当前曲整体前移一位；
+    // currentTrack 由 queue[currentIndex] 计算，索引不同步会指向邻曲，
+    // 表现为界面曲目信息与正在播放的音频不一致
+    currentIndex.value = curIdx
   }
 
   // 播放全部（替换队列）。
@@ -738,12 +775,12 @@ export const usePlayerStore = defineStore('player', () => {
 
   return {
     queue, currentIndex, audio, isPlaying, currentTime, duration,
-    volume, isMuted, bufferedPercent, playMode, showDesktopLyrics, savedTime, savedVolume,
+    volume, isMuted, bufferedPercent, seekPreviewPercent, playMode, showDesktopLyrics, savedTime, savedVolume,
     songChangeDirection, audioCtx, analyserNode,
     currentTrack, progress, hasNext, hasPrev,
     initAudio, play, pause, resume, togglePlay,
     next, prev, seek, setVolume, toggleMute, togglePlayMode, setPlayMode, playListByMode, toggleDesktopLyrics,
-    addToQueue, addToQueueNext, removeFromQueue, clearQueue, moveInQueue, moveToNext, playAll,
+    addToQueue, addToQueueNext, removeFromQueue, clearQueue, purgeCloudTracks, moveInQueue, moveToNext, playAll,
     saveSettings, loadSettings, saveProgress, restoreProgress,
     getLiveTime
   }

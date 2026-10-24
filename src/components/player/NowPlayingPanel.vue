@@ -57,7 +57,7 @@
             </div>
 
             <Transition v-else :name="lyricsAnimName">
-              <div class="lyrics-scroll" :key="currentTrack?.path" ref="scrollRef">
+              <div class="lyrics-scroll" :class="{ 'is-scrubbing': isScrubbing }" :key="currentTrack?.path" ref="scrollRef">
               <!-- 空区长间隔提示（仅三点）：首行前显示在列表顶部 -->
               <div v-if="hintVisible && hintAnchorIndex < 0" :key="'hint-top'"
                    class="upcoming-hint-line" :class="{ 'upcoming-hint-line--enter': dotsEntering, 'upcoming-hint-line--leaving': hintLeaving }">
@@ -72,7 +72,9 @@
                 <div
                   class="lyric-line"
                   :class="{
-                    active: activeIndexes.includes(index) && jumpPending < 0,
+                    active: activeIndexes.includes(index) && jumpPending < 0 && !isScrubbing,
+                    'scrub-focus': isScrubbing && scrubFocusIndex === index,
+                    'restore-glow': restoreGlow && activeIndexes.includes(index),
                     sung: activeFirst >= 0 && index < activeFirst,
                     upcoming: activeLast >= 0 && index > activeLast,
                     'has-translation': line.translation,
@@ -84,7 +86,7 @@
                   @click="seekToLine(line.time)"
                 >
                   <div class="lyric-line__inner">
-                    <p v-if="line.wordLevel && line.segments && (activeIndexes.some(a => Math.abs(index - a) <= 1) || index === fadingLineIndex || (showUpcomingHint && (index === hintLineIndex || index === hintLineIndex + 1)) || (!activeIndexes.length && index === hintLineIndex + 1))" class="lyric-line__original word-level">
+                    <p v-if="line.wordLevel && line.segments && (scrubFocusIndex === index || activeIndexes.some(a => Math.abs(index - a) <= 1) || index === fadingLineIndex || (showUpcomingHint && (index === hintLineIndex || index === hintLineIndex + 1)) || (!activeIndexes.length && index === hintLineIndex + 1))" class="lyric-line__original word-level">
                       <span
                         v-for="word in line.words"
                         :key="word.idx"
@@ -128,7 +130,7 @@ import { ref, computed, watch, nextTick, inject, onMounted, onBeforeUnmount } fr
 import { storeToRefs } from 'pinia'
 import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
-import { parseLRC, computeActiveSet, LYRIC_GAP_FILL_LIMIT, applyLyricKaraokeMode } from '@/utils/format'
+import { parseLRC, computeActiveSet, LYRIC_GAP_FILL_LIMIT, applyLyricKaraokeMode, getCurrentLyricIndex } from '@/utils/format'
 import { extractCoverColors } from '@/utils/coverColorExtractor'
 
 const props = defineProps({
@@ -139,7 +141,7 @@ const emit = defineEmits(['close', 'afterLeave', 'flyComplete'])
 
 const player = usePlayerStore()
 const settings = useSettingsStore()
-const { currentTrack, currentTime, songChangeDirection, queue, currentIndex, analyserNode } = storeToRefs(player)
+const { currentTrack, currentTime, songChangeDirection, queue, currentIndex, analyserNode, duration, seekPreviewPercent } = storeToRefs(player)
 const { lyricsFontSize, lyricsFontWeight } = storeToRefs(settings)
 const { lyricsTransScale, lyricsActiveScale } = storeToRefs(settings)
 const { enableLyricsBlur, enableDominoScroll, enableWordLift, wordAnimFps } = storeToRefs(settings)
@@ -515,6 +517,7 @@ let currentScrollY = 0    // 追踪 scrollRef 当前的 transform Y 值，避免
 let smoothAnimTarget = -1 // 正在执行的平滑动画目标行；-1 表示无动画
 let dominoCascadeActive = false // 多米诺级联进行中：新定位请求可中途接续（FLIP），不再掐断重放
 const isUserScrolling = ref(false)   // 用户正在手动滚动歌词
+const isScrubbing = ref(false)       // 进度条拖拽预览中：跟随滚动但不高亮、不模糊
 let userScrollTimer = null           // 5秒空闲定时器
 
 
@@ -1003,6 +1006,8 @@ function onLyricsWheel(e) {
 }
 
 function lineStyle(index) {
+  // 进度条拖拽预览：所有行统一清晰显示（不模糊、不按距离淡出），便于快速定位
+  if (isScrubbing.value) return { opacity: 1, filter: 'none' }
   // 跳转时模糊/透明度立即跟随新的活跃位置，不等待滚动落地；
   // jumpPending 只负责延迟 .active 的放大高亮，避免视觉脱节
   let refs = activeIndexes.value
@@ -1321,6 +1326,9 @@ watch(() => props.visible, async (val) => {
 // 由 rAF 以 audio.currentTime 高频驱动（timeupdate 仅约 250ms，90ms 级密集歌词会漏行）
 async function handleTimeUpdate(time) {
   if (!props.visible || !hasLyrics.value || !scrollRef.value) return
+  // 进度条拖拽预览中：滚动与高亮由 seekPreviewPercent 的 watch 接管，
+  // 这里完全让位，避免把视口拉回真实播放位置
+  if (isScrubbing.value) return
 
   if (!showUpcomingHint.value) _dotsScrollDone = false
 
@@ -1493,6 +1501,41 @@ watch(currentTime, async (time) => {
   await handleTimeUpdate(time)
 })
 
+// 进度条拖拽预览：歌词视口跟随拖拽位置滚动，但不高亮、不模糊；
+// 松手（预览值置 null）后恢复高亮与模糊，并定位回实际播放位置
+const scrubFocusIndex = ref(-1)   // 拖拽预览命中的行（复用 hover 背景做视觉引导）
+const restoreGlow = ref(false)    // 松手后活跃行的一次性高亮渐入
+let _restoreGlowTimer = null
+watch(seekPreviewPercent, async (pct) => {
+  if (pct == null) {
+    if (!isScrubbing.value) return
+    isScrubbing.value = false
+    await nextTick()
+    // 预览期间 handleTimeUpdate 被跳过，这里交还给它：
+    // 重建活跃集合，恢复高亮与模糊，并定位到实际播放位置
+    await handleTimeUpdate(player.currentTime)
+    // 活跃集合已包含目标行后再清预览标记：若提前清空，逐字行的 v-if 会
+    // 瞬间为假导致逐字 DOM 被卸载重建，字号/颜色过渡随之丢失
+    scrubFocusIndex.value = -1
+    // 高亮回归的渐入提示：先移除再加，确保重复松手也能重放动画
+    restoreGlow.value = false
+    await nextTick()
+    restoreGlow.value = true
+    if (_restoreGlowTimer) clearTimeout(_restoreGlowTimer)
+    _restoreGlowTimer = setTimeout(() => { restoreGlow.value = false }, 900)
+    return
+  }
+  isScrubbing.value = true
+  restoreGlow.value = false
+  if (!props.visible || !hasLyrics.value || !scrollRef.value || !duration.value) return
+  const t = (pct / 100) * duration.value
+  let idx = getCurrentLyricIndex(parsedLyrics.value, t)
+  if (idx < 0) idx = 0
+  if (idx === scrubFocusIndex.value) return
+  scrubFocusIndex.value = idx
+  scrollToLinePreview(idx)
+})
+
 // 三点显示：滚动到“三点收起后下一句恰好居中”的位置。
 // 该位置下三点块也正好位于中心线（三点行高≈歌词行高），
 // 三点收起后下一句已居中，激活滚动成为零位移，不会出现第二次滚动。
@@ -1636,6 +1679,28 @@ function scrollToLine(index, animate = true) {
   const containerHeight = mainRef.value.clientHeight
   const targetScroll = lineEl.offsetTop - containerHeight / 2 + lineEl.offsetHeight / 2
   animateScrollTo(targetScroll, index, animate)
+}
+
+// 拖拽预览专用：轻量 CSS 平滑滚动（180ms），不进入 animateScrollTo，
+// 避免触发多米诺级联、jumpPending 与高亮切换
+function scrollToLinePreview(index) {
+  if (index < 0 || !scrollRef.value || !mainRef.value) return
+  const lineEl = lineRefs.value[index]
+  if (!lineEl) return
+  // 清理正在运行的级联/平滑动画，防止状态串扰
+  if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
+  smoothAnimTarget = -1
+  dominoCascadeActive = false
+  for (let i = 0; i < parsedLyrics.value.length; i++) {
+    const el = lineRefs.value[i]
+    if (el) { el.style.transition = ''; el.style.transform = '' }
+  }
+  const containerHeight = mainRef.value.clientHeight
+  const targetScroll = lineEl.offsetTop - containerHeight / 2 + lineEl.offsetHeight / 2
+  scrollRef.value.style.transition = 'transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1.0)'
+  scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
+  currentScrollY = -targetScroll
+  targetScrollPos = targetScroll
 }
 
 // 滚动到当前活跃行组：多行同时播放时，以这些行的中心点为滚动中心
@@ -2189,6 +2254,10 @@ onBeforeUnmount(() => {
 .lyrics-scroll {
   padding: 50vh 0 40vh;
 }
+/* 拖拽进度条时锁住歌词行 hover：鼠标划过行不触发背景，避免干扰预览引导 */
+.lyrics-scroll.is-scrubbing .lyric-line {
+  pointer-events: none;
+}
 .lyric-line {
   text-align: left; padding: 8px 0;
   /* filter 只做短过渡：文字滤镜每帧都要重新栅格化离屏层，
@@ -2208,6 +2277,19 @@ onBeforeUnmount(() => {
 }
 .lyric-line:hover {
   background: rgba(255,255,255,0.04);
+}
+/* 进度条拖拽：预览命中的行复用 hover 背景作为视觉引导 */
+.lyric-line.scrub-focus {
+  background: rgba(255,255,255,0.04);
+}
+/* 松手后活跃行的一次性高亮渐入（配合 .active 的字号/颜色过渡） */
+@keyframes lyric-restore-glow {
+  0%   { background: rgba(255,255,255,0);    }
+  30%  { background: rgba(255,255,255,0.10); }
+  100% { background: rgba(255,255,255,0);    }
+}
+.lyric-line.restore-glow {
+  animation: lyric-restore-glow 900ms cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .lyric-line:active {
   transform: translateZ(0) scale(0.97) translateY(1px);

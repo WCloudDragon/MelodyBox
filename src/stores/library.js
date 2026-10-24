@@ -317,12 +317,41 @@ export const useLibraryStore = defineStore('library', () => {
     return allTracks.value.find(t => t.path === path)
   }
 
+  // 本地 albums/artists 只聚合本地曲库（云端曲库体量大，并入会淹没列表页）；
+  // 详情页查不到时按需从云端回退，保证在线歌曲的专辑/歌手可进入
+  function findCloudAlbum(name) {
+    const items = cloudTracks.value.filter(t => (t.album || '未知专辑') === name)
+    if (!items.length) return null
+    const sorted = [...items].sort((a, b) => {
+      const disc = (a.disc_number || 0) - (b.disc_number || 0)
+      if (disc !== 0) return disc
+      return (a.track_number || 0) - (b.track_number || 0)
+    })
+    return {
+      name,
+      artist: sorted[0].artist,
+      cover: sorted[0].cover,
+      year: sorted[0].year,
+      tracks: sorted,
+      source: 'cloud'
+    }
+  }
+
+  function findCloudArtist(name) {
+    const items = cloudTracks.value.filter(t => {
+      const names = (t.artist || '').split('/').map(n => n.trim()).filter(Boolean)
+      return (names.length > 0 ? names : ['未知艺术家']).includes(name)
+    })
+    if (!items.length) return null
+    return { name, tracks: items, source: 'cloud' }
+  }
+
   function getAlbum(name) {
-    return albums.value.find(a => a.name === name)
+    return albums.value.find(a => a.name === name) || findCloudAlbum(name)
   }
 
   function getArtist(name) {
-    return artists.value.find(a => a.name === name)
+    return artists.value.find(a => a.name === name) || findCloudArtist(name)
   }
 
   // ==================== 初始化 ====================
