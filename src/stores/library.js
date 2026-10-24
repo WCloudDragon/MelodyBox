@@ -172,6 +172,9 @@ export const useLibraryStore = defineStore('library', () => {
 
   const isScanning = ref(false)
   const scanProgress = ref({ current: 0, total: 0, path: '' })
+  // 缩略图批次版本号：批次完成时 +1，列表里加载失败的封面据此重试并淡入
+  const thumbVersion = ref(0)
+  function bumpThumbVersion() { thumbVersion.value++ }
   let _scanPollTimer = null
 
   async function selectAndScan() {
@@ -368,6 +371,7 @@ export const useLibraryStore = defineStore('library', () => {
     viewMode, filterGenre, filterArtist, sourceFilter,
     albums, artists, genres, filteredTracks, totalDuration,
     isScanning, scanProgress,
+    thumbVersion, bumpThumbVersion,
     scanMusic, selectAndScan, refreshLibrary,
     getTrackByPath, getAlbum, getArtist,
     loadFromApi, loadCloudSongs, setSourceFilter

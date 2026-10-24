@@ -1,9 +1,7 @@
 <template>
   <div class="title-bar" :class="{ 'title-bar--immersive': immersive }" @dblclick="onMaximize">
     <div class="title-bar__brand">
-      <svg class="title-bar__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-      </svg>
+      <img class="title-bar__icon" :src="appIcon" width="16" height="16" alt="" draggable="false" />
       <span class="title-bar__name">MelodyBox</span>
     </div>
     <div class="title-bar__drag"></div>
@@ -59,6 +57,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import GlobalSearch from './GlobalSearch.vue'
+import appIcon from '@/assets/app-icon-32.png'
 
 const props = defineProps({
   lyricsVisible: { type: Boolean, default: false },
@@ -118,8 +117,13 @@ function onClose() { window.electronAPI?.close() }
   -webkit-app-region: drag;
 }
 .title-bar__icon {
-  color: var(--accent-color);
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.08);
   flex-shrink: 0;
+  display: block;
+  user-select: none;
 }
 .title-bar__name {
   font-size: 12px;

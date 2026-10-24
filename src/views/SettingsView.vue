@@ -472,9 +472,7 @@
       <section class="settings-section about-section">
         <div class="about-header">
           <div class="about-logo">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-            </svg>
+            <img :src="appIcon" alt="MelodyBox" draggable="false" />
           </div>
           <div class="about-appname">
             <span class="about-appname__title">MelodyBox</span>
@@ -491,6 +489,10 @@
             <span>哈尔滨信息工程学院 2023届 软件工程 王云龙</span>
           </div>
         </div>
+        <button class="about-link" @click="page = 'licenses'">
+          <span>使用开源项目</span>
+          <span class="about-link__value">{{ licenseTotal }} 项 ›</span>
+        </button>
         <div class="setting-row" style="margin-top: 24px;">
           <div class="setting-label">
             <span class="setting-title">调试模式</span>
@@ -498,6 +500,34 @@
           </div>
           <el-switch v-model="settingsStore.debugMode" />
         </div>
+      </section>
+    </template>
+
+    <!-- 二级页：开源许可 -->
+    <template v-else-if="page === 'licenses'">
+      <ListPageHeader title="使用开源项目" :show-play-mode="false" show-back :back-handler="() => page = 'about'" />
+      <section class="settings-section licenses-section">
+        <p class="licenses-hint">
+          以下为本项目直接使用或随包分发的第三方组件。完整许可证文本与版权声明以各项目官方仓库为准，点击条目可用系统浏览器打开项目主页。
+        </p>
+        <div v-for="group in licenseGroups" :key="group.title" class="license-group">
+          <div class="license-group__title">{{ group.title }}</div>
+          <div class="license-list">
+            <button
+              v-for="item in group.items"
+              :key="item.name"
+              class="license-row"
+              @click="openLicense(item)"
+            >
+              <span class="license-row__main">
+                <span class="license-row__name">{{ item.name }}</span>
+                <span v-if="item.note" class="license-row__note">{{ item.note }}</span>
+              </span>
+              <span class="license-row__license">{{ item.license }}</span>
+            </button>
+          </div>
+        </div>
+        <p class="licenses-foot">感谢以上项目的作者与维护者。</p>
       </section>
     </template>
 
@@ -511,10 +541,28 @@ import { useSettingsStore } from '@/stores/settings'
 import { usePerformanceStore } from '@/stores/performance'
 import { useScrollMemory } from '@/composables/useScrollMemory'
 import ListPageHeader from '@/components/music/ListPageHeader.vue'
+import { LICENSE_GROUPS, LICENSE_TOTAL } from '@/data/openSourceLicenses'
+import appIcon from '@/assets/app-icon-128.png'
 
 const settingsStore = useSettingsStore()
 const perf = usePerformanceStore()
 const page = ref('menu')
+
+// ==================== 使用开源项目 ====================
+
+const licenseGroups = LICENSE_GROUPS
+const licenseTotal = LICENSE_TOTAL
+
+function openLicense(item) {
+  const url = item?.url
+  if (!url) return
+  // 统一交给系统默认浏览器打开，不在应用内新开窗口
+  if (window.electronAPI?.openExternal) {
+    window.electronAPI.openExternal(url)
+    return
+  }
+  window.open(url, '_blank', 'noopener')
+}
 
 // ==================== 性能与画质 ====================
 
@@ -756,9 +804,10 @@ useScrollMemory('settings', () => document.querySelector('.main-content'))
 }
 .about-logo {
   display: flex; align-items: center; justify-content: center;
-  width: 64px; height: 64px; border-radius: 18px;
-  background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(168,85,247,0.2));
-  color: #a78bfa;
+  width: 64px; height: 64px; border-radius: 18px; overflow: hidden;
+}
+.about-logo img {
+  width: 100%; height: 100%; object-fit: contain; display: block;
 }
 .about-appname { text-align: center; }
 .about-appname__title {
@@ -779,6 +828,49 @@ useScrollMemory('settings', () => document.querySelector('.main-content'))
 }
 .about-meta__row:not(:last-child) { border-bottom: 1px solid var(--border-color); }
 .about-meta__row span:first-child { color: var(--text-tertiary); font-weight: 500; }
+
+.about-link {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; margin-top: 12px; padding: 12px 16px;
+  background: var(--hover-bg); border: 1px solid var(--border-color);
+  border-radius: 11px; color: var(--text-secondary); font-size: 13px;
+  cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease;
+}
+.about-link:hover { background: var(--hover-bg-strong); }
+.about-link__value { color: var(--text-tertiary); font-size: 12px; }
+
+/* ===== 开源许可页 ===== */
+.licenses-section { padding: 20px 28px 32px; }
+.licenses-hint {
+  margin: 0 0 20px; font-size: 12px; line-height: 1.7; color: var(--text-tertiary);
+}
+.license-group { margin-bottom: 22px; }
+.license-group__title {
+  margin-bottom: 8px; padding-left: 2px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.4px; color: var(--text-tertiary);
+}
+.license-list {
+  background: var(--hover-bg);
+  border: 1px solid var(--border-color); border-radius: 11px; overflow: hidden;
+}
+.license-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  width: 100%; padding: 11px 16px;
+  background: none; border: none; border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary); font-size: 13px; text-align: left; cursor: pointer;
+  transition: background 0.15s ease;
+}
+.license-row:last-child { border-bottom: none; }
+.license-row:hover { background: var(--hover-bg-strong); }
+.license-row__main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.license-row__name { color: var(--text-secondary); }
+.license-row__note { font-size: 11px; color: var(--text-tertiary); }
+.license-row__license {
+  flex-shrink: 0; font-size: 12px; color: var(--text-tertiary);
+}
+.licenses-foot {
+  margin: 4px 0 0; font-size: 12px; color: var(--text-tertiary);
+}
 
 .toggle-buttons {
   display: flex; gap: 8px;

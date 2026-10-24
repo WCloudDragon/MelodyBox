@@ -29,7 +29,7 @@ const CAMEL_TO_SNAKE = Object.fromEntries(
 export const useSettingsStore = defineStore('settings', () => {
   // 外观设置
   const theme = ref('light')
-  const accentColor = ref('#6366f1')
+  const accentColor = ref('#ba5734')
   const blurStrength = ref('10px')
   const followSystemTheme = ref(false)
 
@@ -175,7 +175,7 @@ export const useSettingsStore = defineStore('settings', () => {
       if (!res.ok) return
       const data = await res.json()
       theme.value = data.theme ?? 'light'
-      accentColor.value = data.accentColor ?? '#6366f1'
+      accentColor.value = data.accentColor ?? '#ba5734'
       blurStrength.value = data.blurStrength ?? '10px'
       followSystemTheme.value = !!data.followSystemTheme
       lyricsFontSize.value = data.lyricsFontSize ?? 32

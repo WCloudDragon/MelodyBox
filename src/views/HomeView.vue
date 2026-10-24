@@ -926,7 +926,7 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
   min-width: 2%;
 }
 .progress-bar--active {
-  background: linear-gradient(90deg, var(--accent-color, #6366f1), #818cf8);
+  background: linear-gradient(90deg, var(--accent-color, #ba5734), #d98a63);
   background-size: 200% 100%;
   animation: progressShimmer 1.5s ease-in-out infinite;
 }
@@ -1029,7 +1029,7 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
 .rec-entry__cover-placeholder {
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, var(--accent-color), #818cf8);
+  background: linear-gradient(135deg, var(--accent-color), #d98a63);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -13,6 +13,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useLibraryStore } from '@/stores/library'
 
 const props = defineProps({
   src: { type: String, default: '' },
@@ -22,7 +23,10 @@ const emit = defineEmits(['error'])
 const elRef = ref(null)
 const loaded = ref(false)
 
-const targetSrc = computed(() => {
+const libraryStore = useLibraryStore()
+
+// 真实资源地址（不含缓存破坏参数）
+const baseSrc = computed(() => {
   if (!props.src) return ''
   // 无缩略图需求 → 原样返回
   if (!props.thumbSize || props.thumbSize <= 0) return props.src
@@ -40,6 +44,14 @@ const targetSrc = computed(() => {
   // 回退：非 HTTP URL 或解析失败，走原 Flask HTTP
   const sep = props.src.includes('?') ? '&' : '?'
   return `${props.src}${sep}thumb=${props.thumbSize}`
+})
+
+// 缩略图批次结束会推进版本号：之前加载失败的封面带上新参数重新请求
+const targetSrc = computed(() => {
+  const base = baseSrc.value
+  if (!base) return ''
+  const sep = base.includes('?') ? '&' : '?'
+  return `${base}${sep}v=${libraryStore.thumbVersion}`
 })
 
 // ======== 模块级：已加载缓存 + 共享 IO（按视口距离排序） ========
@@ -85,10 +97,10 @@ function _reset() {
 }
 
 function _observe() {
-  if (!elRef.value || !targetSrc.value) return
-  // 命中缓存：0ms 直出
-  if (_loadedSrcCache.has(targetSrc.value)) {
-    activeSrc.value = targetSrc.value
+  if (!elRef.value || !baseSrc.value) return
+  // 命中缓存：0ms 直出（缓存按真实地址记录，避免版本推进后整列表重载闪烁）
+  if (_loadedSrcCache.has(baseSrc.value)) {
+    if (!activeSrc.value) activeSrc.value = targetSrc.value
     loaded.value = true
     return
   }
@@ -122,14 +134,16 @@ onUnmounted(() => {
 })
 
 watch(targetSrc, (newSrc) => {
-  _reset()
   _resolvedFor.value = newSrc
+  // 已成功加载过的封面不因版本号推进而重载，只有之前失败的才重新请求
+  if (_loadedSrcCache.has(baseSrc.value) && loaded.value) return
+  _reset()
   if (newSrc) _observe()
 })
 
 function onLoad() {
   loaded.value = true
-  _loadedSrcCache.set(_resolvedFor.value, true)
+  _loadedSrcCache.set(baseSrc.value, true)
 }
 
 function onError() {

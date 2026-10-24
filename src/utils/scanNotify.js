@@ -3,10 +3,17 @@
  * 使用全局 ProgressPanel 组件，不再依赖 Element Plus Notification
  */
 import { addProgress, updateProgress, completeProgress, removeProgress } from '@/stores/progress'
+import { useLibraryStore } from '@/stores/library'
 
 import { apiUrl } from '@/config/api'
 
 const FOLDERS_API = apiUrl('/api/folders')
+
+// 缩略图批次结束：推进版本号，让列表里之前加载失败的封面重新请求并淡入
+function notifyThumbsUpdated(onDone) {
+  try { useLibraryStore().bumpThumbVersion() } catch {}
+  if (onDone) onDone()
+}
 
 let _scanId = null
 let _thumbId = null
@@ -55,10 +62,10 @@ export function closeScanNotify(progress, onDone) {
     completeProgress(_scanId, text)
     _scanId = null
   }
+  // 扫描一结束就刷新列表，让用户立刻看到曲目；缩略图在后台继续生成
+  if (onDone) onDone()
   if (inserted > 0 || updated > 0) {
     startThumbPoll(onDone)
-  } else if (onDone) {
-    onDone()
   }
 }
 
@@ -137,12 +144,12 @@ async function pollThumbOnce(onDone) {
       stopThumbPoll()
       completeProgress(_thumbId, `缩略图完成 · ${p.total} 张`)
       _thumbId = null
-      if (onDone) onDone()
+      notifyThumbsUpdated(onDone)
     } else if (Date.now() - _thumbLastChange > THUMB_STALL_MS) {
       stopThumbPoll()
       completeProgress(_thumbId, `缩略图已停滞，已处理 ${p.current}/${p.total}`)
       _thumbId = null
-      if (onDone) onDone()
+      notifyThumbsUpdated(onDone)
     }
   } catch {
     // 请求持续失败（后端重启/未就绪）时不能永久卡住：约 5 秒后主动收尾

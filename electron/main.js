@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, systemPreferences, screen } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, systemPreferences, screen, shell } = require('electron')
 const { execSync, exec } = require('child_process')
 const path = require('path')
 const fs = require('fs')
@@ -468,9 +468,6 @@ function createLyricsWindow() {
   const url = getLyricsWindowUrl()
   lyricsWindow.loadURL(url)
 
-  // 调试：自动打开歌词窗口的 DevTools
-  lyricsWindow.webContents.openDevTools({ mode: 'detach' })
-
   // 渲染进程崩溃处理
   lyricsWindow.webContents.on('render-process-gone', (_event, details) => {
     console.error('[lyrics] 渲染进程崩溃:', details.reason, details.exitCode)
@@ -556,6 +553,9 @@ function createWindow() {
       backgroundThrottling: false
     },
     backgroundColor: '#0a0a0a',
+    icon: app.isPackaged
+      ? path.join(process.resourcesPath, 'icon.png')
+      : path.join(__dirname, '..', 'public', 'icon.png'),
     show: false
   })
 
@@ -861,6 +861,18 @@ systemPreferences.on('accent-color-changed', async (_event, _newColor) => {
 })
 
 // ==================== 应用生命周期 ====================
+
+// 外部链接统一交给系统默认浏览器，不在应用内新开窗口
+ipcMain.handle('shell:openExternal', (_event, rawUrl) => {
+  try {
+    const u = new URL(String(rawUrl))
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false
+    shell.openExternal(u.toString())
+    return true
+  } catch {
+    return false
+  }
+})
 
 app.whenReady().then(async () => {
   // 注册 thumb:// 协议 — 绕过 Flask，Chromium 直接读本地缩略图

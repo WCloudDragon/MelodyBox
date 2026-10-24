@@ -2,9 +2,7 @@
   <div class="login-view">
     <div class="login-card">
       <div class="login-card__logo">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
-        </svg>
+        <img :src="appIcon" alt="MelodyBox" draggable="false" />
       </div>
       <h2 class="login-card__title">{{ minimal ? '管理员登录' : (isLogin ? '欢迎回来' : '创建账户') }}</h2>
       <p class="login-card__desc">{{ minimal ? '请使用管理员账户登录管理后台' : (isLogin ? '登录你的 MelodyBox 账户' : '注册一个新账户以使用全部功能') }}</p>
@@ -45,6 +43,7 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import appIcon from '@/assets/app-icon-128.png'
 
 const router = useRouter()
 const route = useRoute()
@@ -102,8 +101,10 @@ async function handleSubmit() {
 .login-card__logo {
   display: inline-flex; align-items: center; justify-content: center;
   width: 64px; height: 64px; border-radius: 16px;
-  background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(168,85,247,0.2));
-  color: #a78bfa; margin-bottom: 20px;
+  overflow: hidden; margin-bottom: 20px;
+}
+.login-card__logo img {
+  width: 100%; height: 100%; object-fit: contain; display: block;
 }
 .login-card__title { font-size: 22px; font-weight: 700; margin: 0 0 6px; }
 .login-card__desc { font-size: 13px; color: var(--text-tertiary); margin: 0 0 28px; }

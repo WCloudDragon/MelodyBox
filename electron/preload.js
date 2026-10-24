@@ -85,5 +85,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 光球律动日志数据接收（日志窗口使用）
   onRhythmData: (callback) => {
     ipcRenderer.on('rhythm:data', (_event, data) => callback(data))
-  }
+  },
+
+  // 用系统默认浏览器打开外部链接
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url)
 })
