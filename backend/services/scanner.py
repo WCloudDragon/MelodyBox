@@ -195,73 +195,96 @@ def extract_cover(mutagen_file, file_path=''):
     return cover_path
 
 
-def pre_generate_thumbs_batch(cover_paths, max_workers=4):
+_THUMB_SIZES = [72, 80, 200, 280, 292, 332]
+
+
+def filter_pending_covers(cover_paths):
+    """筛出还缺缩略图的封面。
+
+    放在扫描线程里同步执行，这样扫描一结束就能给前端准确的总数：
+    没有待生成项时直接归零，避免前端把"空批次"误当成"正在生成"。
+    """
+    if not cover_paths:
+        return []
+    thumbs_base = _get_thumbs_dir()
+    pending = []
+    for cover_path in cover_paths:
+        basename = os.path.basename(cover_path)
+        try:
+            need = any(not os.path.exists(os.path.join(thumbs_base, str(s), basename))
+                       for s in _THUMB_SIZES)
+        except Exception:
+            need = True
+        if need:
+            pending.append(cover_path)
+    return pending
+
+
+def pre_generate_thumbs_batch(cover_paths, max_workers=4, pre_filtered=False):
     """批量预生成缩略图（线程池并行），扫描完成后调用。
 
     - 先筛出真正缺少尺寸的封面：全部已存在时不产生进度（避免"空转进度条"）
     - 用 _thumb_lock 串行化整批任务，进度只对应唯一在跑的一批
+    - pre_filtered=True 表示调用方已筛过，避免重复 stat
     """
     global _thumb_progress
     if not cover_paths:
+        _thumb_progress = {'scanning': False, 'current': 0, 'total': 0, 'path': ''}
         return
 
     with _thumb_lock:
-        thumbs_base = _get_thumbs_dir()
-        sizes = [72, 80, 200, 280, 292, 332]
-
-        pending = []
-        for cover_path in cover_paths:
-            basename = os.path.basename(cover_path)
-            try:
-                need = any(not os.path.exists(os.path.join(thumbs_base, str(s), basename))
-                           for s in sizes)
-            except Exception:
-                need = True
-            if need:
-                pending.append(cover_path)
-
-        if not pending:
-            _thumb_progress = {'scanning': False, 'current': 0, 'total': 0, 'path': ''}
-            return
-
-        total = len(pending)
-        done = [0]
-        lock = threading.Lock()
-        # 本批次独占的进度对象：即使其它线程重置全局变量，也不会把数字写串
-        progress = {'scanning': True, 'current': 0, 'total': total, 'path': ''}
-        _thumb_progress = progress
-
-        def _generate_one(cover_path):
-            basename = os.path.basename(cover_path)
-            try:
-                with lock:
-                    progress['path'] = basename
-                from PIL import Image
-                with Image.open(cover_path) as img:
-                    for size in sizes:
-                        thumb_dir = os.path.join(thumbs_base, str(size))
-                        os.makedirs(thumb_dir, exist_ok=True)
-                        thumb_path = os.path.join(thumb_dir, basename)
-                        if os.path.exists(thumb_path):
-                            continue
-                        tmp = thumb_path + '.tmp'
-                        thumb = img.copy()
-                        thumb.thumbnail((size, size), Image.LANCZOS)
-                        fmt = img.format or 'JPEG'
-                        thumb.save(tmp, format=fmt, quality=82)
-                        os.replace(tmp, thumb_path)
-            except Exception:
-                pass
-            finally:
-                with lock:
-                    done[0] += 1
-                    progress['current'] = done[0]
-
         try:
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                list(executor.map(_generate_one, pending))
-        finally:
-            progress['scanning'] = False
+            thumbs_base = _get_thumbs_dir()
+            sizes = _THUMB_SIZES
+
+            pending = list(cover_paths) if pre_filtered else filter_pending_covers(cover_paths)
+
+            if not pending:
+                _thumb_progress = {'scanning': False, 'current': 0, 'total': 0, 'path': ''}
+                return
+
+            total = len(pending)
+            done = [0]
+            lock = threading.Lock()
+            # 本批次独占的进度对象：即使其它线程重置全局变量，也不会把数字写串
+            progress = {'scanning': True, 'current': 0, 'total': total, 'path': ''}
+            _thumb_progress = progress
+
+            def _generate_one(cover_path):
+                basename = os.path.basename(cover_path)
+                try:
+                    with lock:
+                        progress['path'] = basename
+                    from PIL import Image
+                    with Image.open(cover_path) as img:
+                        for size in sizes:
+                            thumb_dir = os.path.join(thumbs_base, str(size))
+                            os.makedirs(thumb_dir, exist_ok=True)
+                            thumb_path = os.path.join(thumb_dir, basename)
+                            if os.path.exists(thumb_path):
+                                continue
+                            tmp = thumb_path + '.tmp'
+                            thumb = img.copy()
+                            thumb.thumbnail((size, size), Image.LANCZOS)
+                            fmt = img.format or 'JPEG'
+                            thumb.save(tmp, format=fmt, quality=82)
+                            os.replace(tmp, thumb_path)
+                except Exception:
+                    pass
+                finally:
+                    with lock:
+                        done[0] += 1
+                        progress['current'] = done[0]
+
+            try:
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    list(executor.map(_generate_one, pending))
+            finally:
+                progress['scanning'] = False
+        except Exception:
+            # 任何异常都要把进度归位，否则前端会永远停在"正在生成缩略图"
+            _thumb_progress = {'scanning': False, 'current': 0, 'total': 0, 'path': ''}
+            raise
 
 
 def detect_language(title, lyrics, artist=''):
@@ -892,9 +915,19 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
         db_conn.commit()
 
     # 异步批量生成缩略图（后台线程，不阻塞扫描完成通知）
-    if new_cover_paths:
-        paths_copy = list(new_cover_paths)
-        threading.Thread(target=pre_generate_thumbs_batch, args=(paths_copy,), daemon=True).start()
+    # 先同步筛出真正需要生成的封面：扫描一结束时前端就能拿到准确结果，
+    # 没有待生成项时立即归零，避免前端一直停在"正在生成缩略图"
+    pending_covers = filter_pending_covers(new_cover_paths)
+    if pending_covers:
+        _thumb_progress = {'scanning': True, 'current': 0, 'total': len(pending_covers), 'path': ''}
+        threading.Thread(
+            target=pre_generate_thumbs_batch,
+            args=(pending_covers,),
+            kwargs={'pre_filtered': True},
+            daemon=True,
+        ).start()
+    else:
+        _thumb_progress = {'scanning': False, 'current': 0, 'total': 0, 'path': ''}
 
     # ---- 孤儿封面/缩略图 GC ----
     # 内容哈希命名下封面更新后旧文件不再被任何歌曲/专辑引用，删除它们防止

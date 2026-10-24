@@ -210,7 +210,7 @@ export const useLibraryStore = defineStore('library', () => {
           await loadFromApi()
         }
       } catch {}
-    }, 500)
+    }, 250)
   }
 
   async function loadFoldersList() {

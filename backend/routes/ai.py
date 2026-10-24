@@ -28,6 +28,8 @@ _generating_text_embeddings = False
 _generating_audio_embeddings = False
 _audio_total = 0
 _audio_done_count = 0
+_text_total = 0
+_text_done_count = 0
 _text_use_gpu = False
 # 音频 embedding 完成信号（用于 CPU→GPU 切换）
 _audio_embedding_done = threading.Event()
@@ -151,8 +153,20 @@ def embedding_status():
 
         audio_processing = _generating_audio_embeddings
         text_processing = _generating_text_embeddings
-        # 口径与文本进度一致：已完成数 = 数据库已有 + 本次处理中新增
-        audio_done = audio_done_db + (_audio_done_count if audio_processing else 0)
+        # 处理中显示"本次任务"的进度；空闲时显示全库进度。
+        # 不能把数据库已有数与本轮计数相加：数据库每批 commit 后已有数也在涨，会重复计数
+        if audio_processing:
+            audio_done_view = min(_audio_done_count, _audio_total)
+            audio_total_view = _audio_total
+        else:
+            audio_done_view = audio_done_db
+            audio_total_view = total
+        if text_processing:
+            text_done_view = min(_text_done_count, _text_total)
+            text_total_view = _text_total
+        else:
+            text_done_view = done
+            text_total_view = total
         audio_available = False
         try:
             from services.embedding import is_audio_available
@@ -172,23 +186,25 @@ def embedding_status():
         provider = 'cpu'
         generating = False
         try:
-            from services.embedding import get_active_provider, is_generation_active
+            from services.embedding import get_active_provider, get_generation_active
             provider = get_active_provider()
-            generating = is_generation_active()
+            generating = get_generation_active()
         except Exception:
             pass
 
         return jsonify({
             'total': total,
             'done': done,
+            'text_done': text_done_view,
+            'text_total': text_total_view,
             'pending': total - done,
             'ready': done > 0,
             'st_available': is_available(),
             'provider': provider,
             'langs': langs,
             'mood_scores_ready': mood_scores_ready,
-            'audio_done': audio_done,
-            'audio_total': total,
+            'audio_done': audio_done_view,
+            'audio_total': audio_total_view,
             'audio_available': audio_available,
             'audio_processing': audio_processing,
             'text_processing': text_processing,
@@ -262,12 +278,14 @@ def _run_generation(flask_app, pending_songs, audio_pending):
     threading.Thread(target=_start_mert_download, daemon=True).start()
 
     def _text_worker():
-        global _generating_text_embeddings, _text_use_gpu
+        global _generating_text_embeddings, _text_use_gpu, _text_done_count, _text_total
         wait_for_e5_download(timeout=600)
         from services.embedding import _get_model
         if _get_model() is None:
             return
         _generating_text_embeddings = True
+        _text_total = len(pending_songs)
+        _text_done_count = 0
         _text_use_gpu = False
         use_cpu = True
         switched = False
@@ -286,7 +304,11 @@ def _run_generation(flask_app, pending_songs, audio_pending):
                             _gm()
                         batch = pending_songs[offset:offset + 5]
                         embeddings = encode_songs_batch(
-                            batch, progress_callback=None, use_cpu=use_cpu
+                            batch,
+                            progress_callback=lambda cur, _tot, base=offset: setattr(
+                                sys.modules[__name__], '_text_done_count', base + cur
+                            ),
+                            use_cpu=use_cpu
                         )
                         for song, emb in zip(batch, embeddings):
                             _upsert_vector(
@@ -308,13 +330,13 @@ def _run_generation(flask_app, pending_songs, audio_pending):
         global _generating_audio_embeddings, _audio_total, _audio_done_count
         wait_for_mert_download(timeout=600)
         _generating_audio_embeddings = True
+        _audio_total = len(audio_pending)
+        _audio_done_count = 0
         try:
             with flask_app.app_context():
                 if not audio_pending:
                     _audio_embedding_done.set()
                     return
-                _audio_total = len(audio_pending)
-                _audio_done_count = 0
                 audio_pairs = [(sid, fp) for sid, fp, _src in audio_pending]
                 results = encode_audio_batch(
                     audio_pairs,

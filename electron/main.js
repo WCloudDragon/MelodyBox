@@ -60,8 +60,13 @@ function startFlask() {
     const st = fs.statSync(logFile)
     if (st.size > 5 * 1024 * 1024) fs.rmSync(logFile, { force: true })
   } catch {}
-  const logStream = fs.createWriteStream(logFile, { flags: 'a' })
-  logStream.write(`\n==== MelodyBox backend started ${new Date().toLocaleString()} ====\n`)
+  let logStream = fs.createWriteStream(logFile, { flags: 'a' })
+  // 后端崩溃退出后流可能已经被关闭，此时再写会抛 EBADF 让主进程弹错误框
+  const writeLog = (chunk) => {
+    if (!logStream || logStream.destroyed || !logStream.writable) return
+    try { logStream.write(chunk) } catch {}
+  }
+  writeLog(`\n==== MelodyBox backend started ${new Date().toLocaleString()} ====\n`)
 
   flaskProcess = spawn(flaskPath, [], {
     cwd: path.dirname(flaskPath),
@@ -69,15 +74,16 @@ function startFlask() {
     env: { ...process.env, PYTHONHOME: internalDir }
   })
 
-  flaskProcess.stdout.on('data', data => logStream.write(data))
-  flaskProcess.stderr.on('data', data => logStream.write(data))
+  flaskProcess.stdout.on('data', writeLog)
+  flaskProcess.stderr.on('data', writeLog)
   flaskProcess.on('error', err => {
-    logStream.write(`[flask] 启动失败: ${err.message}\n`)
+    writeLog(`[flask] 启动失败: ${err.message}\n`)
     console.error('[flask] 启动失败:', err.message)
   })
   flaskProcess.on('exit', code => {
-    logStream.write(`[flask] exited code=${code}\n`)
-    logStream.end()
+    writeLog(`[flask] exited code=${code}\n`)
+    try { logStream.end() } catch {}
+    logStream = null
     flaskProcess = null
   })
 
@@ -342,22 +348,25 @@ function startAudioServer() {
       }
     })
 
-    audioServer.on('error', (err) => {
-      console.error('[audio-server] 启动失败:', err.message)
-      reject(err)
-    })
-
     // 端口: 优先 51234，被占用则随机
-    audioServer.listen(51234, '127.0.0.1', () => {
-      audioServerPort = 51234
+    // 注意：error 只能在 listen 的失败分支里处理，不能再挂全局 error 处理器，
+    // 否则会先 reject 掉 Promise，导致下面回退随机端口的逻辑失效
+    audioServer.once('listening', () => {
+      audioServerPort = audioServer.address().port
       resolve()
-    }).on('error', () => {
-      // 51234 被占用，随机端口
-      audioServer.listen(0, '127.0.0.1', () => {
+    })
+    audioServer.once('error', () => {
+      audioServer.once('listening', () => {
         audioServerPort = audioServer.address().port
         resolve()
       })
+      audioServer.once('error', (err) => {
+        console.error('[audio-server] 启动失败:', err.message)
+        reject(err)
+      })
+      audioServer.listen(0, '127.0.0.1')
     })
+    audioServer.listen(51234, '127.0.0.1')
   })
 }
 

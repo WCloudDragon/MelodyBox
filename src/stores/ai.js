@@ -306,7 +306,7 @@ export const useAiStore = defineStore('ai', () => {
     return null
   }
 
-  function pollEmbeddingStatus(intervalMs = 2000, onDone) {
+  function pollEmbeddingStatus(intervalMs = 500, onDone) {
     // 单实例去重：同一时刻只有一个状态轮询在跑
     if (_embeddingPollTimer) {
       clearInterval(_embeddingPollTimer)

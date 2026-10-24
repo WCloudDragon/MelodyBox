@@ -300,7 +300,7 @@ def init_db(app):
         CREATE TABLE IF NOT EXISTS settings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL UNIQUE,
-            theme TEXT DEFAULT 'dark',
+            theme TEXT DEFAULT 'light',
             accent_color TEXT DEFAULT '#6366f1',
             blur_strength TEXT DEFAULT '10px',
             follow_system_theme INTEGER DEFAULT 0,

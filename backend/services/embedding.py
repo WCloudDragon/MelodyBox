@@ -189,8 +189,21 @@ def _poll_e5_download(stop_event, model_root, progress_dict):
         time.sleep(1.5)
 
 
+_MODEL_INIT_LOCK = threading.Lock()
+_AUDIO_MODEL_INIT_LOCK = threading.Lock()
+
+
 def _get_model():
     """获取或初始化 embedding 模型（懒加载单例，自动下载 + GPU 加速）"""
+    if _MODEL is not None:
+        return _MODEL
+    # 并发保护：预加载线程与文本 worker 会同时调用，缺锁会重复初始化，
+    # 两个线程交替写同一个进度对象，前端就会看到"谁刷新显示谁"的跳变
+    with _MODEL_INIT_LOCK:
+        return _init_model()
+
+
+def _init_model():
     global _MODEL, _MODEL_DIM, _download_progress
 
     if not is_available():
@@ -311,34 +324,31 @@ def _get_model():
                 pass
         except Exception as e:
             err = str(e)
+            # 缓存损坏（onnx_data 缺失 / 分配失败）时先清缓存再回退
             if 'onnx_data' in err or 'No such file' in err or 'RUNTIME_EXCEPTION' in err or 'bad allocation' in err:
                 _clear_e5_cache()
+            # provider 不可用（例如 DML 已安装但 DLL 未生效）等异常一律回退 CPU 重试，
+            # 否则模型明明已在本机也会被标成"下载失败"
+            try:
+                _MODEL = TextEmbedding(
+                    model_name=_MODEL_NAME,
+                    cache_dir=cache_dir,
+                    providers=['CPUExecutionProvider'],
+                    lazy_load=False,
+                )
+                _MODEL_PROVIDER = ['CPUExecutionProvider']
                 try:
-                    _MODEL = TextEmbedding(
-                        model_name=_MODEL_NAME,
-                        cache_dir=cache_dir,
-                        providers=['CPUExecutionProvider'],  # bad allocation 往往是 GPU 内存不足
-                        lazy_load=False,
-                    )
-                    _MODEL_PROVIDER = ['CPUExecutionProvider']
-                    try:
-                        _MODEL_DIM = int(_MODEL.embedding_size or 0) or _MODEL_DIM
-                    except Exception:
-                        pass
-                except Exception as retry_e:
-                    _download_progress.update({
-                        'status': 'error',
-                        'message': str(retry_e)[:150],
-                    })
-                    _MODEL = None
-                    _e5_downloaded.set()
-                    return None
-            else:
+                    _MODEL_DIM = int(_MODEL.embedding_size or 0) or _MODEL_DIM
+                except Exception:
+                    pass
+            except Exception as retry_e:
                 _download_progress.update({
                     'status': 'error',
-                    'message': err[:150],
+                    'message': str(retry_e)[:150],
                 })
-                raise
+                _MODEL = None
+                _e5_downloaded.set()
+                return None
 
         _download_progress.update({
             'status': 'completed',
@@ -950,6 +960,15 @@ def _export_mert_to_onnx():
 
 def _get_audio_model():
     """获取或初始化音频 embedding 模型（ONNX Runtime）"""
+    if _AUDIO_MODEL is not None:
+        return _AUDIO_MODEL
+    # 并发保护：预加载线程与音频 worker 会同时调用，避免重复导出/加载
+    with _AUDIO_MODEL_INIT_LOCK:
+        return _init_audio_model()
+
+
+def _init_audio_model():
+    """实际初始化音频模型（调用方需持有 _AUDIO_MODEL_INIT_LOCK）"""
     global _AUDIO_MODEL
 
     if not is_audio_available():
@@ -982,6 +1001,10 @@ def _get_audio_model():
         sess_options.graph_optimization_level = (
             ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         )
+        # 只有回退到 CPU 时才限制线程数：GPU 推理时不需要，而 CPU 推理默认
+        # 会吃满所有核心，导致整机卡顿
+        if providers and providers[0] == 'CPUExecutionProvider':
+            sess_options.intra_op_num_threads = max(1, (os.cpu_count() or 4) // 2)
         _AUDIO_MODEL = ort.InferenceSession(
             onnx_path,
             sess_options=sess_options,
@@ -1040,6 +1063,7 @@ def encode_audio_batch(clips, batch_size=8, progress_callback=None):
                     import onnxruntime as ort
                     sess_options = ort.SessionOptions()
                     sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                    sess_options.intra_op_num_threads = max(1, (os.cpu_count() or 4) // 2)
                     onnx_path = _get_audio_onnx_path()
                     _AUDIO_MODEL = ort.InferenceSession(
                         onnx_path, sess_options=sess_options,
@@ -1054,9 +1078,9 @@ def encode_audio_batch(clips, batch_size=8, progress_callback=None):
             for i, sid in enumerate(batch_ids):
                 emb = embeddings[i].astype(np.float32)
                 results.append((sid, emb))
-
-        if progress_callback:
-            progress_callback(min(offset + batch_size, total), total)
+                # 逐首上报，前端轮询到就是最新完成数，不必等整批结束
+                if progress_callback:
+                    progress_callback(min(offset + i + 1, total), total)
 
     return results
 

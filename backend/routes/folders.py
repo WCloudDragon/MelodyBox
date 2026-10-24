@@ -186,10 +186,8 @@ def _scan_worker():
                                 dir_path, result.get('inserted', 0),
                                 result.get('updated', 0), result.get('deleted', 0),
                                 result.get('errors', 0))
-                    # 新歌曲入库后自动触发 embedding 生成
-                    if result.get('inserted', 0) > 0 or result.get('updated', 0) > 0:
-                        from routes.ai import auto_generate_embeddings
-                        auto_generate_embeddings(flask_app)
+                    # 向量生成改为用户手动触发：导入后后台静默跑推理会长时间吃满 CPU，
+                    # 前端在推荐区已有"一键生成向量"入口
         except Exception:
             logger.error('扫描异常: %s\n%s', dir_path, traceback.format_exc())
         finally:

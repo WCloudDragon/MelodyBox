@@ -43,7 +43,7 @@ CAMEL_TO_SNAKE = {v: k for k, v in SNAKE_TO_CAMEL.items()}
 
 # 默认设置值（与 app.py 建表 DEFAULT 及前端 store 初始值一致）
 DEFAULT_SETTINGS = {
-    'theme': 'dark',
+    'theme': 'light',
     'accent_color': '#6366f1',
     'blur_strength': '10px',
     'follow_system_theme': False,

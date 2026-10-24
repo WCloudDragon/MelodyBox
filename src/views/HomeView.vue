@@ -381,7 +381,9 @@ const generatingEmbeddings = ref(false)
 // 进度条百分比
 const textProgressPct = computed(() => {
   const st = aiStore.embeddingStatus
-  return st.total > 0 ? (st.done / st.total * 100) : 0
+  const done = st.text_done ?? st.done
+  const total = st.text_total ?? st.total
+  return total > 0 ? (done / total * 100) : 0
 })
 
 const audioProgressPct = computed(() => {
@@ -424,14 +426,14 @@ const e5DisplayCount = computed(() => {
   const dl = aiStore.embeddingStatus.e5_download
   if (dl && (dl.status === 'checking' || dl.status === 'preparing')) return '...'
   if (dl && dl.status === 'downloading') return formatDownload(dl.downloaded_mb || 0, dl.total_mb || 0)
-  return `${aiStore.embeddingStatus.done}/${aiStore.embeddingStatus.total}`
+  return `${aiStore.embeddingStatus.text_done ?? aiStore.embeddingStatus.done}/${aiStore.embeddingStatus.text_total ?? aiStore.embeddingStatus.total}`
 })
 
 const e5DisplayText = computed(() => {
   const dl = aiStore.embeddingStatus.e5_download
   if (dl && (dl.status === 'downloading' || dl.status === 'checking' || dl.status === 'preparing' || dl.status === 'retrying'))
     return dl.message || ''
-  if (dl && dl.status === 'error') return `下载失败: ${dl.message}`
+  if (dl && dl.status === 'error') return dl.message || '文本分析模型加载失败'
   if (dl && dl.status === 'completed' && !aiStore.embeddingStatus.text_processing)
     return '正在加载文本分析引擎...'
   return textStatusText.value
@@ -459,7 +461,7 @@ const mertDisplayText = computed(() => {
   if (dl && (dl.status === 'downloading' || dl.status === 'checking' || dl.status === 'preparing' || dl.status === 'retrying'))
     return dl.message || ''
   if (dl && dl.status === 'exporting') return '正在准备音频分析引擎...'
-  if (dl && dl.status === 'error') return `下载失败: ${dl.message}`
+  if (dl && dl.status === 'error') return dl.message || '音频分析模型加载失败'
   // 下载完成但模型还未就绪（wait_for_mert_download 仍在等待 ONNX 导出）
   if (dl && dl.status === 'completed' && !aiStore.embeddingStatus.audio_processing) {
     const st = aiStore.embeddingStatus

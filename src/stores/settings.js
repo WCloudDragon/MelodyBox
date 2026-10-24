@@ -28,7 +28,7 @@ const CAMEL_TO_SNAKE = Object.fromEntries(
 
 export const useSettingsStore = defineStore('settings', () => {
   // 外观设置
-  const theme = ref('dark')
+  const theme = ref('light')
   const accentColor = ref('#6366f1')
   const blurStrength = ref('10px')
   const followSystemTheme = ref(false)
@@ -174,7 +174,7 @@ export const useSettingsStore = defineStore('settings', () => {
       const res = await fetch(apiUrl('/api/settings'))
       if (!res.ok) return
       const data = await res.json()
-      theme.value = data.theme ?? 'dark'
+      theme.value = data.theme ?? 'light'
       accentColor.value = data.accentColor ?? '#6366f1'
       blurStrength.value = data.blurStrength ?? '10px'
       followSystemTheme.value = !!data.followSystemTheme

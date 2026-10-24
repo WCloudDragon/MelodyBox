@@ -66,48 +66,28 @@ export function closeScanNotify(progress, onDone) {
 
 // 停滞看门狗：进度 60 秒无任何变化则主动收尾，避免孤儿卡永久停留
 const THUMB_STALL_MS = 60000
+// 启动宽限：后端在扫描结束前已同步算好批次总数，这里只留极短的防御窗口
+const THUMB_GRACE_MS = 2000
 let _thumbLastChange = 0
 let _thumbLastSig = ''
+let _thumbGraceStart = 0
+let _thumbFailCount = 0
 
 function startThumbPoll(onDone) {
-  stopThumbPoll()
+  // HomeView / LibraryView 的 watcher 会在同一次状态更新里各触发一次 closeScanNotify。
+  // 已有卡片时只能确保轮询在跑，绝不能先 stopThumbPoll —— 那会把第一次调用刚启动的
+  // 轮询掐掉，卡片从此停在"准备中..."再也不更新。
+  if (_thumbId) {
+    if (!_thumbPollTimer) startThumbInterval(onDone)
+    return
+  }
 
-  // 防止并发调用（HomeView / LibraryView 的 watcher 会在同一次状态更新里
-  // 各触发一次 closeScanNotify）：先同步占位 _thumbId，第二次调用会在这里
-  // 被拦截。旧实现是"先查后等 fetch"，两次调用都在 fetch 返回前通过检查，
-  // 各建一张进度卡，未被引用的那张从此无人更新 —— 卡死在创建时的快照。
-  if (_thumbId) return
   _thumbId = addProgress({ type: 'thumb', title: '正在生成缩略图...', current: 0, total: 0, path: '准备中...' })
   _thumbLastChange = Date.now()
   _thumbLastSig = ''
-
-  fetch(`${FOLDERS_API}/thumb-progress`).then(r => r.json()).then(p => {
-    if (!_thumbId) return  // 期间被 clearScanNotify 清理
-    if (p.scanning && p.total > 0) {
-      // 正在生成中 —— 更新占位卡并开始轮询
-      updateProgress(_thumbId, {
-        title: `生成缩略图 ${p.current}/${p.total}`,
-        current: p.current, total: p.total, path: p.path
-      })
-      startThumbInterval(onDone)
-    } else if (p.total > 0 && !p.scanning) {
-      // 已全部完成（或本次无可生成的缩略图）
-      completeProgress(_thumbId, `缩略图完成 · ${p.total} 张`)
-      _thumbId = null
-      if (onDone) onDone()
-    } else if (p.scanning) {
-      // 后端刚开始，还没统计到数量 —— 稍后由轮询更新数字
-      startThumbInterval(onDone)
-    } else {
-      // scanning=false 且 total=0：无需生成缩略图
-      removeProgress(_thumbId)
-      _thumbId = null
-      if (onDone) onDone()
-    }
-  }).catch(() => {
-    if (!_thumbId) return
-    startThumbInterval(onDone)
-  })
+  _thumbGraceStart = Date.now()
+  _thumbFailCount = 0
+  startThumbInterval(onDone)
 }
 
 function startThumbInterval(onDone) {
@@ -116,8 +96,10 @@ function startThumbInterval(onDone) {
     _thumbId = addProgress({ type: 'thumb', title: '正在生成缩略图...', current: 0, total: 0, path: '准备中...' })
     _thumbLastChange = Date.now()
     _thumbLastSig = ''
+    _thumbGraceStart = Date.now()
+    _thumbFailCount = 0
   }
-  _thumbPollTimer = setInterval(() => pollThumbOnce(onDone), 600)
+  _thumbPollTimer = setInterval(() => pollThumbOnce(onDone), 250)
 }
 
 async function pollThumbOnce(onDone) {
@@ -125,23 +107,35 @@ async function pollThumbOnce(onDone) {
     const res = await fetch(`${FOLDERS_API}/thumb-progress`)
     const p = await res.json()
     if (!_thumbId) return
+    _thumbFailCount = 0
     // 停滞检测：内容签名（数字+文件名）连续 60 秒无变化则主动收尾
     const sig = `${p.current}/${p.total}|${p.path}`
     if (sig !== _thumbLastSig) {
       _thumbLastSig = sig
       _thumbLastChange = Date.now()
     }
+
+    // 批次尚未开始（未运行且数量为 0）：给一个启动宽限，
+    // 避免扫描刚结束、后端线程还未占位时就被误判成"无需生成缩略图"
+    if (!p.scanning && p.total === 0) {
+      if (Date.now() - _thumbGraceStart < THUMB_GRACE_MS) {
+        updateProgress(_thumbId, { title: '正在生成缩略图...', path: '准备中...' })
+        return
+      }
+      stopThumbPoll()
+      removeProgress(_thumbId)
+      _thumbId = null
+      if (onDone) onDone()
+      return
+    }
+
     updateProgress(_thumbId, {
       current: p.current, total: p.total, path: p.path,
       title: p.total > 0 ? `生成缩略图 ${p.current}/${p.total}` : '正在生成缩略图...'
     })
     if (!p.scanning) {
       stopThumbPoll()
-      if (p.total > 0) {
-        completeProgress(_thumbId, `缩略图完成 · ${p.total} 张`)
-      } else {
-        removeProgress(_thumbId)
-      }
+      completeProgress(_thumbId, `缩略图完成 · ${p.total} 张`)
       _thumbId = null
       if (onDone) onDone()
     } else if (Date.now() - _thumbLastChange > THUMB_STALL_MS) {
@@ -150,7 +144,16 @@ async function pollThumbOnce(onDone) {
       _thumbId = null
       if (onDone) onDone()
     }
-  } catch { /* ignore */ }
+  } catch {
+    // 请求持续失败（后端重启/未就绪）时不能永久卡住：约 5 秒后主动收尾
+    _thumbFailCount++
+    if (_thumbFailCount >= 20 && _thumbId) {
+      stopThumbPoll()
+      removeProgress(_thumbId)
+      _thumbId = null
+      if (onDone) onDone()
+    }
+  }
 }
 
 // ==================== 清理 ====================
