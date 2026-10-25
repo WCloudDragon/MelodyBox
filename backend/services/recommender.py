@@ -429,6 +429,9 @@ def _mood_from_table(db, mood, exclude, limit):
 def _mood_fallback(ctx, mood, exclude):
     """song_mood_scores 为空时：实时编码情绪查询文本 + 余弦。"""
     store = ctx['store']
+    # 没有任何文本向量时直接返回，避免为了空结果加载整个 E5 模型
+    if not store.text_song_set:
+        return []
     try:
         from services.embedding import encode_text
         query_vec = encode_text(MOOD_QUERIES[mood])

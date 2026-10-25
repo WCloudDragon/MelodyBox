@@ -13,6 +13,7 @@ import threading
 import time
 import hashlib
 import sys
+from collections import deque
 
 from utils.cache import cache
 from config.recommend_config import (
@@ -36,6 +37,63 @@ _audio_embedding_done = threading.Event()
 # 向量生成任务互斥：手动触发与扫描后自动触发共用，避免两个任务并行写同一批行
 _generation_running = False
 _generation_guard = threading.Lock()
+
+# ETA 采样：由 status 轮询驱动，按最近窗口的完成速率估算剩余时间
+_ETA_WINDOW_SEC = 12.0
+_eta_state = {
+    'text': {'samples': deque(maxlen=24), 'phase': '', 'eta': None, 'rate': 0.0},
+    'audio': {'samples': deque(maxlen=24), 'phase': '', 'eta': None, 'rate': 0.0},
+}
+
+
+def _update_eta(key, done, total, active, phase):
+    """更新某一类任务的剩余时间估算。
+
+    只在完成数真正变化时重新采样和计算；进度不变的轮询直接沿用上一次结果。
+    阶段切换（CPU→GPU）或任务重置时清空样本，避免用旧速率估算新阶段。
+    """
+    state = _eta_state[key]
+    if not active:
+        state['samples'].clear()
+        state['phase'] = ''
+        state['eta'] = None
+        state['rate'] = 0.0
+        return
+
+    now = time.monotonic()
+    samples = state['samples']
+    if phase != state['phase']:
+        samples.clear()
+        state['phase'] = phase
+        state['eta'] = None
+        state['rate'] = 0.0
+    # 计数回退说明换了新任务/被重置，丢弃旧样本
+    if samples and done < samples[-1][1]:
+        samples.clear()
+        state['eta'] = None
+        state['rate'] = 0.0
+    # 进度没有变化：不采样、不重算，保持上一次的预计时间
+    if samples and done == samples[-1][1]:
+        return
+    samples.append((now, done))
+    while len(samples) > 2 and now - samples[0][0] > _ETA_WINDOW_SEC:
+        samples.popleft()
+
+    rate = 0.0
+    if len(samples) >= 2:
+        dt = samples[-1][0] - samples[0][0]
+        delta = samples[-1][1] - samples[0][1]
+        if dt >= 1.0 and delta > 0:
+            rate = delta / dt
+    state['rate'] = rate
+
+    remaining = max(0, (total or 0) - (done or 0))
+    if remaining <= 0:
+        state['eta'] = 0
+    elif rate > 0:
+        state['eta'] = remaining / rate
+    else:
+        state['eta'] = None
 
 
 def _get_default_model_dir():
@@ -172,6 +230,15 @@ def embedding_status():
         except Exception:
             pass
 
+        # 更新两类任务的剩余时间（由轮询驱动；阶段切换时自动重新采样）
+        _update_eta(
+            'text', text_done_view, text_total_view, text_processing,
+            'gpu' if _text_use_gpu else 'cpu',
+        )
+        _update_eta('audio', audio_done_view, audio_total_view, audio_processing, 'encoding')
+        text_eta = _eta_state['text']['eta']
+        audio_eta = _eta_state['audio']['eta']
+
         return jsonify({
             'total': total,
             'done': done,
@@ -189,6 +256,8 @@ def embedding_status():
             'audio_processing': audio_processing,
             'text_processing': text_processing,
             'text_provider': 'GPU' if _text_use_gpu and text_processing else ('CPU' if text_processing else 'idle'),
+            'text_eta_sec': None if text_eta is None else round(text_eta, 1),
+            'audio_eta_sec': None if audio_eta is None else round(audio_eta, 1),
             'generating': generating,
             'e5_download': e5_download,
             'mert_download': mert_download,
@@ -261,8 +330,13 @@ def _run_generation(flask_app, pending_songs, audio_pending, include_audio=True)
         except Exception:
             pass
 
+    # 没有音频待处理项时不下载 MERT，并立即允许文本走 GPU
+    has_audio = include_audio and bool(audio_pending)
+    if not has_audio:
+        _audio_embedding_done.set()
+
     threading.Thread(target=_start_e5_download, daemon=True).start()
-    if include_audio:
+    if has_audio:
         threading.Thread(target=_start_mert_download, daemon=True).start()
 
     def _text_worker():
@@ -271,12 +345,14 @@ def _run_generation(flask_app, pending_songs, audio_pending, include_audio=True)
         from services.embedding import _get_model
         if _get_model() is None:
             return
-        _generating_text_embeddings = True
         _text_total = len(pending_songs)
         _text_done_count = 0
-        _text_use_gpu = False
-        use_cpu = True
-        switched = False
+        # 有音频任务时先用 CPU（把 GPU 让给音频），音频完成后切 GPU；
+        # 没有音频任务时直接走 GPU。
+        use_cpu = not _audio_embedding_done.is_set()
+        switched = not use_cpu
+        _text_use_gpu = not use_cpu
+        _generating_text_embeddings = True
         try:
             with flask_app.app_context():
                 db = get_db()
@@ -311,94 +387,101 @@ def _run_generation(flask_app, pending_songs, audio_pending, include_audio=True)
                     db.close()
         finally:
             _generating_text_embeddings = False
-            if not _generating_audio_embeddings:
-                set_generation_active(False)
 
     def _audio_worker():
         global _generating_audio_embeddings, _audio_total, _audio_done_count
         wait_for_mert_download(timeout=600)
-        _generating_audio_embeddings = True
         _audio_total = len(audio_pending)
         _audio_done_count = 0
+        _generating_audio_embeddings = True
         try:
             with flask_app.app_context():
                 if not audio_pending:
                     _audio_embedding_done.set()
                     return
-                audio_pairs = [(sid, fp) for sid, fp, _src in audio_pending]
-                results = encode_audio_batch(
-                    audio_pairs,
-                    batch_size=8,
-                    progress_callback=lambda cur, tot: setattr(
-                        sys.modules[__name__], '_audio_done_count', cur
-                    ),
-                )
                 db = get_db()
                 cursor = db.cursor()
-                blob_count = 0
-                # 分批提交：全量单事务会长时间持有写锁，导致 API 请求
-                # （如 get_profile 的 INSERT）busy 超时报 database is locked
-                for song_id, emb in results:
-                    if emb is not None:
-                        src = next((s for s in (audio_pending) if s[0] == song_id), None)
-                        source = src[2] if src else 'local'
-                        _upsert_vector(
-                            cursor, song_id, source,
-                            emb.astype('float32').tobytes(), audio=True
+                # 分块编码并在每块后立即提交：中断后重启只需重算最后一块，
+                # 否则整批编码结束才写库，中途退出会导致音频向量全部白算。
+                checkpoint = 32
+                try:
+                    for start in range(0, len(audio_pending), checkpoint):
+                        chunk = audio_pending[start:start + checkpoint]
+                        source_map = {sid: src for sid, _fp, src in chunk}
+                        results = encode_audio_batch(
+                            [(sid, fp) for sid, fp, _src in chunk],
+                            batch_size=8,
+                            progress_callback=lambda cur, _tot, base=start: setattr(
+                                sys.modules[__name__], '_audio_done_count',
+                                min(base + cur, _audio_total)
+                            ),
                         )
-                        blob_count += 1
-                        if blob_count % 200 == 0:
-                            db.commit()
-                db.commit()
-                cursor.close()
-                db.close()
-                _audio_done_count = blob_count
+                        for song_id, emb in results:
+                            if emb is None:
+                                continue
+                            _upsert_vector(
+                                cursor, song_id, source_map.get(song_id, 'local'),
+                                emb.astype('float32').tobytes(), audio=True
+                            )
+                        db.commit()
+                        _audio_done_count = min(start + len(chunk), _audio_total)
+                except Exception:
+                    db.rollback()
+                    import traceback
+                    traceback.print_exc()
+                finally:
+                    cursor.close()
+                    db.close()
         except Exception:
             import traceback
             traceback.print_exc()
         finally:
             _generating_audio_embeddings = False
             _audio_embedding_done.set()
-            if not _generating_text_embeddings:
-                set_generation_active(False)
 
     def _finalize():
         global _generation_running
         t1 = threading.Thread(target=_text_worker, daemon=True)
         t1.start()
         t2 = None
-        if include_audio:
+        if has_audio:
             t2 = threading.Thread(target=_audio_worker, daemon=True)
             t2.start()
         t1.join()
         if t2 is not None:
             t2.join()
 
-        # 任务结束，释放互斥标志（放在卸载模型之前，后续任务可立即排队）
-        with _generation_guard:
-            _generation_running = False
-
-        # 文本与音频生成全部结束：主动卸载模型，释放 RAM/显存
+        # 向量已变更：先失效缓存，让情绪分数/画像读到新向量
         try:
-            from services.embedding import unload_models
-            unload_models()
+            from services.recommender import invalidate_embedding_cache
+            invalidate_embedding_cache()
         except Exception:
             pass
 
-        # 向量已变更：失效缓存 + 异步刷新情绪分数与画像
-        from services.recommender import invalidate_embedding_cache
-        invalidate_embedding_cache()
-
-        def _mood():
-            try:
-                with flask_app.app_context():
-                    from services.recommender import compute_all_mood_scores
-                    db = get_db()
+        # 情绪分数必须在模型释放前计算：它需要 encode_text，
+        # 若放在卸载之后会重新加载 E5 并长期常驻。算完再统一释放。
+        try:
+            with flask_app.app_context():
+                from services.recommender import compute_all_mood_scores
+                db = get_db()
+                try:
                     compute_all_mood_scores(db)
+                finally:
                     db.close()
+        except Exception:
+            pass
+        finally:
+            try:
+                from services.embedding import unload_models
+                unload_models()
             except Exception:
                 pass
+            # 情绪分数与模型释放都完成，才认为整个生成流程结束
+            set_generation_active(False)
+            with _generation_guard:
+                _generation_running = False
 
+        # 画像只用库里的向量，不需要模型，异步执行
         def _profile():
             try:
                 with flask_app.app_context():
@@ -410,7 +493,6 @@ def _run_generation(flask_app, pending_songs, audio_pending, include_audio=True)
             except Exception:
                 pass
 
-        threading.Thread(target=_mood, daemon=True).start()
         threading.Thread(target=_profile, daemon=True).start()
 
     threading.Thread(target=_finalize, daemon=True).start()

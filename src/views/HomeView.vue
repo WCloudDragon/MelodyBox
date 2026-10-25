@@ -24,7 +24,7 @@
       <section class="section">
 
         <!-- embedding 未生成提示 -->
-        <div v-if="(aiStore.embeddingStatus.pending > 0 || aiStore.embeddingStatus.audio_processing || generatingEmbeddings) && libraryStore.tracks.length > 0" class="embedding-banner">
+        <div v-if="(aiStore.embeddingStatus.pending > 0 || aiStore.embeddingStatus.audio_processing || aiStore.embeddingStatus.generating || generatingEmbeddings) && libraryStore.tracks.length > 0" class="embedding-banner">
           <div v-if="aiStore.embeddingStatus.st_available === false" class="embedding-banner__content">
             <span>需要安装 fastembed 以启用 AI 推荐</span>
             <el-button type="primary" size="small" @click="copyInstallCmd">
@@ -36,7 +36,7 @@
             <div class="progress-bar-wrap"><div class="progress-bar progress-bar--indeterminate"></div></div>
             <span style="font-size: 12px; color: var(--text-secondary);">应用重启后将自动使用 GPU 继续生成向量</span>
           </div>
-          <div v-else-if="generatingEmbeddings" class="embedding-banner__content" style="flex-direction: column; align-items: stretch; gap: 8px;">
+          <div v-else-if="generatingEmbeddings || aiStore.embeddingStatus.text_processing || aiStore.embeddingStatus.audio_processing || aiStore.embeddingStatus.generating" class="embedding-banner__content" style="flex-direction: column; align-items: stretch; gap: 8px;">
             <!-- 文本分析进度条 -->
             <div style="display: flex; flex-direction: column; gap: 3px;">
               <div style="display: flex; align-items: center; gap: 8px;">
@@ -62,8 +62,8 @@
           </div>
         </div>
 
-        <!-- 推荐入口卡片网格（加载中显示骨架屏；无向量时整块隐藏） -->
-        <div class="rec-entries-wrap" v-if="hasVectors">
+        <!-- 推荐入口卡片网格（加载中显示骨架屏；无向量或正在生成时整块隐藏） -->
+        <div class="rec-entries-wrap" v-if="showRecCards">
           <button
             v-if="!recPreviewsLoading && recPage > 0"
             class="rec-entries__arrow rec-entries__arrow--left"
@@ -218,7 +218,7 @@
         </div>
 
         <!-- 语言推荐入口（横排；独立于推荐卡容器，自行对齐基准线） -->
-        <div v-if="aiStore.embeddingStatus.pending === 0 && topLangs.length > 0" class="rec-lang-row">
+        <div v-if="!isGeneratingVectors && aiStore.embeddingStatus.pending === 0 && topLangs.length > 0" class="rec-lang-row">
           <div
             v-for="l in topLangs"
             :key="l.code"
@@ -231,7 +231,7 @@
         </div>
 
         <!-- AI 推荐（直接展示，兼容旧模式） -->
-        <div v-if="aiStore.embeddingStatus.pending === 0 && aiRecommendations.length > 0" class="tracks-grid" style="margin-top: 12px;">
+        <div v-if="!isGeneratingVectors && aiStore.embeddingStatus.pending === 0 && aiRecommendations.length > 0" class="tracks-grid" style="margin-top: 12px;">
           <div
             v-for="track in aiRecommendations"
             :key="track.song_id"
@@ -243,7 +243,7 @@
         </div>
 
         <!-- 加载中 -->
-        <div v-if="aiStore.isLoading && aiStore.embeddingStatus.pending === 0" class="loading-hint">
+        <div v-if="!isGeneratingVectors && aiStore.isLoading && aiStore.embeddingStatus.pending === 0" class="loading-hint">
           <el-icon class="is-loading"><Loading /></el-icon>
           <span>正在生成推荐...</span>
         </div>
@@ -382,7 +382,7 @@ function playTrack(track) {
 
 const generatingEmbeddings = ref(false)
 
-// 进度条百分比
+// 进度条百分比（直接使用后端真实完成数，不做外推）
 const textProgressPct = computed(() => {
   const st = aiStore.embeddingStatus
   const done = st.text_done ?? st.done
@@ -440,7 +440,9 @@ const e5DisplayText = computed(() => {
   if (dl && dl.status === 'error') return dl.message || '文本分析模型加载失败'
   if (dl && dl.status === 'completed' && !aiStore.embeddingStatus.text_processing)
     return '正在加载文本分析引擎...'
-  return textStatusText.value
+  const base = textStatusText.value
+  const eta = formatEta(aiStore.embeddingStatus.text_eta_sec)
+  return eta ? `${base} · ${eta}` : base
 })
 
 // MERT 显示状态（下载中 / 导出中 / 编码中 / 已完成）
@@ -474,8 +476,25 @@ const mertDisplayText = computed(() => {
       return '✅ 已完成'
     return '正在准备音频分析引擎...'
   }
-  return audioStatusText.value
+  const base = audioStatusText.value
+  const eta = formatEta(aiStore.embeddingStatus.audio_eta_sec)
+  return eta ? `${base} · ${eta}` : base
 })
+
+// 剩余时间格式化：分钟级显示 mm:ss，超 1 小时显示小时+分钟
+function formatEta(sec) {
+  if (sec === null || sec === undefined || !Number.isFinite(sec)) return ''
+  if (sec <= 0) return ''
+  if (sec < 30) return '即将完成'
+  const total = Math.round(sec)
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  if (m >= 60) {
+    const h = Math.floor(m / 60)
+    return `约剩 ${h} 小时 ${m % 60} 分`
+  }
+  return `约剩 ${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
 
 // 推荐模式
 const moods = [
@@ -703,7 +722,8 @@ onMounted(() => {
     const cur = Math.floor(Date.now() / SLOT_MS)
     if (cur !== lastSlot) {
       lastSlot = cur
-      aiStore.loadPreviews(true)
+      // 生成中先不刷新，结束时统一刷新
+      if (!isGeneratingVectors.value) aiStore.loadPreviews(true)
     }
   }, 60 * 1000)
 })
@@ -722,6 +742,15 @@ const recPreviewsLoading = computed(() => aiStore.previewsLoading)
 
 // 无向量时不展示推荐卡片（避免占位卡被误认为真实推荐）
 const hasVectors = computed(() => (aiStore.embeddingStatus.done || 0) > 0)
+
+// 向量生成中：隐藏推荐卡片与入口，生成结束后再统一刷新，避免过程中卡片跳动
+const isGeneratingVectors = computed(() =>
+  generatingEmbeddings.value ||
+  !!aiStore.embeddingStatus.text_processing ||
+  !!aiStore.embeddingStatus.audio_processing ||
+  !!aiStore.embeddingStatus.generating
+)
+const showRecCards = computed(() => hasVectors.value && !isGeneratingVectors.value)
 
 // 骨架 → 真实卡片时播放一次性入场动画：动画结束后移除类，
 // 避免 keep-alive 切回首页时 DOM 重挂导致动画重播
@@ -790,12 +819,13 @@ async function handleGenerateEmbeddings() {
 
   const trackCount = libraryStore.tracks.length
   const tooSmall = trackCount > 0 && trackCount < 50
+  const resourceTip = '生成期间会持续占用 CPU / GPU 与内存，可能出现界面卡顿或播放不顺畅，建议在空闲时进行。'
   try {
     await modal.confirm({
       title: tooSmall ? '曲库较小，仍要生成向量？' : '确认生成 AI 向量',
       message: tooSmall
-        ? `当前音乐库共 ${trackCount} 首，样本较少，AI 推荐的结果可能比较有限。\n\n即将为所有歌曲生成文本语义与音频特征向量，首次运行需下载两个 AI 模型（共约 2.3GB）。\n\n模型存放路径: ${modelPath}`
-        : `即将为所有歌曲生成文本语义与音频特征向量，首次运行需下载两个 AI 模型（共约 2.3GB）。\n\n模型存放路径: ${modelPath}\n\n当前曲库共 ${trackCount} 首歌曲，生成后可启用AI智能推荐。`,
+        ? `当前音乐库共 ${trackCount} 首，样本较少，AI 推荐的结果可能比较有限。\n\n即将为所有歌曲生成文本语义与音频特征向量，首次运行需下载两个 AI 模型（共约 2.3GB）。\n\n${resourceTip}\n\n模型存放路径: ${modelPath}`
+        : `即将为所有歌曲生成文本语义与音频特征向量，首次运行需下载两个 AI 模型（共约 2.3GB）。\n\n${resourceTip}\n\n模型存放路径: ${modelPath}\n\n当前曲库共 ${trackCount} 首歌曲，生成后可启用AI智能推荐。`,
       confirmText: tooSmall ? '仍要生成' : '开始生成',
     })
   } catch {
@@ -808,15 +838,15 @@ async function handleGenerateEmbeddings() {
   // 启动模型下载进度轮询（generateEmbeddings 内部先下载模型再生成向量）
   aiStore.pollDownloadProgress(1500)
   await aiStore.generateEmbeddings()
-  // 轮询状态直到完成
-  const stop = aiStore.pollEmbeddingStatus(2000, async () => {
+  // 轮询状态直到完成（短任务用 1 秒，剩余时间才能平滑更新）
+  const stop = aiStore.pollEmbeddingStatus(1000, async () => {
     generatingEmbeddings.value = false
     await aiStore.loadRecommendations()
   })
   // 如果 generateEmbeddings 已经完成（pending=0 且音频也完成的情况），即时清理
   setTimeout(async () => {
     await aiStore.loadEmbeddingStatus()
-    if (aiStore.embeddingStatus.pending === 0 && !aiStore.embeddingStatus.audio_processing) {
+    if (aiStore.embeddingStatus.pending === 0 && !aiStore.embeddingStatus.audio_processing && !aiStore.embeddingStatus.generating) {
       stop()
       generatingEmbeddings.value = false
       await aiStore.loadRecommendations()
@@ -860,9 +890,17 @@ watch(() => libraryStore.tracks.length, async (newLen, oldLen) => {
   }
 })
 
-// embedding 就绪后加载推荐预览（仅在 pending 从非 0 变为 0 时触发）
+// embedding 就绪后加载推荐预览（文本完成且音频也不在处理时才刷新）
 watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
-  if (pending === 0 && oldPending > 0) {
+  if (pending === 0 && oldPending > 0 && !aiStore.embeddingStatus.audio_processing) {
+    aiStore.loadPreviews(true)
+  }
+})
+
+// 文本与音频全部生成结束后，再统一刷新推荐与卡片
+watch(isGeneratingVectors, (active, wasActive) => {
+  if (wasActive && !active) {
+    aiStore.loadRecommendations()
     aiStore.loadPreviews(true)
   }
 })
@@ -870,8 +908,16 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
 // 首页在 keep-alive 中时，扫描后的自动向量生成不会主动推送状态：切回时刷新一次
 onActivated(async () => {
   await aiStore.loadEmbeddingStatus()
-  if ((aiStore.embeddingStatus.done || 0) > 0) {
+  if ((aiStore.embeddingStatus.done || 0) > 0 && !isGeneratingVectors.value) {
     aiStore.loadPreviews()
+  }
+  // 自动补齐正在后台跑：启动 1 秒轮询，保证进度与剩余时间可见
+  if (aiStore.embeddingStatus.text_processing || aiStore.embeddingStatus.audio_processing || aiStore.embeddingStatus.generating) {
+    aiStore.pollEmbeddingStatus(1000, async () => {
+      await aiStore.loadEmbeddingStatus()
+      await aiStore.loadRecommendations()
+      aiStore.loadPreviews(true)
+    })
   }
 })
 </script>

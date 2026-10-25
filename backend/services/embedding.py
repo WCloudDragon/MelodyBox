@@ -63,6 +63,12 @@ def is_available():
     return _FASTEMBED_OK
 
 
+def get_text_cpu_threads():
+    """文本推理的 CPU 线程数：逻辑核/4，限制在 2~8，给界面与音频解码留出余量。"""
+    logical = os.cpu_count() or 4
+    return max(2, min(8, max(1, logical // 4)))
+
+
 def is_text_model_cached():
     """检查 E5 文本模型是否已下载到本地（不触发下载）"""
     try:
@@ -331,6 +337,9 @@ def _init_model():
                 model_name=_MODEL_NAME,
                 cache_dir=cache_dir,
                 providers=providers,
+                threads=(get_text_cpu_threads()
+                         if providers and providers[0] == 'CPUExecutionProvider'
+                         else None),
                 lazy_load=False,
             )
             _MODEL_PROVIDER = providers
@@ -350,6 +359,7 @@ def _init_model():
                     model_name=_MODEL_NAME,
                     cache_dir=cache_dir,
                     providers=['CPUExecutionProvider'],
+                    threads=get_text_cpu_threads(),
                     lazy_load=False,
                 )
                 _MODEL_PROVIDER = ['CPUExecutionProvider']
@@ -389,6 +399,7 @@ def _get_cpu_model():
                 model_name=_MODEL_NAME,
                 cache_dir=cache_dir,
                 providers=['CPUExecutionProvider'],
+                threads=get_text_cpu_threads(),
                 lazy_load=False,  # 立即加载，及早发现文件损坏
             )
 
