@@ -31,6 +31,17 @@
         "to": "icon.png"
       },
       {
+        "from": "THIRD-PARTY-LICENSES.md",
+        "to": "THIRD-PARTY-LICENSES.md"
+      },
+      {
+        "from": "licenses",
+        "to": "licenses",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "flask-dist",
         "to": "flask-dist",
         "filter": [

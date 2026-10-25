@@ -1,82 +1,69 @@
 <template>
   <div class="settings-view">
+    <!-- 与路由页切换复用同一组 page-enter / page-leave 关键帧 -->
+    <Transition name="settings-page">
+    <div :key="page" class="settings-page">
     <!-- 一级菜单页 -->
     <template v-if="page === 'menu'">
       <h1>设置</h1>
       <div class="menu-list">
         <button class="menu-item" v-ripple @click="page = 'appearance'">
           <div class="menu-item__left">
-            <span class="menu-item__icon" style="background: rgba(99,102,241,0.15); color: #818cf8">
+            <span class="menu-item__icon" style="color: #818cf8">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
               </svg>
             </span>
             <div class="menu-item__text">
               <span class="menu-item__title">外观</span>
-              <span class="menu-item__desc">主题、主题色、模糊效果</span>
             </div>
           </div>
           <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
         </button>
         <button class="menu-item" v-ripple @click="page = 'player'">
           <div class="menu-item__left">
-            <span class="menu-item__icon" style="background: rgba(34,197,94,0.15); color: #4ade80">
+            <span class="menu-item__icon" style="color: #4ade80">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
               </svg>
             </span>
             <div class="menu-item__text">
               <span class="menu-item__title">播放界面</span>
-              <span class="menu-item__desc">歌词显示、动画效果、画质档位与性能测试</span>
-            </div>
-          </div>
-          <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
-        </button>
-        <button class="menu-item" @click="page = 'lyricStyle'">
-          <div class="menu-item__left">
-            <span class="menu-item__icon" style="background: rgba(251,146,60,0.15); color: #fb923c">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/>
-              </svg>
-            </span>
-            <div class="menu-item__text">
-              <span class="menu-item__title">歌词排版</span>
-              <span class="menu-item__desc">字号、字重、翻译比例、活跃行放大</span>
             </div>
           </div>
           <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
         </button>
         <button class="menu-item" @click="page = 'desktopLyric'">
           <div class="menu-item__left">
-            <span class="menu-item__icon" style="background: rgba(168,85,247,0.15); color: #a855f7">
+            <span class="menu-item__icon" style="color: #a855f7">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
               </svg>
             </span>
             <div class="menu-item__text">
               <span class="menu-item__title">桌面歌词</span>
-              <span class="menu-item__desc">独立窗口字号、放大比例、翻译比例</span>
             </div>
           </div>
           <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
         </button>
+      </div>
+      <div class="menu-list">
         <button class="menu-item" @click="page = 'system'">
           <div class="menu-item__left">
-            <span class="menu-item__icon" style="background: rgba(148,163,184,0.15); color: #94a3b8">
+            <span class="menu-item__icon" style="color: #94a3b8">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
               </svg>
             </span>
             <div class="menu-item__text">
               <span class="menu-item__title">系统</span>
-              <span class="menu-item__desc">自动扫描、语言</span>
             </div>
           </div>
           <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
         </button>
         <button class="menu-item" v-ripple @click="page = 'ai'">
           <div class="menu-item__left">
-            <span class="menu-item__icon" style="background: rgba(129,140,248,0.15); color: #818cf8">
+            <span class="menu-item__icon" style="color: #818cf8">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 2a4 4 0 1 0 0 8 4 4 0 1 0 0-8z"/>
                 <path d="M8 14c-3.3 0-6 2.7-6 6v1h20v-1c0-3.3-2.7-6-6-6H8z"/>
@@ -85,21 +72,21 @@
             </span>
             <div class="menu-item__text">
               <span class="menu-item__title">AI 推荐</span>
-              <span class="menu-item__desc">模型缓存路径</span>
             </div>
           </div>
           <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
         </button>
+      </div>
+      <div class="menu-list">
         <button class="menu-item" v-ripple @click="page = 'about'">
           <div class="menu-item__left">
-            <span class="menu-item__icon" style="background: rgba(56,189,248,0.15); color: #38bdf8">
+            <span class="menu-item__icon" style="color: #38bdf8">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
               </svg>
             </span>
             <div class="menu-item__text">
               <span class="menu-item__title">关于</span>
-              <span class="menu-item__desc">版本信息、技术栈、致谢</span>
             </div>
           </div>
           <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
@@ -110,408 +97,344 @@
     <!-- 二级页：外观 -->
     <template v-if="page === 'appearance'">
       <ListPageHeader title="外观" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
-      <section class="settings-section">
-        <div class="setting-row">
-          <div class="setting-label">
-            <span class="setting-title">主题</span>
-            <span class="setting-desc">选择界面色彩主题</span>
-          </div>
-          <el-select v-model="settingsStore.theme" @change="settingsStore.saveSettings()">
-            <el-option label="暗色" value="dark" />
-            <el-option label="亮色" value="light" />
-            <el-option label="跟随系统" value="system" />
-          </el-select>
-        </div>
-        <div class="setting-row">
-          <div class="setting-label">
+      <div class="settings-group">
+        <div class="settings-group__title">主题</div>
+        <section class="settings-card">
+          <button class="setting-row setting-row--click" @click="openPick($event, THEME_OPTIONS, setTheme, settingsStore.theme)">
+            <span class="setting-title">主题模式</span>
+            <span class="setting-value setting-value--pick">
+              {{ labelOf(THEME_OPTIONS, settingsStore.theme) }}
+              <svg class="setting-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+          </button>
+          <div class="setting-row">
             <span class="setting-title">主题色</span>
-            <span class="setting-desc">选择界面强调色</span>
+            <el-color-picker v-model="settingsStore.accentColor" @change="settingsStore.saveSettings()" />
           </div>
-          <el-color-picker v-model="settingsStore.accentColor" @change="settingsStore.saveSettings()" />
-        </div>
-        <div class="setting-row">
-          <div class="setting-label">
+          <div class="setting-row">
             <span class="setting-title">跟随系统主题色</span>
-            <span class="setting-desc">自动使用 Windows 主题色作为界面强调色</span>
+            <el-switch v-model="settingsStore.followSystemTheme" @change="settingsStore.saveSettings()" />
           </div>
-          <el-switch v-model="settingsStore.followSystemTheme" @change="settingsStore.saveSettings()" />
-        </div>
-      </section>
+        </section>
+      </div>
     </template>
 
     <!-- 二级页：播放界面 -->
     <template v-if="page === 'player'">
       <ListPageHeader title="播放界面" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
-      <section class="settings-section">
-        <div class="setting-row">
-          <div class="setting-label">
+      <div class="settings-group">
+        <div class="settings-group__title">歌词字号与比例</div>
+        <section class="settings-card">
+          <div class="setting-row setting-row--slider">
+            <div class="setting-row__head">
+              <span class="setting-title">歌词字号</span>
+              <span class="setting-value">{{ settingsStore.lyricsFontSize }} px</span>
+            </div>
+            <el-slider
+              v-model="settingsStore.lyricsFontSize"
+              :min="12" :max="60" :step="1"
+              class="setting-slider"
+              @change="settingsStore.saveSettings()"
+            />
+          </div>
+          <div class="setting-row setting-row--slider">
+            <div class="setting-row__head">
+              <span class="setting-title">歌词字重</span>
+              <span class="setting-value">{{ settingsStore.lyricsFontWeight }}</span>
+            </div>
+            <el-slider
+              v-model="settingsStore.lyricsFontWeight"
+              :min="250" :max="900" :step="50"
+              class="setting-slider"
+              @change="settingsStore.saveSettings()"
+            />
+          </div>
+          <div class="setting-row setting-row--slider">
+            <div class="setting-row__head">
+              <span class="setting-title">翻译词比例</span>
+              <span class="setting-value">{{ settingsStore.lyricsTransScale }}% · {{ Math.round(settingsStore.lyricsFontSize * settingsStore.lyricsTransScale / 100) }} px</span>
+            </div>
+            <el-slider
+              v-model="settingsStore.lyricsTransScale"
+              :min="50" :max="100" :step="5"
+              class="setting-slider"
+              @change="settingsStore.saveSettings()"
+            />
+          </div>
+          <div class="setting-row setting-row--slider">
+            <div class="setting-row__head">
+              <span class="setting-title">活跃行放大</span>
+              <span class="setting-value">{{ settingsStore.lyricsActiveScale }}%</span>
+            </div>
+            <el-slider
+              v-model="settingsStore.lyricsActiveScale"
+              :min="100" :max="130" :step="5"
+              class="setting-slider"
+              @change="settingsStore.saveSettings()"
+            />
+          </div>
+          <div class="setting-row">
+            <span class="setting-title">恢复歌词默认</span>
+            <button class="reset-btn" v-ripple @click="settingsStore.resetLyricsDefaults()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+              </svg>
+              恢复默认
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-group__title">歌词动画</div>
+        <section class="settings-card">
+          <div class="setting-row">
             <span class="setting-title">动态流光背景</span>
-            <span class="setting-desc">全屏歌词页背景随封面主色动态流动的流光效果（关闭可提升低配设备性能）</span>
+            <el-switch v-model="settingsStore.enableDynamicBg" @change="settingsStore.saveSettings()" />
           </div>
-          <el-switch v-model="settingsStore.enableDynamicBg" @change="settingsStore.saveSettings()" />
-        </div>
-        <div class="setting-row">
-          <div class="setting-label">
+          <div class="setting-row">
             <span class="setting-title">音频律动</span>
-            <span class="setting-desc">全屏歌词页光球随音频节奏改变速度与透明度（关闭时光球匀速流动）</span>
+            <el-switch v-model="settingsStore.enableAudioRhythm" @change="settingsStore.saveSettings()" />
           </div>
-          <el-switch v-model="settingsStore.enableAudioRhythm" @change="settingsStore.saveSettings()" />
-        </div>
-        <div class="setting-row">
-          <div class="setting-label">
+          <div class="setting-row">
             <span class="setting-title">歌词行模糊</span>
-            <span class="setting-desc">远离当前行的歌词行产生模糊效果（关闭可提升低配设备性能）</span>
+            <el-switch v-model="settingsStore.enableLyricsBlur" @change="settingsStore.saveSettings()" />
           </div>
-          <el-switch v-model="settingsStore.enableLyricsBlur" @change="settingsStore.saveSettings()" />
-        </div>
-        <div class="setting-row">
-          <div class="setting-label">
+          <div class="setting-row">
             <span class="setting-title">多米诺滚动动画</span>
-            <span class="setting-desc">歌词行切换时的级联滚动动画效果（关闭可提升低配设备性能）</span>
+            <el-switch v-model="settingsStore.enableDominoScroll" @change="settingsStore.saveSettings()" />
           </div>
-          <el-switch v-model="settingsStore.enableDominoScroll" @change="settingsStore.saveSettings()" />
-        </div>
-        <div class="setting-row">
-          <div class="setting-label">
+          <div class="setting-row">
             <span class="setting-title">逐字上浮动画</span>
-            <span class="setting-desc">当前播放歌词的逐字上浮效果（关闭可提升低配设备性能）</span>
+            <el-switch v-model="settingsStore.enableWordLift" @change="settingsStore.saveSettings()" />
           </div>
-          <el-switch v-model="settingsStore.enableWordLift" @change="settingsStore.saveSettings()" />
-        </div>
-        <div class="setting-row setting-row--slider">
-          <div class="setting-label">
-            <span class="setting-title">逐字动画帧率</span>
-            <span class="setting-desc" v-if="settingsStore.fpsAdaptive">
-              自适应：屏幕 {{ settingsStore.measuredRefresh }}Hz，实际按 <b>{{ settingsStore.effectiveWordAnimFps }}fps</b>（上限 240）
-            </span>
-            <span class="setting-desc" v-else>控制卡拉OK扫过的刷新率（当前：<b>{{ settingsStore.wordAnimFps }} fps</b>）</span>
-          </div>
-          <div class="setting-fps">
-            <el-switch v-model="settingsStore.fpsAdaptive" active-text="自适应" inactive-text="固定" />
+          <div class="setting-row setting-row--slider">
+            <div class="setting-row__head">
+              <span class="setting-title">逐字动画帧率</span>
+              <div class="setting-row__tail">
+                <el-switch v-model="settingsStore.fpsAdaptive" active-text="自适应" inactive-text="固定" />
+                <span class="setting-value">{{ settingsStore.fpsAdaptive ? settingsStore.effectiveWordAnimFps : settingsStore.wordAnimFps }} fps</span>
+              </div>
+            </div>
             <el-slider
               :model-value="settingsStore.wordAnimFps"
               :min="24" :max="240" :step="1"
               :disabled="settingsStore.fpsAdaptive"
               class="setting-slider"
-              :marks="FPS_MARKS"
               @input="onFpsInput"
               @change="onFpsChange"
             />
           </div>
-        </div>
-        <div class="setting-row" v-if="settingsStore.fpsAdaptive">
-          <div class="setting-label">
-            <span class="setting-title">刷新率检测</span>
-            <span class="setting-desc">实测当前屏幕刷新率（更换显示器后可重新检测）</span>
-          </div>
-          <el-button size="small" @click="redetectRefresh">重新检测</el-button>
-        </div>
-        <div class="setting-row">
-          <div class="setting-label">
+          <button class="setting-row setting-row--click" @click="openPick($event, KARAOKE_OPTIONS, setKaraokeMode, settingsStore.lyricKaraokeMode)">
             <span class="setting-title">卡拉OK模式</span>
-            <span class="setting-desc">处理歌词混排问题：逐字歌中短句缺逐字时间会自动补齐卡拉OK</span>
-          </div>
-          <el-radio-group v-model="settingsStore.lyricKaraokeMode">
-            <el-radio-button label="native">原生</el-radio-button>
-            <el-radio-button label="auto">智能（默认）</el-radio-button>
-            <el-radio-button label="always">全卡拉OK</el-radio-button>
-          </el-radio-group>
-        </div>
-        <div class="setting-row">
-          <div class="setting-label">
-            <span class="setting-title">律动响应帧率</span>
-            <span class="setting-desc">全屏歌词页光球随音频的更新频率（低帧更省电，视觉差异小）</span>
-          </div>
-          <el-radio-group v-model="settingsStore.rhythmFps" @change="settingsStore.saveSettings()">
-            <el-radio-button :value="30">30</el-radio-button>
-            <el-radio-button :value="60">60</el-radio-button>
-          </el-radio-group>
-        </div>
-      </section>
-
-      <!-- 画质档位与性能参考（与播放界面合并） -->
-      <section class="settings-section">
-        <h3>画质档位</h3>
-        <el-radio-group v-model="settingsStore.qualityPreset" @change="onPresetChange">
-          <el-radio-button value="auto">自动</el-radio-button>
-          <el-radio-button value="low">低</el-radio-button>
-          <el-radio-button value="medium">中</el-radio-button>
-          <el-radio-button value="high">高</el-radio-button>
-          <el-radio-button value="custom">自定义</el-radio-button>
-        </el-radio-group>
-        <p class="hint">
-          自动：依据性能测试推荐档位；低/中/高：套用对应效果组合；自定义：手动调整上方任意开关后自动切换。
-        </p>
-      </section>
-
-      <section class="settings-section">
-        <h3>性能参考</h3>
-        <p class="hint">
-          基准测试会叠加一版全屏歌词页同款动态流光，采样 5 秒真实帧率与长任务，给出推荐档位（不影响当前播放）。
-        </p>
-        <el-button type="primary" :loading="perf.status === 'running'" @click="startBenchmark">
-          {{ perf.status === 'running' ? '测试中...' : (perf.result || cachedBench ? '重新测试' : '运行性能测试') }}
-        </el-button>
-
-        <div v-if="perf.status === 'running'" class="perf-run">
-          <el-progress :percentage="perf.progress" />
-          <p class="hint">正在测量帧率... 实时 FPS：<strong>{{ perf.liveFps }}</strong></p>
-        </div>
-
-        <div v-else-if="perf.result" class="perf-result">
-          <p>平均帧率 <strong>{{ perf.result.fps }}</strong> FPS · 长任务 <strong>{{ perf.result.longMs }}</strong> ms · 性能分 <strong>{{ perf.result.score }}</strong></p>
-          <p>推荐档位：<el-tag type="success">{{ tierLabel(perf.result.tier) }}</el-tag></p>
-          <el-button type="primary" size="small" @click="applyBenchmarkTier">应用推荐档位</el-button>
-        </div>
-
-        <div v-else-if="cachedBench" class="perf-result">
-          <p class="hint">上次测试：{{ cachedBench.fps }} FPS · 推荐 {{ tierLabel(cachedBench.tier) }}</p>
-          <el-button size="small" @click="startBenchmark">重新测试</el-button>
-        </div>
-      </section>
-    </template>
-
-    <!-- 二级页：歌词排版 -->
-    <template v-if="page === 'lyricStyle'">
-      <ListPageHeader title="歌词排版" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
-      <section class="settings-section">
-        <div class="setting-row setting-row--slider">
-          <div class="setting-label">
-            <span class="setting-title">歌词字号</span>
-            <span class="setting-desc">调节歌词基准字号（当前：<b>{{ settingsStore.lyricsFontSize }}px</b>）</span>
-          </div>
-          <el-slider
-            v-model="settingsStore.lyricsFontSize"
-            :min="12" :max="60" :step="1"
-            class="setting-slider"
-            @change="settingsStore.saveSettings()"
-          />
-        </div>
-        <div class="setting-row setting-row--slider">
-          <div class="setting-label">
-            <span class="setting-title">歌词字重</span>
-            <span class="setting-desc">利用 MiSans VF 可变轴微调粗细（当前：<b>{{ settingsStore.lyricsFontWeight }}</b>）</span>
-          </div>
-          <el-slider
-            v-model="settingsStore.lyricsFontWeight"
-            :min="250" :max="900" :step="50"
-            class="setting-slider"
-            :marks="{ 250:'轻', 400:'常规', 700:'粗', 900:'超粗' }"
-            @change="settingsStore.saveSettings()"
-          />
-        </div>
-        <div class="setting-row setting-row--slider">
-          <div class="setting-label">
-            <span class="setting-title">翻译词比例</span>
-            <span class="setting-desc">相对基准字号的百分比（当前：<b>{{ settingsStore.lyricsTransScale }}%</b> ≈ {{ Math.round(settingsStore.lyricsFontSize * settingsStore.lyricsTransScale / 100) }}px）</span>
-          </div>
-          <el-slider
-            v-model="settingsStore.lyricsTransScale"
-            :min="50" :max="100" :step="5"
-            class="setting-slider"
-            @change="settingsStore.saveSettings()"
-          />
-        </div>
-        <div class="setting-row setting-row--slider">
-          <div class="setting-label">
-            <span class="setting-title">正在播放行放大</span>
-            <span class="setting-desc">活跃行相对基准/翻译的百分比（当前：<b>{{ settingsStore.lyricsActiveScale }}%</b>）</span>
-          </div>
-          <el-slider
-            v-model="settingsStore.lyricsActiveScale"
-            :min="100" :max="130" :step="5"
-            class="setting-slider"
-            @change="settingsStore.saveSettings()"
-          />
-        </div>
-        <div class="setting-row">
-          <div class="setting-label">
-            <span class="setting-title">恢复歌词默认</span>
-            <span class="setting-desc">字号 32px · 字重 700 · 翻译 60% · 放大 115%</span>
-          </div>
-          <button class="reset-btn" v-ripple @click="settingsStore.resetLyricsDefaults()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
-            </svg>
-            恢复默认
+            <span class="setting-value setting-value--pick">
+              {{ labelOf(KARAOKE_OPTIONS, settingsStore.lyricKaraokeMode) }}
+              <svg class="setting-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
           </button>
-        </div>
-      </section>
+          <button class="setting-row setting-row--click" @click="openPick($event, RHYTHM_FPS_OPTIONS, setRhythmFps, settingsStore.rhythmFps)">
+            <span class="setting-title">律动响应帧率</span>
+            <span class="setting-value setting-value--pick">
+              {{ labelOf(RHYTHM_FPS_OPTIONS, settingsStore.rhythmFps) }}
+              <svg class="setting-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+          </button>
+        </section>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-group__title">画质与性能</div>
+        <section class="settings-card">
+          <button class="setting-row setting-row--click" @click="openPick($event, QUALITY_OPTIONS, setQualityPreset, settingsStore.qualityPreset)">
+            <span class="setting-title">画质档位</span>
+            <span class="setting-value setting-value--pick">
+              {{ labelOf(QUALITY_OPTIONS, settingsStore.qualityPreset) }}
+              <svg class="setting-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+          </button>
+          <div class="setting-row">
+            <span class="setting-title">屏幕刷新率</span>
+            <div class="setting-row__tail">
+              <span class="setting-value">{{ settingsStore.measuredRefresh }} Hz</span>
+              <el-button size="small" @click="redetectRefresh">重新检测</el-button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <span class="setting-title">性能基准测试</span>
+            <el-button size="small" type="primary" :loading="perf.status === 'running'" @click="startBenchmark">
+              {{ perf.status === 'running' ? '测试中' : '运行测试' }}
+            </el-button>
+          </div>
+          <div v-if="perf.status === 'running'" class="setting-row setting-row--stack">
+            <el-progress :percentage="perf.progress" :show-text="false" />
+            <span class="setting-value">正在测量帧率 {{ perf.liveFps }} FPS</span>
+          </div>
+          <div v-else-if="perf.result" class="setting-row setting-row--stack">
+            <span class="setting-value">平均 {{ perf.result.fps }} FPS · 长任务 {{ perf.result.longMs }} ms · 性能分 {{ perf.result.score }}</span>
+            <div class="setting-row__tail">
+              <span class="setting-value">推荐 {{ tierLabel(perf.result.tier) }}</span>
+              <el-button size="small" type="primary" @click="applyBenchmarkTier">应用</el-button>
+            </div>
+          </div>
+          <div v-else-if="cachedBench" class="setting-row setting-row--stack">
+            <span class="setting-value">上次测试 {{ cachedBench.fps }} FPS · 推荐 {{ tierLabel(cachedBench.tier) }}</span>
+          </div>
+        </section>
+      </div>
     </template>
 
     <!-- 二级页：桌面歌词 -->
     <template v-if="page === 'desktopLyric'">
       <ListPageHeader title="桌面歌词" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
-      <section class="settings-section">
-        <div class="setting-row setting-row--slider">
-          <div class="setting-label">
-            <span class="setting-title">字号</span>
-            <span class="setting-desc">桌面歌词独立窗口基准字号（当前：<b>{{ settingsStore.desktopLyricsFontSize }}px</b>）</span>
+      <div class="settings-group">
+        <div class="settings-group__title">窗口样式</div>
+        <section class="settings-card">
+          <div class="setting-row setting-row--slider">
+            <div class="setting-row__head">
+              <span class="setting-title">字号</span>
+              <span class="setting-value">{{ settingsStore.desktopLyricsFontSize }} px</span>
+            </div>
+            <el-slider
+              v-model="settingsStore.desktopLyricsFontSize"
+              :min="16" :max="36" :step="1"
+              class="setting-slider"
+              @change="settingsStore.saveSettings()"
+            />
           </div>
-          <el-slider
-            v-model="settingsStore.desktopLyricsFontSize"
-            :min="16" :max="36" :step="1"
-            class="setting-slider"
-            @change="settingsStore.saveSettings()"
-          />
-        </div>
-        <div class="setting-row setting-row--slider">
-          <div class="setting-label">
-            <span class="setting-title">活跃行放大</span>
-            <span class="setting-desc">正在播放行相对基准字号的百分比（当前：<b>{{ settingsStore.desktopLyricsActiveScale }}%</b> → {{ Math.round(settingsStore.desktopLyricsFontSize * settingsStore.desktopLyricsActiveScale / 100) }}px）</span>
+          <div class="setting-row setting-row--slider">
+            <div class="setting-row__head">
+              <span class="setting-title">活跃行放大</span>
+              <span class="setting-value">{{ settingsStore.desktopLyricsActiveScale }}% · {{ Math.round(settingsStore.desktopLyricsFontSize * settingsStore.desktopLyricsActiveScale / 100) }} px</span>
+            </div>
+            <el-slider
+              v-model="settingsStore.desktopLyricsActiveScale"
+              :min="100" :max="150" :step="5"
+              class="setting-slider"
+              @change="settingsStore.saveSettings()"
+            />
           </div>
-          <el-slider
-            v-model="settingsStore.desktopLyricsActiveScale"
-            :min="100" :max="150" :step="5"
-            class="setting-slider"
-            @change="settingsStore.saveSettings()"
-          />
-        </div>
-        <div class="setting-row setting-row--slider">
-          <div class="setting-label">
-            <span class="setting-title">翻译词比例</span>
-            <span class="setting-desc">翻译词相对基准字号的百分比（当前：<b>{{ settingsStore.desktopLyricsTransScale }}%</b> → {{ Math.round(settingsStore.desktopLyricsFontSize * settingsStore.desktopLyricsTransScale / 100) }}px）</span>
+          <div class="setting-row setting-row--slider">
+            <div class="setting-row__head">
+              <span class="setting-title">翻译词比例</span>
+              <span class="setting-value">{{ settingsStore.desktopLyricsTransScale }}% · {{ Math.round(settingsStore.desktopLyricsFontSize * settingsStore.desktopLyricsTransScale / 100) }} px</span>
+            </div>
+            <el-slider
+              v-model="settingsStore.desktopLyricsTransScale"
+              :min="40" :max="100" :step="5"
+              class="setting-slider"
+              @change="settingsStore.saveSettings()"
+            />
           </div>
-          <el-slider
-            v-model="settingsStore.desktopLyricsTransScale"
-            :min="40" :max="100" :step="5"
-            class="setting-slider"
-            @change="settingsStore.saveSettings()"
-          />
-        </div>
-        <div class="setting-row">
-          <div class="setting-label">
+          <button class="setting-row setting-row--click" @click="openPick($event, VIEW_LINES_OPTIONS, setViewLines, settingsStore.desktopLyricsViewLines)">
             <span class="setting-title">视口行数</span>
-            <span class="setting-desc">歌词窗口内同时显示的歌词行数（当前：<b>{{ settingsStore.desktopLyricsViewLines }} 句</b>）</span>
-          </div>
-          <div class="toggle-buttons">
-            <button
-              v-ripple
-              :class="['toggle-btn', { active: settingsStore.desktopLyricsViewLines === 1 }]"
-              @click="settingsStore.desktopLyricsViewLines = 1; settingsStore.saveSettingsImmediate()"
-            >1 句</button>
-            <button
-              v-ripple
-              :class="['toggle-btn', { active: settingsStore.desktopLyricsViewLines === 2 }]"
-              @click="settingsStore.desktopLyricsViewLines = 2; settingsStore.saveSettingsImmediate()"
-            >2 句</button>
-          </div>
-        </div>
-        <div class="setting-row">
-          <div class="setting-label">
-            <span class="setting-title">恢复桌面歌词默认</span>
-            <span class="setting-desc">字号 24px · 放大 120% · 翻译 60%</span>
-          </div>
-          <button class="reset-btn" v-ripple @click="settingsStore.desktopLyricsFontSize = 24; settingsStore.desktopLyricsActiveScale = 120; settingsStore.desktopLyricsTransScale = 60; settingsStore.saveSettingsImmediate()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
-            </svg>
-            恢复默认
+            <span class="setting-value setting-value--pick">
+              {{ labelOf(VIEW_LINES_OPTIONS, settingsStore.desktopLyricsViewLines) }}
+              <svg class="setting-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
           </button>
-        </div>
-      </section>
+          <div class="setting-row">
+            <span class="setting-title">恢复默认</span>
+            <button class="reset-btn" v-ripple @click="settingsStore.desktopLyricsFontSize = 24; settingsStore.desktopLyricsActiveScale = 120; settingsStore.desktopLyricsTransScale = 60; settingsStore.saveSettingsImmediate()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+              </svg>
+              恢复默认
+            </button>
+          </div>
+        </section>
+      </div>
     </template>
 
     <!-- 二级页：系统 -->
     <template v-if="page === 'system'">
       <ListPageHeader title="系统" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
-      <section class="settings-section">
-        <div class="setting-row">
-          <div class="setting-label">
+      <div class="settings-group">
+        <div class="settings-group__title">音乐库</div>
+        <section class="settings-card">
+          <div class="setting-row">
             <span class="setting-title">启动时自动扫描</span>
-            <span class="setting-desc">应用启动时自动扫描已导入的音乐目录</span>
+            <el-switch v-model="settingsStore.autoScan" @change="settingsStore.saveSettings()" />
           </div>
-          <el-switch v-model="settingsStore.autoScan" @change="settingsStore.saveSettings()" />
-        </div>
-      </section>
+        </section>
+      </div>
     </template>
 
     <!-- 二级页：AI 推荐 -->
     <template v-if="page === 'ai'">
       <ListPageHeader title="AI 推荐" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
-      <section class="settings-section">
-        <div class="setting-row">
-          <div class="setting-label">
+      <div class="settings-group">
+        <div class="settings-group__title">模型</div>
+        <section class="settings-card">
+          <div class="setting-row setting-row--stack">
             <span class="setting-title">模型缓存路径</span>
-            <span class="setting-desc">E5 文本模型（~2.2GB）+ MERT 音频模型（~200MB）的存放目录</span>
+            <span class="setting-value model-path-text">{{ modelDirInput || '默认 · ' + modelDefaultPath }}</span>
+            <div class="setting-row__tail">
+              <el-button size="small" @click="pickModelDir">选择文件夹</el-button>
+              <el-button v-if="modelDirInput" size="small" link type="danger" @click="modelDirInput = ''">清除</el-button>
+              <el-button size="small" type="primary" :loading="savingModelDir" @click="saveModelDir">保存</el-button>
+            </div>
+            <span v-if="modelDirSaved" class="setting-value setting-value--success">
+              {{ needRestart ? '已保存，下次启动生效' : '已保存' }}
+            </span>
           </div>
-        </div>
-        <div style="padding: 0 20px; margin-bottom: 16px;">
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <span v-if="!modelDirInput" style="color: var(--text-secondary); font-size: 13px;">默认: {{ modelDefaultPath }}</span>
-            <span v-else class="model-path-text">{{ modelDirInput }}</span>
-            <el-button @click="pickModelDir" style="flex-shrink: 0;">
-              📁 选择文件夹
-            </el-button>
-            <el-button
-              v-if="modelDirInput"
-              @click="modelDirInput = ''"
-              link
-              type="danger"
-              style="flex-shrink: 0;"
-            >
-              清除
-            </el-button>
-          </div>
-          <div style="display: flex; gap: 8px; margin-top: 8px;">
-            <el-button type="primary" @click="saveModelDir" :loading="savingModelDir">
-              保存
-            </el-button>
-          </div>
-          <div v-if="modelDirSaved" style="margin-top: 8px; font-size: 12px; color: var(--color-success, #22c55e);">
-            {{ needRestart ? '已保存。模型已加载，下次启动生效。' : '已保存，下次生成向量时生效。' }}
-          </div>
-        </div>
-      </section>
-
+        </section>
+      </div>
     </template>
 
     <!-- 二级页：关于 -->
     <template v-if="page === 'about'">
       <ListPageHeader title="关于" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
-      <section class="settings-section about-section">
-        <div class="about-header">
-          <div class="about-logo">
-            <img :src="appIcon" alt="MelodyBox" draggable="false" />
-          </div>
-          <div class="about-appname">
-            <span class="about-appname__title">MelodyBox</span>
-            <span class="about-appname__version">Alpha 0.1.0</span>
-          </div>
+      <div class="about-header">
+        <div class="about-logo">
+          <img :src="appIcon" alt="MelodyBox" draggable="false" />
         </div>
-        <div class="about-meta">
-          <div class="about-meta__row">
-            <span>技术栈</span>
-            <span>Vue 3 + Electron + Element Plus</span>
-          </div>
-          <div class="about-meta__row">
-            <span>毕业设计</span>
-            <span>哈尔滨信息工程学院 2023届 软件工程 王云龙</span>
-          </div>
+        <div class="about-appname">
+          <span class="about-appname__title">MelodyBox</span>
+          <span class="about-appname__version">Alpha 0.1.0</span>
         </div>
-        <button class="about-link" @click="page = 'licenses'">
-          <span>使用开源项目</span>
-          <span class="about-link__value">{{ licenseTotal }} 项 ›</span>
-        </button>
-        <div class="setting-row" style="margin-top: 24px;">
-          <div class="setting-label">
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-group__title">应用信息</div>
+        <section class="settings-card">
+          <div class="setting-row">
+            <span class="setting-title">技术栈</span>
+            <span class="setting-value">Vue 3 + Electron + Element Plus</span>
+          </div>
+          <div class="setting-row">
+            <span class="setting-title">毕业设计</span>
+            <span class="setting-value">哈尔滨信息工程学院 2023届 软件工程 王云龙</span>
+          </div>
+        </section>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-group__title">其他</div>
+        <section class="settings-card">
+          <button class="setting-row setting-row--click" @click="page = 'licenses'">
+            <span class="setting-title">使用开源项目</span>
+            <span class="setting-value">{{ licenseTotal }} 项 ›</span>
+          </button>
+          <div class="setting-row">
             <span class="setting-title">调试模式</span>
-            <span class="setting-desc">开启后将显示律动调试窗口并传输实时参数（重启应用后自动关闭）</span>
+            <el-switch v-model="settingsStore.debugMode" />
           </div>
-          <el-switch v-model="settingsStore.debugMode" />
-        </div>
-      </section>
+        </section>
+      </div>
     </template>
 
     <!-- 二级页：开源许可 -->
     <template v-else-if="page === 'licenses'">
       <ListPageHeader title="使用开源项目" :show-play-mode="false" show-back :back-handler="() => page = 'about'" />
-      <section class="settings-section licenses-section">
+      <section class="licenses-section">
         <p class="licenses-hint">
           以下为本项目直接使用或随包分发的第三方组件。完整许可证文本与版权声明以各项目官方仓库为准，点击条目可用系统浏览器打开项目主页。
         </p>
         <div v-for="group in licenseGroups" :key="group.title" class="license-group">
-          <div class="license-group__title">{{ group.title }}</div>
+          <div class="license-group__title">
+            <span>{{ group.title }}</span>
+            <span class="license-group__count">{{ group.items.length }}</span>
+          </div>
           <div class="license-list">
             <button
               v-for="item in group.items"
@@ -521,7 +444,7 @@
             >
               <span class="license-row__main">
                 <span class="license-row__name">{{ item.name }}</span>
-                <span v-if="item.note" class="license-row__note">{{ item.note }}</span>
+                <span class="license-row__arrow" aria-hidden="true">↗</span>
               </span>
               <span class="license-row__license">{{ item.license }}</span>
             </button>
@@ -530,6 +453,19 @@
         <p class="licenses-foot">感谢以上项目的作者与维护者。</p>
       </section>
     </template>
+    </div>
+    </Transition>
+
+    <!-- 设置项取值菜单：与右键菜单同款玻璃材质与展开动画，位置跟随鼠标 -->
+    <ContextMenu
+      :visible="pickMenu.visible"
+      :x="pickMenu.x"
+      :y="pickMenu.y"
+      :items="pickItems"
+      animated
+      @action="onPickAction"
+      @close="pickMenu.visible = false"
+    />
 
   </div>
 </template>
@@ -541,12 +477,85 @@ import { useSettingsStore } from '@/stores/settings'
 import { usePerformanceStore } from '@/stores/performance'
 import { useScrollMemory } from '@/composables/useScrollMemory'
 import ListPageHeader from '@/components/music/ListPageHeader.vue'
+import ContextMenu from '@/components/music/ContextMenu.vue'
 import { LICENSE_GROUPS, LICENSE_TOTAL } from '@/data/openSourceLicenses'
 import appIcon from '@/assets/app-icon-128.png'
 
 const settingsStore = useSettingsStore()
 const perf = usePerformanceStore()
 const page = ref('menu')
+
+// ==================== 设置项取值菜单 ====================
+
+const THEME_OPTIONS = [
+  { label: '暗色', value: 'dark' },
+  { label: '亮色', value: 'light' },
+  { label: '跟随系统', value: 'system' }
+]
+const KARAOKE_OPTIONS = [
+  { label: '原生', value: 'native' },
+  { label: '智能', value: 'auto' },
+  { label: '全卡拉OK', value: 'always' }
+]
+const RHYTHM_FPS_OPTIONS = [
+  { label: '30 fps', value: 30 },
+  { label: '60 fps', value: 60 }
+]
+const QUALITY_OPTIONS = [
+  { label: '自动', value: 'auto' },
+  { label: '低', value: 'low' },
+  { label: '中', value: 'medium' },
+  { label: '高', value: 'high' },
+  { label: '自定义', value: 'custom' }
+]
+const VIEW_LINES_OPTIONS = [
+  { label: '1 句', value: 1 },
+  { label: '2 句', value: 2 }
+]
+
+const pickMenu = ref({ visible: false, x: 0, y: 0 })
+const pickItems = ref([])
+let pickCommit = null
+
+function labelOf(options, value) {
+  return options.find((o) => o.value === value)?.label ?? ''
+}
+
+// 菜单坐标取鼠标点击位置，与右键菜单完全一致
+function openPick(e, options, commit, current) {
+  pickItems.value = options.map((o) => ({
+    label: o.label,
+    action: o.value,
+    active: o.value === current
+  }))
+  pickCommit = commit
+  pickMenu.value = { visible: true, x: e.clientX, y: e.clientY }
+}
+
+function onPickAction(value) {
+  pickMenu.value.visible = false
+  if (pickCommit) pickCommit(value)
+}
+
+function setTheme(v) {
+  settingsStore.theme = v
+  settingsStore.saveSettings()
+}
+function setKaraokeMode(v) {
+  settingsStore.lyricKaraokeMode = v
+}
+function setRhythmFps(v) {
+  settingsStore.rhythmFps = v
+  settingsStore.saveSettings()
+}
+function setViewLines(v) {
+  settingsStore.desktopLyricsViewLines = v
+  settingsStore.saveSettingsImmediate()
+}
+function setQualityPreset(v) {
+  settingsStore.qualityPreset = v
+  onPresetChange(v)
+}
 
 // ==================== 使用开源项目 ====================
 
@@ -600,7 +609,6 @@ function onPresetChange(preset) {
 
 // 逐字动画帧率固定档位（24 以下移除，固定档位吸附）
 const FPS_OPTIONS = [24, 30, 60, 75, 90, 100, 120, 144, 165, 240]
-const FPS_MARKS = Object.fromEntries(FPS_OPTIONS.map((v) => [v, String(v)]))
 
 function snapFps(v) {
   return FPS_OPTIONS.reduce(
@@ -688,96 +696,123 @@ useScrollMemory('settings', () => document.querySelector('.main-content'))
 </script>
 
 <style scoped>
-.settings-view { padding: 0 0 100px; }
-/* 页头吸附基准对齐全站：默认 sticky top 为 --content-top，会整体下移一个页头上方背景带 */
-.settings-view :deep(.list-page-header) { top: 0; }
+.settings-view { position: relative; padding: 0 var(--page-pad-x, 12px) 100px; }
+/* 页头吸附基准对齐全站：默认 sticky top 为 --content-top，会整体下移一个页头上方背景带
+   设置页的卡片本身已按 --page-pad-x 内缩，页头不再重复内缩，否则返回按钮会比卡片右移 12px */
+.settings-view :deep(.list-page-header) {
+  top: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* 二级页切换：与路由页同一套动画参数（进入 0.5s 放大淡入，离开 0.25s 缩小淡出）
+   离开页脱离文档流叠在上层，进入页留在流内撑住高度，避免过渡期间滚动条抖动 */
+.settings-page-enter-active {
+  animation: page-enter 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0) both;
+}
+.settings-page-leave-active {
+  animation: page-leave 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0) both;
+  position: absolute;
+  top: 0;
+  left: var(--page-pad-x, 12px);
+  right: var(--page-pad-x, 12px);
+  z-index: 1;
+  pointer-events: none;
+}
 
 /* ===== 一级菜单页 ===== */
-.settings-view > h1 { font-size: 28px; font-weight: 700; margin: 0 0 28px; letter-spacing: -0.3px; }
+.settings-page > h1 { font-size: 28px; font-weight: 700; margin: 0 0 28px; letter-spacing: -0.3px; }
 
 .menu-list {
   display: flex; flex-direction: column;
   background: var(--bg-primary);
   border-radius: 14px; overflow: hidden;
   border: 1px solid var(--border-color);
+  margin-bottom: 26px;
 }
+.menu-list:last-child { margin-bottom: 0; }
 .menu-item {
   display: flex; align-items: center; justify-content: space-between;
-  width: 100%; padding: 18px 22px;
+  width: 100%; height: 48px; padding: 0 18px;
   background: transparent; border: none; color: inherit;
   cursor: pointer; text-align: left; font: inherit;
   transition: background 0.18s ease;
 }
-.menu-item:not(:last-child) { border-bottom: 1px solid var(--border-color); }
 .menu-item:hover { background: var(--hover-bg); }
 .menu-item:active { background: var(--hover-bg-strong); }
 
 .menu-item__left { display: flex; align-items: center; gap: 16px; }
 .menu-item__icon {
   display: flex; align-items: center; justify-content: center;
-  width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
+  width: 22px; height: 22px; flex-shrink: 0;
 }
 .menu-item__text { display: flex; flex-direction: column; gap: 3px; }
-.menu-item__title { font-size: 15px; font-weight: 600; line-height: 1.3; }
-.menu-item__desc { font-size: 12px; color: var(--text-tertiary); line-height: 1.3; }
+.menu-item__title { font-size: 15px; font-weight: 400; line-height: 1.3; }
 .menu-item__arrow { opacity: 0.25; flex-shrink: 0; transition: opacity 0.15s; }
 .menu-item:hover .menu-item__arrow { opacity: 0.45; }
 
-/* ===== 二级页内容 ===== */
-.settings-section {
+/* ===== 二级页：类目卡片（与开源项目页同一基准） ===== */
+.settings-group { margin-bottom: 26px; }
+.settings-group__title {
+  display: flex; align-items: baseline; gap: 8px;
+  margin-bottom: 10px; padding-left: 2px;
+  font-size: 13px; font-weight: 600; color: var(--text-tertiary);
+}
+.settings-card {
   background: var(--bg-primary);
-  border-radius: 14px; padding: 6px 22px;
   border: 1px solid var(--border-color);
+  border-radius: 14px; overflow: hidden;
 }
 
 .setting-row {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 0; gap: 24px;
+  width: 100%; height: 48px; gap: 16px; padding: 0 18px;
 }
-.setting-row:not(:last-child) { border-bottom: 1px solid var(--border-color); }
+.setting-row--stack {
+  height: auto; min-height: 48px; padding: 12px 18px;
+  flex-direction: column; align-items: stretch; justify-content: center; gap: 10px;
+}
+.setting-row--slider {
+  height: 96px; padding: 12px 18px;
+  flex-direction: column; align-items: stretch; justify-content: center; gap: 10px;
+}
+.setting-row--click {
+  background: none; border: none; color: inherit; font: inherit;
+  text-align: left; cursor: pointer; transition: background 0.15s ease;
+}
+.setting-row--click:hover { background: var(--hover-bg-strong); }
+.setting-row__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.setting-row__tail { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+.setting-title { font-size: 15px; font-weight: 500; color: var(--text-primary); }
+.setting-value { font-size: 13px; color: var(--text-tertiary); }
+.setting-value--success { color: #22c55e; }
 
 .model-path-text {
-  font-size: 13px; color: var(--accent-color, #6366f1);
-  max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.setting-row--slider {
-  flex-direction: column; align-items: stretch;
-  padding: 18px 0; gap: 14px;
-}
-.setting-row--slider .setting-label {
-  max-width: none;
-}
+/* 取值项：整行可点，右侧显示当前值与箭头 */
+.setting-value--pick { display: inline-flex; align-items: center; gap: 6px; }
+.setting-chevron { opacity: 0.55; flex-shrink: 0; }
 
-.setting-label {
-  display: flex; flex-direction: column; gap: 3px;
-  max-width: 60%; min-width: 0;
+/* 滑块：粗轨道 + 白色圆形滑块（填充部分为主题色） */
+.setting-slider { width: 100%; }
+:deep(.setting-slider .el-slider__runway) {
+  height: 22px; margin: 0; border-radius: 999px;
+  background: var(--hover-bg-strong);
 }
-.setting-title { font-size: 14px; font-weight: 600; line-height: 1.3; }
-.setting-desc { font-size: 12px; color: var(--text-tertiary); line-height: 1.4; }
-.setting-desc b { color: var(--text-secondary); font-weight: 600; }
-
-.setting-slider {
-  width: 100%;
+:deep(.setting-slider .el-slider__bar) {
+  height: 22px; border-radius: 999px;
+  background: var(--accent-color);
 }
-
-.setting-fps {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-  min-width: 0;
-}
-.setting-fps .setting-slider {
-  flex: 1;
-}
-
-/* Element Plus slider 覆盖：与开关按钮大小统一 */
+:deep(.setting-slider .el-slider__button-wrapper) { top: -7px; }
 :deep(.setting-slider .el-slider__button) {
-  width: 16px; height: 16px;
-}
-:deep(.setting-slider .el-slider__marks-text) {
-  font-size: 10px; color: var(--text-tertiary);
+  width: 22px; height: 22px;
+  border: none; background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
 }
 
 /* ===== 恢复按钮 ===== */
@@ -794,13 +829,9 @@ useScrollMemory('settings', () => document.querySelector('.main-content'))
 }
 
 /* ===== 关于页 ===== */
-.about-section {
-  padding: 28px 28px 32px;
-}
-
 .about-header {
   display: flex; flex-direction: column; align-items: center; gap: 14px;
-  margin-bottom: 28px;
+  margin-bottom: 26px; padding-top: 4px;
 }
 .about-logo {
   display: flex; align-items: center; justify-content: center;
@@ -817,72 +848,53 @@ useScrollMemory('settings', () => document.querySelector('.main-content'))
   display: block; font-size: 13px; color: var(--text-tertiary); margin-top: 3px;
 }
 
-.about-meta {
-  display: flex; flex-direction: column;
-  background: var(--hover-bg);
-  border-radius: 11px; padding: 4px 0; border: 1px solid var(--border-color);
-}
-.about-meta__row {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 11px 16px; font-size: 13px; color: var(--text-secondary);
-}
-.about-meta__row:not(:last-child) { border-bottom: 1px solid var(--border-color); }
-.about-meta__row span:first-child { color: var(--text-tertiary); font-weight: 500; }
-
-.about-link {
-  display: flex; align-items: center; justify-content: space-between;
-  width: 100%; margin-top: 12px; padding: 12px 16px;
-  background: var(--hover-bg); border: 1px solid var(--border-color);
-  border-radius: 11px; color: var(--text-secondary); font-size: 13px;
-  cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease;
-}
-.about-link:hover { background: var(--hover-bg-strong); }
-.about-link__value { color: var(--text-tertiary); font-size: 12px; }
-
-/* ===== 开源许可页 ===== */
-.licenses-section { padding: 20px 28px 32px; }
+/* ===== 开源许可页：不设外层内容区，每个类目独立成卡 ===== */
+.licenses-section { padding: 0 0 32px; }
 .licenses-hint {
-  margin: 0 0 20px; font-size: 12px; line-height: 1.7; color: var(--text-tertiary);
+  margin: 0 0 22px; padding-left: 2px;
+  font-size: 13px; font-weight: 600; line-height: 1.7;
+  color: var(--text-tertiary);
 }
-.license-group { margin-bottom: 22px; }
+.license-group { margin-bottom: 26px; }
 .license-group__title {
-  margin-bottom: 8px; padding-left: 2px;
-  font-size: 12px; font-weight: 600; letter-spacing: 0.4px; color: var(--text-tertiary);
+  display: flex; align-items: baseline; gap: 8px;
+  margin-bottom: 10px; padding-left: 2px;
+  font-size: 13px; font-weight: 600; color: var(--text-tertiary);
+}
+.license-group__count {
+  font-size: 11px; font-weight: 500; color: var(--text-tertiary); opacity: 0.65;
 }
 .license-list {
-  background: var(--hover-bg);
-  border: 1px solid var(--border-color); border-radius: 11px; overflow: hidden;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 14px; overflow: hidden;
 }
 .license-row {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  width: 100%; padding: 11px 16px;
-  background: none; border: none; border-bottom: 1px solid var(--border-color);
+  width: 100%; height: 48px; padding: 0 18px;
+  background: none; border: none;
   color: var(--text-secondary); font-size: 13px; text-align: left; cursor: pointer;
   transition: background 0.15s ease;
 }
-.license-row:last-child { border-bottom: none; }
 .license-row:hover { background: var(--hover-bg-strong); }
-.license-row__main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.license-row__name { color: var(--text-secondary); }
-.license-row__note { font-size: 11px; color: var(--text-tertiary); }
+.license-row__main { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.license-row__name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .license-row__license {
-  flex-shrink: 0; font-size: 12px; color: var(--text-tertiary);
+  flex-shrink: 0; max-width: 190px; padding: 3px 8px; border-radius: 6px;
+  border: 1px solid var(--border-color); background: var(--bg-secondary);
+  font-size: 11px; line-height: 1.4; color: var(--text-tertiary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.license-row__arrow {
+  font-size: 11px; color: var(--text-tertiary);
+  opacity: 0; transform: translate(0, 0);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.license-row:hover .license-row__arrow { opacity: 0.75; transform: translate(1px, -1px); }
 .licenses-foot {
-  margin: 4px 0 0; font-size: 12px; color: var(--text-tertiary);
+  margin: 2px 0 0; padding-left: 2px;
+  font-size: 13px; font-weight: 600; color: var(--text-tertiary);
 }
-
-.toggle-buttons {
-  display: flex; gap: 8px;
-}
-.toggle-btn {
-  padding: 6px 20px; border-radius: 8px; border: 1px solid var(--border-color);
-  background: var(--bg-secondary); color: var(--text-secondary);
-  font-size: 13px; font-weight: 600; cursor: pointer;
-  transition: all 0.18s ease;
-}
-.toggle-btn.active {
-  background: var(--accent-color); color: #fff; border-color: var(--accent-color);
-}
-.toggle-btn:hover:not(.active) { background: var(--hover-bg); }
 </style>

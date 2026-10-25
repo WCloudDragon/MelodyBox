@@ -23,6 +23,7 @@ bin/
 debug-*.md
 *.log
 *.txt
+!licenses/*.txt
 .vite-port
 .vite-ready
 

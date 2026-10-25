@@ -4,7 +4,7 @@
  * 说明：
  * - 只列本项目直接依赖或随包分发的组件，传递依赖不逐一展开；
  * - license 为各项目仓库声明的主要许可证，完整许可证文本与版权声明以官方仓库为准；
- * - note 用于标注需要特别说明的条款（非商业限制、GPL/LGPL 分发义务、非开源许可等）。
+ * - 详细的分发义务与版权声明见随包分发的 THIRD-PARTY-LICENSES.md。
  */
 
 export const LICENSE_GROUPS = [
@@ -16,7 +16,7 @@ export const LICENSE_GROUPS = [
       { name: 'Pinia', license: 'MIT', url: 'https://github.com/vuejs/pinia' },
       { name: 'Element Plus', license: 'MIT', url: 'https://github.com/element-plus/element-plus' },
       { name: '@element-plus/icons-vue', license: 'MIT', url: 'https://github.com/element-plus/element-plus-icons' },
-      { name: 'GSAP', license: 'GreenSock Standard License', url: 'https://gsap.com/standard-license', note: '非开源许可，免费商用' },
+      { name: 'GSAP', license: 'GreenSock Standard License', url: 'https://gsap.com/standard-license' },
       { name: 'pinyin-pro', license: 'MIT', url: 'https://github.com/zh-lx/pinyin-pro' },
       { name: 'SortableJS', license: 'MIT', url: 'https://github.com/SortableJS/Sortable' }
     ]
@@ -36,7 +36,7 @@ export const LICENSE_GROUPS = [
       { name: 'Flask-CORS', license: 'MIT', url: 'https://github.com/corydolphin/flask-cors' },
       { name: 'librosa', license: 'ISC', url: 'https://github.com/librosa/librosa' },
       { name: 'python-soundfile', license: 'BSD 3-Clause', url: 'https://github.com/bastibe/python-soundfile' },
-      { name: 'mutagen', license: 'GPL-2.0-or-later', url: 'https://github.com/quodlibet/mutagen', note: 'GPL 系许可，分发时需遵守其条款' },
+      { name: 'mutagen', license: 'GPL-2.0-or-later', url: 'https://github.com/quodlibet/mutagen' },
       { name: 'Pillow', license: 'HPND', url: 'https://github.com/python-pillow/Pillow' },
       { name: 'NumPy', license: 'BSD 3-Clause', url: 'https://github.com/numpy/numpy' },
       { name: 'SciPy', license: 'BSD 3-Clause', url: 'https://github.com/scipy/scipy' },
@@ -49,18 +49,18 @@ export const LICENSE_GROUPS = [
     title: 'AI 推理与模型',
     items: [
       { name: 'ONNX Runtime', license: 'MIT', url: 'https://github.com/microsoft/onnxruntime' },
-      { name: 'ONNX Runtime DirectML', license: 'MIT', url: 'https://github.com/microsoft/onnxruntime', note: 'DirectML 执行提供程序' },
+      { name: 'ONNX Runtime DirectML', license: 'MIT', url: 'https://github.com/microsoft/onnxruntime' },
       { name: 'fastembed', license: 'Apache-2.0', url: 'https://github.com/qdrant/fastembed' },
       { name: 'Transformers', license: 'Apache-2.0', url: 'https://github.com/huggingface/transformers' },
       { name: 'PyTorch', license: 'BSD 3-Clause', url: 'https://github.com/pytorch/pytorch' },
       { name: 'multilingual-e5-large', license: 'MIT', url: 'https://huggingface.co/intfloat/multilingual-e5-large' },
-      { name: 'MERT-v1-95M', license: 'CC BY-NC 4.0', url: 'https://huggingface.co/m-a-p/MERT-v1-95M', note: '仅限非商业用途' }
+      { name: 'MERT-v1-95M', license: 'CC BY-NC 4.0', url: 'https://huggingface.co/m-a-p/MERT-v1-95M' }
     ]
   },
   {
     title: '多媒体处理',
     items: [
-      { name: 'FFmpeg', license: 'LGPL-2.1-or-later', url: 'https://ffmpeg.org/', note: '以独立可执行文件形式随包分发' },
+      { name: 'FFmpeg', license: 'GPL-3.0-or-later', url: 'https://ffmpeg.org/' },
       { name: 'mpg123', license: 'LGPL-2.1', url: 'https://www.mpg123.de/' },
       { name: 'libsoxr', license: 'LGPL-2.1', url: 'https://sourceforge.net/projects/soxr/' }
     ]
@@ -68,7 +68,7 @@ export const LICENSE_GROUPS = [
   {
     title: '字体',
     items: [
-      { name: 'MiSans', license: 'MiSans 字体许可', url: 'https://hyperos.mi.com/font/', note: '小米开源字体，免费商用，需保留原始声明' }
+      { name: 'MiSans', license: 'MiSans 字体许可', url: 'https://hyperos.mi.com/font/' }
     ]
   }
 ]

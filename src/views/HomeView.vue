@@ -94,6 +94,10 @@
                   <div v-else class="rec-entry__cover-placeholder rec-entry__cover-placeholder--weather">
                     <span>{{ weatherCardEmoji }}</span>
                   </div>
+                  <span
+                    v-if="weatherCardState === 'ready' || (weatherCardState === 'retrying' && weatherStore.weatherData)"
+                    class="rec-entry__weather-src"
+                  >和风天气</span>
                 </div>
                 <div class="rec-entry__info" :style="getCoverStyle(weatherStore.mood)">
                   <template v-if="recPreviewsLoading">
@@ -1059,6 +1063,22 @@ watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
 /* 天气卡片 placeholder 背景 */
 .rec-entry__cover-placeholder--weather {
   background: linear-gradient(135deg, #6366f1, #818cf8);
+}
+
+/* 天气数据来源署名（和风天气免费版要求） */
+.rec-entry__weather-src {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(4px);
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0.3px;
+  color: rgba(255, 255, 255, 0.82);
+  pointer-events: none;
 }
 
 /* 加载骨架内容：封面与文字未就绪时显示（行高与真实文字对齐，保证卡片尺寸一致） */
