@@ -26,6 +26,7 @@ SNAKE_TO_CAMEL = {
     'word_anim_fps': 'wordAnimFps',
     'show_visualizer': 'showVisualizer',
     'auto_scan': 'autoScan',
+    'auto_generate_vectors': 'autoGenerateVectors',
     'language': 'language',
     'desktop_lyrics_font_size': 'desktopLyricsFontSize',
     'desktop_lyrics_active_scale': 'desktopLyricsActiveScale',
@@ -58,6 +59,7 @@ DEFAULT_SETTINGS = {
     'word_anim_fps': 60,
     'show_visualizer': True,
     'auto_scan': False,
+    'auto_generate_vectors': False,
     'language': 'zh-CN',
     'desktop_lyrics_font_size': 24,
     'desktop_lyrics_active_scale': 120,
@@ -90,7 +92,7 @@ def row_to_settings(row):
             val = DEFAULT_SETTINGS.get(snake_key)
         # SQLite 用 0/1 存布尔值，转为 Python bool
         if snake_key in ('follow_system_theme', 'show_lyrics', 'enable_lyrics_blur',
-                         'enable_domino_scroll', 'enable_word_lift', 'show_visualizer', 'auto_scan', 'enable_dynamic_bg', 'enable_audio_rhythm'):
+                         'enable_domino_scroll', 'enable_word_lift', 'show_visualizer', 'auto_scan', 'enable_dynamic_bg', 'enable_audio_rhythm', 'auto_generate_vectors'):
             val = bool(val)
         result[camel_key] = val
     return result
@@ -179,7 +181,7 @@ def update_settings():
         for snake_key, camel_key in SNAKE_TO_CAMEL.items():
             val = current[snake_key]
             if snake_key in ('follow_system_theme', 'show_lyrics', 'enable_lyrics_blur',
-                             'enable_domino_scroll', 'enable_word_lift', 'show_visualizer', 'auto_scan', 'enable_dynamic_bg', 'enable_audio_rhythm'):
+                             'enable_domino_scroll', 'enable_word_lift', 'show_visualizer', 'auto_scan', 'enable_dynamic_bg', 'enable_audio_rhythm', 'auto_generate_vectors'):
                 val = bool(val)
             result[camel_key] = val
 

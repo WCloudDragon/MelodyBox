@@ -63,6 +63,22 @@ def is_available():
     return _FASTEMBED_OK
 
 
+def is_text_model_cached():
+    """检查 E5 文本模型是否已下载到本地（不触发下载）"""
+    try:
+        cache_dir = _CACHE_DIR or _resolve_cache_dir()
+        slug = _MODEL_HF_REPO.replace('/', '--')
+        model_root = os.path.join(cache_dir, f'models--{slug}')
+        if not os.path.isdir(model_root):
+            return False
+        for _root, _dirs, files in os.walk(model_root):
+            if any(f.endswith('.onnx') for f in files):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def get_active_provider():
     """返回当前使用的推理后端"""
     global _MODEL, _MODEL_PROVIDER

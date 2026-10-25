@@ -168,21 +168,23 @@ def _enqueue_scan(dir_path, flask_app, batch_index=0, batch_total=1):
 
 
 def _scan_worker():
-    """顺序消费扫描队列；队列空时退出。"""
-    global _scan_progress
+    """顺序消费扫描队列；队列空时退出，并按设置触发向量自动补齐。"""
+    global _scan_progress, _scan_thread
     from services.scanner import scan_and_store
 
+    last_app = None
     while True:
         with _scan_lock:
             if not _scan_queue:
                 _scan_progress['scanning'] = False
                 _scan_progress['queued'] = 0
-                return
+                break
             item = _scan_queue.pop(0)
             queued = len(_scan_queue)
 
         dir_path = item['path']
         flask_app = item['app']
+        last_app = flask_app
         logger.info('扫描开始: %s', dir_path)
         _scan_progress = {'current': 0, 'total': 0, 'path': '', 'scanning': True,
                           'inserted': 0, 'updated': 0, 'deleted': 0, 'errors': 0,
@@ -209,8 +211,6 @@ def _scan_worker():
                                 dir_path, result.get('inserted', 0),
                                 result.get('updated', 0), result.get('deleted', 0),
                                 result.get('errors', 0))
-                    # 向量生成改为用户手动触发：导入后后台静默跑推理会长时间吃满 CPU，
-                    # 前端在推荐区已有"一键生成向量"入口
         except Exception:
             logger.error('扫描异常: %s\n%s', dir_path, traceback.format_exc())
         finally:
@@ -221,6 +221,25 @@ def _scan_worker():
             if not has_more:
                 _scan_progress['scanning'] = False
             _scan_progress['queued'] = remaining
+
+    # 队列已清空：注销线程登记；退出瞬间若又有新任务，补启一个工作线程避免队列卡住
+    with _scan_lock:
+        _scan_thread = None
+        queued = len(_scan_queue)
+    if queued:
+        with _scan_lock:
+            if _scan_thread is None:
+                _scan_thread = threading.Thread(target=_scan_worker, daemon=True)
+                _scan_thread.start()
+        return
+
+    # 整批扫描结束：按「自动生成向量」开关为新增/变更曲目补齐向量
+    if last_app is not None:
+        try:
+            from routes.ai import auto_generate_embeddings
+            auto_generate_embeddings(last_app)
+        except Exception:
+            logger.warning('自动向量生成触发失败\n%s', traceback.format_exc())
 
 
 @folders_bp.route('/thumb-progress')

@@ -15,6 +15,9 @@ export function pathToUrlSync(filePath) {
   return audioUrl(filePath)
 }
 
+// 需要按数值比较的排序字段（其余按字符串比较）
+const NUMERIC_SORT_KEYS = new Set(['duration', 'year', 'file_size', 'file_mtime'])
+
 export const useLibraryStore = defineStore('library', () => {
   const tracks = ref([])
   const cloudTracks = ref([])
@@ -342,8 +345,23 @@ export const useLibraryStore = defineStore('library', () => {
     }
 
     result.sort((a, b) => {
-      const va = (a[sortKey.value] || '').toString().toLowerCase()
-      const vb = (b[sortKey.value] || '').toString().toLowerCase()
+      const key = sortKey.value
+      const av = a[key]
+      const bv = b[key]
+      // 数值字段按数值比较（时长/年份/文件大小等），避免 "100" < "9" 的字符串错误
+      if (NUMERIC_SORT_KEYS.has(key)) {
+        const aMissing = av === null || av === undefined || av === ''
+        const bMissing = bv === null || bv === undefined || bv === ''
+        // 缺失值始终排在最后，不随升降序翻转
+        if (aMissing || bMissing) {
+          if (aMissing && bMissing) return 0
+          return aMissing ? 1 : -1
+        }
+        const diff = Number(av) - Number(bv)
+        return sortOrder.value === 'asc' ? diff : -diff
+      }
+      const va = (av ?? '').toString().toLowerCase()
+      const vb = (bv ?? '').toString().toLowerCase()
       return sortOrder.value === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va)
     })
 

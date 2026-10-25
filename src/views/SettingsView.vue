@@ -390,6 +390,15 @@
     <template v-if="page === 'ai'">
       <ListPageHeader title="AI 推荐" :show-play-mode="false" show-back :back-handler="() => page = 'menu'" />
       <div class="settings-group">
+        <div class="settings-group__title">推荐</div>
+        <section class="settings-card">
+          <div class="setting-row setting-row--click" v-ripple @click="toggleSwitch('autoGenerateVectors')">
+            <span class="setting-title">自动生成向量</span>
+            <el-switch v-model="settingsStore.autoGenerateVectors" />
+          </div>
+        </section>
+      </div>
+      <div class="settings-group">
         <div class="settings-group__title">模型</div>
         <section class="settings-card">
           <div class="setting-row setting-row--stack">

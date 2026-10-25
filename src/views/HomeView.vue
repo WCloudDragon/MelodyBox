@@ -62,8 +62,8 @@
           </div>
         </div>
 
-        <!-- 推荐入口卡片网格（加载中显示骨架屏，不隐藏区块） -->
-        <div class="rec-entries-wrap">
+        <!-- 推荐入口卡片网格（加载中显示骨架屏；无向量时整块隐藏） -->
+        <div class="rec-entries-wrap" v-if="hasVectors">
           <button
             v-if="!recPreviewsLoading && recPage > 0"
             class="rec-entries__arrow rec-entries__arrow--left"
@@ -307,7 +307,7 @@
 
 <script setup>
 defineOptions({ name: 'HomeView' })
-import { computed, watch, onBeforeUnmount, onMounted, onUnmounted, ref } from 'vue'
+import { computed, watch, onBeforeUnmount, onMounted, onUnmounted, onActivated, ref } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlayerStore } from '@/stores/player'
 import { useAiStore } from '@/stores/ai'
@@ -720,6 +720,9 @@ const coverColors = computed(() => aiStore.coverColors)
 // 推荐封面加载状态：加载中卡片内部显示骨架内容，加载完成切换为真实内容
 const recPreviewsLoading = computed(() => aiStore.previewsLoading)
 
+// 无向量时不展示推荐卡片（避免占位卡被误认为真实推荐）
+const hasVectors = computed(() => (aiStore.embeddingStatus.done || 0) > 0)
+
 // 骨架 → 真实卡片时播放一次性入场动画：动画结束后移除类，
 // 避免 keep-alive 切回首页时 DOM 重挂导致动画重播
 const cardsRevealed = ref(false)
@@ -785,11 +788,15 @@ async function handleGenerateEmbeddings() {
     }
   } catch {}
 
+  const trackCount = libraryStore.tracks.length
+  const tooSmall = trackCount > 0 && trackCount < 50
   try {
     await modal.confirm({
-      title: '确认生成 AI 向量',
-      message: `即将为所有歌曲生成文本语义与音频特征向量，首次运行需下载两个 AI 模型（共约 2.3GB）。\n\n模型存放路径: ${modelPath}\n\n当前曲库共 ${libraryStore.tracks.length} 首歌曲，生成后可启用AI智能推荐。`,
-      confirmText: '开始生成',
+      title: tooSmall ? '曲库较小，仍要生成向量？' : '确认生成 AI 向量',
+      message: tooSmall
+        ? `当前音乐库共 ${trackCount} 首，样本较少，AI 推荐的结果可能比较有限。\n\n即将为所有歌曲生成文本语义与音频特征向量，首次运行需下载两个 AI 模型（共约 2.3GB）。\n\n模型存放路径: ${modelPath}`
+        : `即将为所有歌曲生成文本语义与音频特征向量，首次运行需下载两个 AI 模型（共约 2.3GB）。\n\n模型存放路径: ${modelPath}\n\n当前曲库共 ${trackCount} 首歌曲，生成后可启用AI智能推荐。`,
+      confirmText: tooSmall ? '仍要生成' : '开始生成',
     })
   } catch {
     return  // 用户取消
@@ -857,6 +864,14 @@ watch(() => libraryStore.tracks.length, async (newLen, oldLen) => {
 watch(() => aiStore.embeddingStatus.pending, (pending, oldPending) => {
   if (pending === 0 && oldPending > 0) {
     aiStore.loadPreviews(true)
+  }
+})
+
+// 首页在 keep-alive 中时，扫描后的自动向量生成不会主动推送状态：切回时刷新一次
+onActivated(async () => {
+  await aiStore.loadEmbeddingStatus()
+  if ((aiStore.embeddingStatus.done || 0) > 0) {
+    aiStore.loadPreviews()
   }
 })
 </script>

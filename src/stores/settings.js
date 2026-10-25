@@ -60,6 +60,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
   // 系统设置
   const autoScan = ref(false)
+  // 扫描结束后自动为新增/变更曲目补齐向量（需模型已下载）
+  const autoGenerateVectors = ref(false)
   const language = ref('zh-CN')
 
   // 桌面歌词设置
@@ -195,6 +197,7 @@ export const useSettingsStore = defineStore('settings', () => {
       wordAnimFps.value = data.wordAnimFps ?? 60
       showVisualizer.value = data.showVisualizer ?? true
       autoScan.value = !!data.autoScan
+      autoGenerateVectors.value = !!data.autoGenerateVectors
       language.value = data.language ?? 'zh-CN'
       desktopLyricsFontSize.value = data.desktopLyricsFontSize ?? 24
       desktopLyricsActiveScale.value = data.desktopLyricsActiveScale ?? 120
@@ -231,6 +234,7 @@ export const useSettingsStore = defineStore('settings', () => {
         body.wordAnimFps = wordAnimFps.value
         body.showVisualizer = showVisualizer.value ? 1 : 0
         body.autoScan = autoScan.value ? 1 : 0
+        body.autoGenerateVectors = autoGenerateVectors.value ? 1 : 0
         body.language = language.value
         body.desktopLyricsFontSize = desktopLyricsFontSize.value
         body.desktopLyricsActiveScale = desktopLyricsActiveScale.value
@@ -325,7 +329,7 @@ export const useSettingsStore = defineStore('settings', () => {
     showVisualizer,
     lyricKaraokeMode,
     rhythmFps, fpsAdaptive, measuredRefresh, effectiveWordAnimFps,
-    autoScan, language,
+    autoScan, autoGenerateVectors, language,
     desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale, desktopLyricsViewLines,
     enableDynamicBg,
     enableAudioRhythm,

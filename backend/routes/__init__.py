@@ -39,6 +39,7 @@ def row_to_song(row):
         'url': None,
         'file_size': row['file_size'],
         'file_mtime': row['file_mtime'],
+        'created_at': row['created_at'] if 'created_at' in keys else '',
         'disc_number': row['disc_number'] if 'disc_number' in keys else 0,
         'track_number': row['track_number'] if 'track_number' in keys else 0,
         'lang': row['lang'] or '',

@@ -220,6 +220,7 @@ const sortOptionsList = [
   { label: '专辑', value: 'album' },
   { label: '年份', value: 'year' },
   { label: '时长', value: 'duration' },
+  { label: '文件大小', value: 'file_size' },
   { label: '创建时间', value: 'created_at' },
   { label: '修改时间', value: 'file_mtime' }
 ]
