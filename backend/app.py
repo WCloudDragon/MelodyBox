@@ -633,9 +633,11 @@ def init_db(app):
     cursor.execute('SELECT COUNT(*) FROM users')
     if cursor.fetchone()[0] == 0:
         from werkzeug.security import generate_password_hash
+        # 显式指定 id=1：全站大量数据（歌单/设置/收藏/画像/事件）都以 user_id=1
+        # 作为默认用户，若 AUTOINCREMENT 序列未复位会插入 id>1，随后写 user_id=1 触发外键失败
         cursor.execute(
-            'INSERT INTO users (username, password_hash, email, role) VALUES (?, ?, ?, ?)',
-            ('admin', generate_password_hash('admin123'), 'admin@melodybox.local', 'admin')
+            'INSERT INTO users (id, username, password_hash, email, role) VALUES (?, ?, ?, ?, ?)',
+            (1, 'admin', generate_password_hash('admin123'), 'admin@melodybox.local', 'admin')
         )
 
     # "我的收藏"（is_system=1）不可删除、置顶歌单区；旧 favorites 表的本地收藏迁移进来。
@@ -669,8 +671,8 @@ def init_db(app):
     cur2.execute('SELECT COUNT(*) FROM users')
     if cur2.fetchone()[0] == 0:
         cur2.execute(
-            'INSERT INTO users (username, password_hash, email, role) VALUES (?, ?, ?, ?)',
-            ('admin', generate_password_hash('admin123'), 'admin@melodybox.local', 'admin')
+            'INSERT INTO users (id, username, password_hash, email, role) VALUES (?, ?, ?, ?, ?)',
+            (1, 'admin', generate_password_hash('admin123'), 'admin@melodybox.local', 'admin')
         )
         conn2.commit()
 

@@ -1,11 +1,23 @@
 <template>
-  <!-- 桌面歌词独立窗口：只渲染路由视图，无应用外壳 -->
-  <div v-if="isDesktopLyricsRoute" id="melody-box" class="lyrics-only">
-    <router-view />
-  </div>
+  <!-- 引导页进出复用全局页面切换动画；应用内部路由切换不触发 -->
+  <Transition name="shell" mode="out-in">
+    <!-- 桌面歌词独立窗口：只渲染路由视图，无应用外壳 -->
+    <div v-if="isDesktopLyricsRoute" key="lyrics" id="melody-box" class="lyrics-only">
+      <router-view />
+    </div>
 
-  <!-- 正常应用布局 -->
-  <div v-else id="melody-box" :class="{ 'is-electron': isElectron }">
+    <!-- 首次引导：内容铺满整窗，标题栏浮在最上层（仅拖拽区 + 窗控） -->
+    <div v-else-if="isFullscreenRoute" key="welcome" id="melody-box" class="welcome-shell">
+      <main class="welcome-shell__body">
+        <router-view />
+      </main>
+      <TitleBar minimal class="welcome-titlebar" />
+      <!-- 引导里添加文件夹时仍要能看到扫描进度 -->
+      <ProgressPanel :queue-open="false" />
+    </div>
+
+    <!-- 正常应用布局 -->
+    <div v-else key="app" id="melody-box" :class="{ 'is-electron': isElectron }">
     <TitleBar v-if="isElectron" :lyrics-visible="panelVisible" :immersive="immersive" />
     <div class="app-body">
       <Sidebar :mode="sidebarMode" @update:mode="sidebarMode = $event" />
@@ -54,7 +66,8 @@
       @confirm="handleModalConfirm"
       @cancel="handleModalCancel"
     />
-  </div>
+    </div>
+  </Transition>
 </template>
 
 <script setup>
@@ -85,6 +98,8 @@ const router = useRouter()
 const isDesktopLyricsRoute = computed(() => {
   return window.location.hash === '#/desktop-lyrics' || route.name === 'desktopLyrics'
 })
+// 全屏引导类路由：保留标题栏，隐藏侧边栏与播放栏
+const isFullscreenRoute = computed(() => !!route.meta?.fullscreen)
 const currentTrack = computed(() => playerStore.currentTrack)
 const isElectron = computed(() => !!window.electronAPI)
 
@@ -522,6 +537,14 @@ onBeforeUnmount(() => {
   }
 }
 
+/* 引导页进出：与普通页面切换同一套动画（整窗外壳切换，故不套用 .page-* 的定位规则） */
+.shell-enter-active {
+  animation: page-enter 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0) both;
+}
+.shell-leave-active {
+  animation: page-leave 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.0) both;
+}
+
 /* 页头 frost（模糊层）与 fade（透明度遮罩层）：两者同为 z:-1，fade 的 DOM 靠后
    画在 frost 之上、页头文字/按钮（流内内容）之下。
    fade 从窗口顶铺到页头底：TitleBar 高度内全浓度（透明 TitleBar 由此供底，
@@ -541,5 +564,22 @@ onBeforeUnmount(() => {
 .page-enter-active .lph-frost,
 .page-leave-active .lph-frost {
   background: var(--glass-bg);
+}
+
+/* ===== 首次引导外壳：内容铺满整窗，标题栏绝对定位浮在上层 ===== */
+.welcome-shell { position: relative; background: var(--bg-secondary); }
+.welcome-shell__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+/* 提高特异性压过 TitleBar 自身的 scoped position: relative；
+   拖拽区与窗控保持可用，内容延伸到窗口最顶端 */
+.welcome-shell > .title-bar.welcome-titlebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
 }
 </style>

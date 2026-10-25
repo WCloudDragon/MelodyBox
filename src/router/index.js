@@ -3,6 +3,12 @@ import { useAuthStore } from '@/stores/auth'
 
 const routes = [
   {
+    path: '/welcome',
+    name: 'welcome',
+    component: () => import('@/views/WelcomeView.vue'),
+    meta: { title: '开始使用', fullscreen: true, skipOnboarding: true }
+  },
+  {
     path: '/',
     name: 'home',
     component: () => import('@/views/HomeView.vue'),
@@ -107,13 +113,13 @@ const routes = [
     path: '/desktop-lyrics',
     name: 'desktopLyrics',
     component: () => import('@/views/DesktopLyricsView.vue'),
-    meta: { title: '桌面歌词' }
+    meta: { title: '桌面歌词', skipOnboarding: true }
   },
   {
     path: '/rhythm-debug',
     name: 'rhythmDebug',
     component: () => import('@/views/RhythmDebugView.vue'),
-    meta: { title: '律动日志' }
+    meta: { title: '律动日志', skipOnboarding: true }
   }
 ]
 
@@ -122,9 +128,17 @@ const router = createRouter({
   routes
 })
 
+// 首次引导完成标记（localStorage：清库重置数据后会重新触发引导）
+export const ONBOARDED_KEY = 'melodybox_onboarded_v1'
+
 router.beforeEach((to) => {
   const auth = useAuthStore()
   document.title = to.meta.title ? `${to.meta.title} - MelodyBox` : 'MelodyBox'
+
+  // 未完成首次引导：除白名单路由（引导页/桌面歌词/律动日志）外统一进入引导
+  if (!to.meta.skipOnboarding && !localStorage.getItem(ONBOARDED_KEY)) {
+    return { path: '/welcome', replace: true }
+  }
 
   // 需要登录的页面：未登录跳转登录页，并记录来源
   if (to.meta.requiresAuth && !auth.isLoggedIn) {

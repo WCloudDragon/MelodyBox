@@ -1,14 +1,15 @@
 <template>
-  <div class="title-bar" :class="{ 'title-bar--immersive': immersive }" @dblclick="onMaximize">
-    <div class="title-bar__brand">
+  <div class="title-bar" :class="{ 'title-bar--immersive': immersive, 'title-bar--minimal': minimal }" @dblclick="onMaximize">
+    <!-- 极简模式（首次引导）：隐藏左上角品牌，仅保留拖拽区与右侧窗控 -->
+    <div v-if="!minimal" class="title-bar__brand">
       <img class="title-bar__icon" :src="appIcon" width="16" height="16" alt="" draggable="false" />
       <span class="title-bar__name">MelodyBox</span>
     </div>
     <div class="title-bar__drag"></div>
-    <!-- 全局搜索（no-drag；沉浸态隐藏，全屏歌词模式保留）。
+    <!-- 全局搜索（no-drag；沉浸态与首次引导隐藏，全屏歌词模式保留）。
          绝对定位窗口真居中：flex 两侧 drag 均分会被品牌区宽度挤偏，
          且下拉面板(Teleport 到 body)是窗口居中，输入框必须与之一致 -->
-    <div v-if="!immersive" class="title-bar__search">
+    <div v-if="!immersive && !minimal" class="title-bar__search">
       <GlobalSearch />
     </div>
     <!-- 窗控 Teleport 到 body：title-bar 自身（z:30）创建层叠上下文，会把窗控的
@@ -61,7 +62,9 @@ import appIcon from '@/assets/app-icon-32.png'
 
 const props = defineProps({
   lyricsVisible: { type: Boolean, default: false },
-  immersive: { type: Boolean, default: false }
+  immersive: { type: Boolean, default: false },
+  // 极简模式：隐藏品牌名与搜索，仅保留拖拽条与窗控（首次引导页使用）
+  minimal: { type: Boolean, default: false }
 })
 
 const isMax = ref(false)

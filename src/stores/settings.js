@@ -26,10 +26,15 @@ const CAMEL_TO_SNAKE = Object.fromEntries(
   Object.entries(SNAKE_TO_CAMEL).map(([k, v]) => [v, k])
 )
 
+// 上次使用的自定义主题色（前端本地持久化，独立于当前主题色）
+const CUSTOM_ACCENT_KEY = 'melodybox_custom_accent'
+
 export const useSettingsStore = defineStore('settings', () => {
   // 外观设置
   const theme = ref('light')
   const accentColor = ref('#ba5734')
+  // 自定义色块记录的「上次手动选过的颜色」；选预设色不会覆盖它
+  const customAccentColor = ref(localStorage.getItem(CUSTOM_ACCENT_KEY) || '#ba5734')
   const blurStrength = ref('10px')
   const followSystemTheme = ref(false)
 
@@ -176,6 +181,8 @@ export const useSettingsStore = defineStore('settings', () => {
       const data = await res.json()
       theme.value = data.theme ?? 'light'
       accentColor.value = data.accentColor ?? '#ba5734'
+      // 首次升级无本地记录时，用当前主题色作为自定义色块的初始值
+      if (!localStorage.getItem(CUSTOM_ACCENT_KEY)) customAccentColor.value = accentColor.value
       blurStrength.value = data.blurStrength ?? '10px'
       followSystemTheme.value = !!data.followSystemTheme
       lyricsFontSize.value = data.lyricsFontSize ?? 32
@@ -276,6 +283,10 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(lyricKaraokeMode, (v) => {
     try { localStorage.setItem('melodybox_lyric_karaoke_mode', v) } catch {}
   })
+  // 自定义主题色本地持久化（前端 only）
+  watch(customAccentColor, (v) => {
+    try { localStorage.setItem(CUSTOM_ACCENT_KEY, v) } catch {}
+  })
 
   /** 应用画质预设档位（low / medium / high） */
   function applyQualityPreset(preset) {
@@ -307,7 +318,7 @@ export const useSettingsStore = defineStore('settings', () => {
   ensureRefreshDetected()
 
   return {
-    theme, accentColor, blurStrength, followSystemTheme,
+    theme, accentColor, customAccentColor, blurStrength, followSystemTheme,
     lyricsFontSize, lyricsFontWeight,
     lyricsTransScale, lyricsActiveScale,
     enableLyricsBlur, enableDominoScroll, enableWordLift, wordAnimFps,

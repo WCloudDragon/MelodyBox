@@ -107,13 +107,40 @@
               <svg class="setting-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             </span>
           </button>
-          <div class="setting-row">
-            <span class="setting-title">主题色</span>
-            <el-color-picker v-model="settingsStore.accentColor" @change="settingsStore.saveSettings()" />
-          </div>
           <div class="setting-row setting-row--click" v-ripple @click="toggleSwitch('followSystemTheme')">
             <span class="setting-title">跟随系统主题色</span>
             <el-switch v-model="settingsStore.followSystemTheme" />
+          </div>
+          <!-- 跟随系统时整行向上收起（grid-rows 0fr → 1fr 动画） -->
+          <div class="accent-collapse" :class="{ 'is-open': !settingsStore.followSystemTheme }">
+            <div class="accent-collapse__inner" :inert="settingsStore.followSystemTheme">
+              <div class="setting-row setting-row--accent">
+                <span class="setting-title">主题色</span>
+                <div class="accent-swatches">
+                  <button
+                    v-for="c in accentPresets"
+                    :key="c"
+                    class="accent-swatch"
+                    :class="{ active: sameAccent(c) }"
+                    :style="{ background: c }"
+                    :title="c"
+                    @click="setAccent(c)"
+                  ></button>
+                  <label
+                    class="accent-swatch accent-swatch--custom"
+                    :class="{ active: isCustomAccent }"
+                    :style="{ background: settingsStore.customAccentColor }"
+                    title="自定义颜色"
+                    @click="onCustomSwatchClick"
+                  >
+                    <input type="color" :value="settingsStore.customAccentColor" @input="onCustomAccent" />
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>
+                    </svg>
+                  </label>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       </div>
@@ -415,6 +442,10 @@
             <span class="setting-title">使用开源项目</span>
             <span class="setting-value">{{ licenseTotal }} 项 ›</span>
           </button>
+          <button class="setting-row setting-row--click" v-ripple @click="openWelcome">
+            <span class="setting-title">重新查看引导</span>
+            <span class="setting-value">›</span>
+          </button>
           <div class="setting-row setting-row--click" v-ripple @click="toggleSwitch('debugMode', false)">
             <span class="setting-title">调试模式</span>
             <el-switch v-model="settingsStore.debugMode" />
@@ -472,18 +503,61 @@
 
 <script setup>
 defineOptions({ name: 'SettingsView' })
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useSettingsStore } from '@/stores/settings'
 import { usePerformanceStore } from '@/stores/performance'
 import { useScrollMemory } from '@/composables/useScrollMemory'
 import ListPageHeader from '@/components/music/ListPageHeader.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
 import { LICENSE_GROUPS, LICENSE_TOTAL } from '@/data/openSourceLicenses'
+import { ACCENT_PRESETS } from '@/data/accentPresets'
 import appIcon from '@/assets/app-icon-128.png'
 
 const settingsStore = useSettingsStore()
 const perf = usePerformanceStore()
+const router = useRouter()
 const page = ref('menu')
+
+// 关于页 → 重新查看首次引导（replay 模式下完成后返回上一页）
+function openWelcome() {
+  router.push('/welcome?replay=1')
+}
+
+// ==================== 主题色预设 ====================
+
+const accentPresets = ACCENT_PRESETS
+
+function sameAccent(c) {
+  return (settingsStore.accentColor || '').toLowerCase() === c.toLowerCase()
+}
+
+// 当前颜色不在预设里 → 自定义色块高亮
+const isCustomAccent = computed(() =>
+  !settingsStore.followSystemTheme && !accentPresets.some((c) => sameAccent(c))
+)
+
+function setAccent(c) {
+  // 手动选色即退出「跟随系统主题色」，否则选色不生效
+  settingsStore.followSystemTheme = false
+  settingsStore.accentColor = c
+  settingsStore.saveSettings()
+}
+
+function onCustomAccent(e) {
+  // 记住本次自定义色，之后切换预设色也不丢失
+  settingsStore.customAccentColor = e.target.value
+  setAccent(e.target.value)
+}
+
+// 已在用自定义色时点击 → 打开取色器调整；否则直接应用上次的自定义色
+function onCustomSwatchClick(e) {
+  const usingCustom = !settingsStore.followSystemTheme &&
+    (settingsStore.accentColor || '').toLowerCase() === (settingsStore.customAccentColor || '').toLowerCase()
+  if (usingCustom) return
+  e.preventDefault()
+  setAccent(settingsStore.customAccentColor)
+}
 
 // ==================== 设置项取值菜单 ====================
 
@@ -806,6 +880,47 @@ useScrollMemory('settings', () => document.querySelector('.main-content'))
 /* 取值项：整行可点，右侧显示当前值与箭头 */
 .setting-value--pick { display: inline-flex; align-items: center; gap: 6px; }
 .setting-chevron { opacity: 0.55; flex-shrink: 0; }
+
+/* 主题色预设色板 */
+.setting-row--accent {
+  height: auto;
+  min-height: 48px;
+  padding: 10px 18px;
+  gap: 14px;
+}
+/* 跟随系统主题色时整行收起：grid-template-rows 0fr ↔ 1fr 平滑改变高度 */
+.accent-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              opacity 0.22s ease;
+}
+.accent-collapse.is-open { grid-template-rows: 1fr; opacity: 1; }
+.accent-collapse__inner { min-height: 0; overflow: hidden; }
+.accent-swatches {
+  display: flex; align-items: center; justify-content: flex-end;
+  flex-wrap: wrap; gap: 10px;
+}
+.accent-swatch {
+  position: relative;
+  width: 24px; height: 24px;
+  padding: 0; border: none; border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease;
+}
+.accent-swatch:hover { transform: scale(1.1); }
+.accent-swatch.active {
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--accent-color);
+}
+.accent-swatch--custom {
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; overflow: hidden;
+}
+.accent-swatch--custom input {
+  position: absolute; inset: 0;
+  opacity: 0; cursor: pointer;
+}
 
 /* 滑块：粗轨道 + 白色圆形滑块（填充部分为主题色） */
 .setting-slider { width: 100%; }

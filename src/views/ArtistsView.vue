@@ -114,7 +114,12 @@ onMounted(() => {
   _resizeObs = new ResizeObserver(entries => {
     for (const e of entries) gridWidth.value = e.contentRect.width
   })
-  _resizeObs.observe(gridRef.value)
+  // 空库时网格容器不渲染，gridRef 为 null；直接 observe(null) 会抛出
+  // TypeError 并中断 mounted，导致此后路由切换不再渲染（表现为整页点击无响应）
+  watch(gridRef, (el, old) => {
+    if (old) _resizeObs.unobserve(old)
+    if (el) _resizeObs.observe(el)
+  }, { immediate: true })
 })
 onUnmounted(() => _resizeObs?.disconnect())
 
