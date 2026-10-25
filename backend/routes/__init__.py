@@ -396,45 +396,7 @@ def get_genres():
         return jsonify({'error': str(e)}), 500
 
 
-# ==================== 扫描 ====================
-
-@music_bp.route('/scan', methods=['POST'])
-def scan_music():
-    """扫描目录并入库，同时同步到 scan_directories 表"""
-    from services.scanner import scan_and_store
-
-    data = request.get_json(force=True)
-    dirs = data.get('directories', [])
-
-    if not dirs:
-        return jsonify({'error': '请提供目录列表'}), 400
-
-    try:
-        db = get_db()
-        result = scan_and_store(db, dirs)
-
-        # 同步到 scan_directories 表（文件夹管理功能）
-        cursor = db.cursor()
-        for d in dirs:
-            try:
-                cursor.execute('INSERT OR IGNORE INTO scan_directories (path) VALUES (?)', (d,))
-            except Exception:
-                pass
-        db.commit()
-        cursor.close()
-        db.close()
-
-        # 新歌曲入库后自动触发 embedding 生成
-        if result.get('inserted', 0) > 0 or result.get('updated', 0) > 0:
-            flask_app = current_app._get_current_object()
-            from routes.ai import auto_generate_embeddings
-            auto_generate_embeddings(flask_app)
-
-        result['directories'] = dirs
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
+# ==================== 统计 ====================
 
 @music_bp.route('/scan-status')
 def scan_status():

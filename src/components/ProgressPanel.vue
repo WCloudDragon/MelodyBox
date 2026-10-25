@@ -177,6 +177,12 @@ function itemClass(item) {
   transition: all 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .progress-leave-active {
+  /* 离场卡片必须脱离文档流：否则它仍占据栈内一行高度，
+     整列会被先顶高、动画结束后再落回，表现为右下角通知初始位置偏上 */
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  z-index: 0 !important;
   transition: all 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 .progress-enter-from {

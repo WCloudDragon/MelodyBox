@@ -15,9 +15,14 @@
       :filter-values="{ source: sourceFilter, genre: libraryStore.filterGenre }"
       @sort="onSort"
       @filter="onFilter"
+      @filter-clear="clearFilters"
       @toggle-multi-select="toggleSelectMode"
     >
-      <el-button @click="libraryStore.refreshLibrary" :loading="libraryStore.isLoading" v-if="isElectron && libraryStore.scanDirs.length > 0">
+      <el-button
+        @click="libraryStore.rescanAllFolders"
+        title="重新扫描全部文件夹"
+        v-if="isElectron && libraryStore.scanDirs.length > 0"
+      >
         <el-icon><Refresh /></el-icon>
       </el-button>
     </ListPageHeader>
@@ -223,7 +228,6 @@ const filterGroups = computed(() => [
     key: 'source',
     label: '来源',
     options: [
-      { label: '全部', value: 'all' },
       { label: '本地', value: 'local' },
       ...(auth.isVip ? [{ label: '云端', value: 'cloud' }] : [])
     ]
@@ -241,6 +245,11 @@ function onSort({ key, order }) {
 function onFilter({ key, value }) {
   if (key === 'source') sourceFilter.value = value
   else if (key === 'genre') libraryStore.filterGenre = value
+}
+
+function clearFilters() {
+  sourceFilter.value = 'all'
+  libraryStore.filterGenre = ''
 }
 
 const menuItems = computed(() => buildMenuItems('library', ctxMenu.value.track))

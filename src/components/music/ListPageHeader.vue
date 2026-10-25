@@ -7,7 +7,7 @@
         <polyline points="8.5 16.5 4 12 8.5 7.5"/>
       </svg>
     </button>
-    <h1 class="list-page-header__title">{{ title }}</h1>
+    <h1 class="list-page-header__title" @dblclick="scrollToTop">{{ title }}</h1>
     <span v-if="count != null" class="list-page-header__count">{{ count }}</span>
     <div class="list-page-header__spacer"></div>
 
@@ -90,6 +90,8 @@
             >{{ opt.label }}</button>
           </div>
         </div>
+        <div class="lph-panel__divider"></div>
+        <button class="lph-panel__item" v-ripple @click="clearFilter">清除筛选</button>
       </div>
     </Transition>
 
@@ -140,9 +142,24 @@ const props = defineProps({
   filterGroups: { type: Array, default: () => [] },
   filterValues: { type: Object, default: () => ({}) }
 })
-const emit = defineEmits(['sort', 'filter', 'viewChange', 'toggleMultiSelect'])
+const emit = defineEmits(['sort', 'filter', 'filterClear', 'viewChange', 'toggleMultiSelect'])
 
 const router = useRouter()
+
+// 双击标题回到顶部：页面滚动容器因页而异（详情页滚 main-content，
+// 列表页滚内部容器），统一把 main-content 与页根内的滚动容器归零
+function scrollToTop() {
+  const main = document.querySelector('.main-content')
+  if (main) main.scrollTop = 0
+  const view = headerEl.value?.parentElement
+  if (!view) return
+  for (const el of view.querySelectorAll('*')) {
+    const s = getComputedStyle(el)
+    if ((s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollTop > 0) {
+      el.scrollTop = 0
+    }
+  }
+}
 
 // 返回：优先自定义动作；有浏览历史则 back；否则跳语义父级（兜底到首页）
 function onBack() {
@@ -225,6 +242,11 @@ function toggleFilter(e) {
   _anchorPanel(e)
   sortOpen.value = false
   filterOpen.value = !filterOpen.value
+}
+
+function clearFilter() {
+  filterOpen.value = false
+  emit('filterClear')
 }
 
 // 按钮短标签：注册表 label 去掉「播放」尾字（顺序播放→顺序）
@@ -407,6 +429,8 @@ onBeforeUnmount(() => {
   /* 字号对齐文件夹页标题（28px），各页面标题栏视觉统一 */
   font-size: 28px; font-weight: 700; margin: 0; white-space: nowrap;
   letter-spacing: -0.3px; line-height: 1.2;
+  /* 双击回顶：避免双击选中标题文字 */
+  user-select: none;
 }
 .list-page-header__count { font-size: 13px; color: var(--text-tertiary); }
 /* 标题/计数随雾显隐（fog-title 页面）：顶部隐藏（标题由内容区 page-content-title 承载），

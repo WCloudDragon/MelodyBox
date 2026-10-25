@@ -12,13 +12,16 @@ logger = logging.getLogger('melodybox.scan')
 
 # 扫描进度（全局，单用户桌面应用无需加锁）
 _scan_progress = {'current': 0, 'total': 0, 'path': '', 'scanning': False,
-                  'inserted': 0, 'updated': 0, 'deleted': 0, 'errors': 0}
+                  'inserted': 0, 'updated': 0, 'deleted': 0, 'errors': 0,
+                  'queued': 0, 'batch_index': 0, 'batch_total': 0}
 
 # 扫描队列：同一时刻只允许一个扫描线程，多个目录按顺序处理。
 # 并发扫描会互相覆盖同一份全局进度，导致前端进度跳变/提前完成/统计错乱。
 _scan_queue = []
 _scan_lock = threading.Lock()
 _scan_thread = None
+# 本次扫描会话（批量时跨目录）的累计统计，用于结束时的汇总文案
+_scan_totals = {'inserted': 0, 'updated': 0, 'deleted': 0, 'errors': 0}
 
 
 @folders_bp.before_request
@@ -125,7 +128,7 @@ def _dir_stats(db, dir_path):
 
 @folders_bp.route('/scan-progress')
 def scan_progress():
-    """获取当前扫描进度"""
+    """获取当前扫描进度（queued/batch_* 用于批量重扫的队列与批次展示）"""
     return jsonify({
         'scanning': _scan_progress['scanning'],
         'current': _scan_progress['current'],
@@ -135,10 +138,13 @@ def scan_progress():
         'updated': _scan_progress.get('updated', 0),
         'deleted': _scan_progress.get('deleted', 0),
         'errors': _scan_progress.get('errors', 0),
+        'queued': _scan_progress.get('queued', 0),
+        'batch_index': _scan_progress.get('batch_index', 0),
+        'batch_total': _scan_progress.get('batch_total', 0),
     })
 
 
-def _enqueue_scan(dir_path, flask_app):
+def _enqueue_scan(dir_path, flask_app, batch_index=0, batch_total=1):
     """把扫描任务加入队列，由单一工作线程顺序处理。
 
     并发扫描会互相覆盖同一份全局进度（前端表现为进度跳变、提前完成、
@@ -146,7 +152,16 @@ def _enqueue_scan(dir_path, flask_app):
     """
     global _scan_thread
     with _scan_lock:
-        _scan_queue.append((dir_path, flask_app))
+        # 空闲状态下开始新一批扫描：清空上一轮的累计统计
+        if not _scan_queue and not _scan_progress['scanning']:
+            _scan_totals.update({'inserted': 0, 'updated': 0, 'deleted': 0, 'errors': 0})
+        _scan_queue.append({
+            'path': dir_path,
+            'app': flask_app,
+            'batch_index': batch_index,
+            'batch_total': batch_total,
+        })
+        _scan_progress['queued'] = len(_scan_queue)
         if _scan_thread is None or not _scan_thread.is_alive():
             _scan_thread = threading.Thread(target=_scan_worker, daemon=True)
             _scan_thread.start()
@@ -160,12 +175,20 @@ def _scan_worker():
     while True:
         with _scan_lock:
             if not _scan_queue:
+                _scan_progress['scanning'] = False
+                _scan_progress['queued'] = 0
                 return
-            dir_path, flask_app = _scan_queue.pop(0)
+            item = _scan_queue.pop(0)
+            queued = len(_scan_queue)
 
+        dir_path = item['path']
+        flask_app = item['app']
         logger.info('扫描开始: %s', dir_path)
         _scan_progress = {'current': 0, 'total': 0, 'path': '', 'scanning': True,
-                          'inserted': 0, 'updated': 0, 'deleted': 0, 'errors': 0}
+                          'inserted': 0, 'updated': 0, 'deleted': 0, 'errors': 0,
+                          'queued': queued,
+                          'batch_index': item.get('batch_index', 0),
+                          'batch_total': item.get('batch_total', 1)}
 
         def _cb(current, total, file_path):
             _scan_progress['current'] = current
@@ -178,10 +201,10 @@ def _scan_worker():
                 result = scan_and_store(db2, [dir_path], progress_callback=_cb)
                 db2.close()
                 if result:
-                    _scan_progress['inserted'] = result.get('inserted', 0)
-                    _scan_progress['updated'] = result.get('updated', 0)
-                    _scan_progress['deleted'] = result.get('deleted', 0)
-                    _scan_progress['errors'] = result.get('errors', 0)
+                    # 累计到本次扫描会话（批量重扫时多个目录合并统计）
+                    for k in ('inserted', 'updated', 'deleted', 'errors'):
+                        _scan_totals[k] += result.get(k, 0) or 0
+                        _scan_progress[k] = _scan_totals[k]
                     logger.info('扫描完成: %s 新增=%s 更新=%s 删除=%s 解析失败=%s',
                                 dir_path, result.get('inserted', 0),
                                 result.get('updated', 0), result.get('deleted', 0),
@@ -194,8 +217,10 @@ def _scan_worker():
             # 队列还有任务时保持 scanning=True，前端看到的是一次连续扫描
             with _scan_lock:
                 has_more = bool(_scan_queue)
+                remaining = len(_scan_queue)
             if not has_more:
                 _scan_progress['scanning'] = False
+            _scan_progress['queued'] = remaining
 
 
 @folders_bp.route('/thumb-progress')
@@ -388,6 +413,31 @@ def remove_folder(id):
             'deletedCount': remaining,
             'allScanDirs': all_dirs
         })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@folders_bp.route('/rescan-all', methods=['POST'])
+def rescan_all_folders():
+    """重新扫描全部已添加的文件夹（按添加顺序入队，由工作线程串行执行）"""
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('SELECT path FROM scan_directories ORDER BY added_at ASC, id ASC')
+        rows = cursor.fetchall()
+        cursor.close()
+        db.close()
+
+        paths = [r['path'] for r in rows if r['path']]
+        if not paths:
+            return jsonify({'error': '没有已添加的文件夹'}), 400
+
+        flask_app = current_app._get_current_object()
+        total = len(paths)
+        for i, p in enumerate(paths, start=1):
+            _enqueue_scan(p, flask_app, batch_index=i, batch_total=total)
+
+        return jsonify({'success': True, 'queued': total, 'total': total})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

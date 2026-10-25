@@ -30,10 +30,10 @@ export function showScanNotify() {
   _scanId = addProgress({ type: 'scan', title: '正在扫描...', current: 0, total: 0, path: '准备中...' })
 }
 
-export function updateScanNotify(current, total, path) {
+export function updateScanNotify(current, total, path, prefix = '') {
   if (!_scanId) return
   updateProgress(_scanId, {
-    title: total > 0 ? `正在扫描 ${current}/${total}` : '正在扫描...',
+    title: total > 0 ? `${prefix}正在扫描 ${current}/${total}` : `${prefix}正在扫描...`,
     current,
     total,
     path: path || ''

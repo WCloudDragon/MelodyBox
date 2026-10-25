@@ -145,52 +145,54 @@ export const useLibraryStore = defineStore('library', () => {
 
   // ==================== 扫描流程 ====================
 
-  async function scanMusic(dirs) {
-    isLoading.value = true
-    try {
-      // 调用 Flask 扫描（同步，等待完成）
-      const res = await fetch(apiUrl('/api/music/scan'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ directories: dirs })
-      })
-      if (!res.ok) {
-        console.error('[store] 扫描失败:', await res.text())
-        return
-      }
-      const result = await res.json()
-
-      scanDirs.value = dirs
-      saveScanDirs()
-
-      // 从 DB 重新加载
-      await loadFromApi()
-    } catch (err) {
-      console.error('[store] 扫描出错:', err)
-    } finally {
-      isLoading.value = false
-    }
-  }
-
   const isScanning = ref(false)
   const scanProgress = ref({ current: 0, total: 0, path: '' })
   // 缩略图批次版本号：批次完成时 +1，列表里加载失败的封面据此重试并淡入
   const thumbVersion = ref(0)
   function bumpThumbVersion() { thumbVersion.value++ }
+  // 文件夹列表版本号：扫描结束后 +1，文件夹管理页据此重新拉取统计
+  const foldersVersion = ref(0)
   let _scanPollTimer = null
 
   /**
-   * 添加音乐文件夹并扫描
-   * 与「文件夹管理」页的添加按钮共用同一条路径：
-   * 选择目录 → 逐个 POST /api/folders（重复/失败给出提示）→ 全局扫描进度 → 完成后刷新
+   * 扫描进度轮询（全局唯一）：进度面板 + 结束后刷新文件夹列表、曲库与缩略图。
+   * 后端在队列未清空时保持 scanning=true，因此批量重扫只会在全部完成后收尾。
+   */
+  function startScanPolling() {
+    if (_scanPollTimer) return
+    isScanning.value = true
+    showScanNotify()
+    _scanPollTimer = setInterval(async () => {
+      try {
+        const res = await fetch(apiUrl('/api/folders/scan-progress'))
+        const p = await res.json()
+        scanProgress.value = p
+        const prefix = p.batch_total > 1 ? `文件夹 ${p.batch_index}/${p.batch_total} · ` : ''
+        updateScanNotify(p.current, p.total, p.path, prefix)
+        if (!p.scanning) {
+          clearInterval(_scanPollTimer)
+          _scanPollTimer = null
+          isScanning.value = false
+          await loadFoldersList()
+          await loadFromApi()
+          foldersVersion.value++
+          closeScanNotify(p, () => {})
+        }
+      } catch {}
+    }, 250)
+  }
+
+  /**
+   * 添加音乐文件夹并扫描（文件夹页 / 音乐库空态 / 首页共用同一条路径）
+   * 返回新增的文件夹数量；扫描进行中添加的目录会排在队尾等待
    */
   async function addFolders() {
     if (!window.electronAPI) {
       ElMessage.warning('请使用桌面版操作')
-      return
+      return 0
     }
     const dirs = await window.electronAPI.selectFolder()
-    if (!dirs || dirs.length === 0) return
+    if (!dirs || dirs.length === 0) return 0
 
     const FOLDERS_API = apiUrl('/api/folders')
     let added = 0
@@ -213,28 +215,15 @@ export const useLibraryStore = defineStore('library', () => {
         ElMessage.error(e.message || '添加失败')
       }
     }
-    if (!added) return
+    if (!added) return 0
 
-    // 扫描进度走全局进度面板（与文件夹管理页一致）
-    isScanning.value = true
-    showScanNotify()
-    if (_scanPollTimer) clearInterval(_scanPollTimer)
-    _scanPollTimer = setInterval(async () => {
-      try {
-        const res = await fetch(`${FOLDERS_API}/scan-progress`)
-        const p = await res.json()
-        scanProgress.value = p
-        if (p.total > 0) updateScanNotify(p.current, p.total, p.path)
-        if (!p.scanning) {
-          clearInterval(_scanPollTimer)
-          _scanPollTimer = null
-          isScanning.value = false
-          await loadFoldersList()
-          await loadFromApi()
-          closeScanNotify(p, () => {})
-        }
-      } catch {}
-    }, 250)
+    if (isScanning.value) {
+      // 已有扫描在跑：后端队列会串行处理新目录，不需要新的进度卡
+      ElMessage.info('已加入扫描队列，等待当前扫描完成后开始')
+    } else {
+      startScanPolling()
+    }
+    return added
   }
 
   async function loadFoldersList() {
@@ -248,9 +237,37 @@ export const useLibraryStore = defineStore('library', () => {
     } catch {}
   }
 
-  async function refreshLibrary() {
-    if (scanDirs.value.length > 0) {
-      await scanMusic(scanDirs.value)
+  /** 重新扫描单个文件夹（后台入队，异步执行） */
+  async function rescanFolder(id) {
+    try {
+      const res = await fetch(apiUrl(`/api/folders/${id}/rescan`), { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        ElMessage.error(data.error || '扫描失败')
+        return false
+      }
+      startScanPolling()
+      return true
+    } catch (e) {
+      ElMessage.error(e.message || '扫描失败')
+      return false
+    }
+  }
+
+  /** 重新扫描全部已添加文件夹（按添加顺序入队，串行执行） */
+  async function rescanAllFolders() {
+    try {
+      const res = await fetch(apiUrl('/api/folders/rescan-all'), { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        ElMessage.warning(data.error || '扫描启动失败')
+        return false
+      }
+      startScanPolling()
+      return true
+    } catch (e) {
+      ElMessage.error(e.message || '扫描启动失败')
+      return false
     }
   }
 
@@ -392,8 +409,8 @@ export const useLibraryStore = defineStore('library', () => {
     viewMode, filterGenre, filterArtist, sourceFilter,
     albums, artists, genres, filteredTracks, totalDuration,
     isScanning, scanProgress,
-    thumbVersion, bumpThumbVersion,
-    scanMusic, addFolders, refreshLibrary,
+    thumbVersion, bumpThumbVersion, foldersVersion,
+    addFolders, rescanFolder, rescanAllFolders,
     getTrackByPath, getAlbum, getArtist,
     loadFromApi, loadCloudSongs, setSourceFilter
   }

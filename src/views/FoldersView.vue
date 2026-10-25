@@ -2,9 +2,18 @@
   <div class="folders-view">
     <div class="folders-view__header">
       <h1>文件夹管理</h1>
-      <el-button type="primary" @click="handleAddFolder" :loading="adding" :disabled="!isElectron">
-        <el-icon><Plus /></el-icon> 添加文件夹
-      </el-button>
+      <div class="folders-view__actions">
+        <el-button
+          class="rescan-all-btn"
+          @click="handleRescanAll"
+          :disabled="folders.length === 0"
+        >
+          重新扫描全部
+        </el-button>
+        <el-button class="add-folder-btn" type="primary" @click="handleAddFolder" :loading="adding" :disabled="!isElectron">
+          <el-icon><Plus /></el-icon> 添加文件夹
+        </el-button>
+      </div>
     </div>
 
     <p v-if="!isElectron" class="tip">请使用桌面版管理音乐文件夹</p>
@@ -47,10 +56,18 @@
           </div>
         </div>
         <div class="folder-card__actions">
-          <el-button text circle size="small" @click="handleRescan(folder)" :loading="rescanning === folder.id" title="重新扫描">
+          <el-button text circle size="small" class="folder-rescan" @click="handleRescan(folder)" title="重新扫描">
             <el-icon><Refresh /></el-icon>
           </el-button>
-          <el-button text circle size="small" type="danger" @click="handleRemove(folder)" title="移除">
+          <el-button
+            text
+            circle
+            size="small"
+            type="danger"
+            @click="handleRemove(folder)"
+            :disabled="libraryStore.isScanning"
+            :title="libraryStore.isScanning ? '扫描中不可移除文件夹' : '移除'"
+          >
             <el-icon><Delete /></el-icon>
           </el-button>
         </div>
@@ -61,11 +78,10 @@
 
 <script setup>
 defineOptions({ name: 'FoldersView' })
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { useModal } from '@/composables/useModal'
 import { ElMessage } from '@/utils/toast'
-import { showScanNotify, updateScanNotify, closeScanNotify, clearScanNotify } from '@/utils/scanNotify'
 import { Plus, Refresh, Delete, FolderOpened, Loading } from '@element-plus/icons-vue'
 import { useScrollMemory } from '@/composables/useScrollMemory'
 
@@ -77,56 +93,10 @@ const isElectron = computed(() => !!window.electronAPI)
 const folders = ref([])
 const loading = ref(true)
 const adding = ref(false)
-const rescanning = ref(null)
-const scanning = ref(false)
-const scanCurrent = ref(0)
-const scanTotal = ref(0)
-const scanFile = ref('')
-const scanPercent = computed(() => scanTotal.value > 0 ? Math.round((scanCurrent.value / scanTotal.value) * 100) : 0)
-
-let _pollTimer = null
 
 useScrollMemory('folders', () => document.querySelector('.main-content'))
 
 const totalTracks = computed(() => folders.value.reduce((s, f) => s + f.trackCount, 0))
-
-function startPolling() {
-  scanning.value = true
-  if (_pollTimer) clearInterval(_pollTimer)
-  showScanNotify()
-
-  _pollTimer = setInterval(async () => {
-    try {
-      const res = await fetch(apiUrl('/api/folders/scan-progress'))
-      const p = await res.json()
-      scanCurrent.value = p.current
-      scanTotal.value = p.total
-      scanFile.value = p.path
-
-      if (p.total > 0) updateScanNotify(p.current, p.total, p.path)
-
-      if (!p.scanning) {
-        stopPolling()
-        rescanning.value = null
-        adding.value = false
-        closeScanNotify(p, async () => {
-          await loadFolders()
-          libraryStore.loadFromApi()
-        })
-      }
-    } catch { /* ignore */ }
-  }, 400)
-}
-
-function stopPolling() {
-  scanning.value = false
-  scanCurrent.value = 0
-  scanTotal.value = 0
-  scanFile.value = ''
-  if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null }
-}
-
-onBeforeUnmount(() => { stopPolling(); clearScanNotify() })
 
 function formatDuration(sec) {
   if (!sec || sec <= 0) return '0分钟'
@@ -162,19 +132,30 @@ async function handleRescan(folder) {
       message: `重新扫描 ${folder.path}？`,
       confirmText: '确认',
     })
-    rescanning.value = folder.id
-    const res = await fetch(apiUrl(`/api/folders/${folder.id}/rescan`), { method: 'POST' })
-    const data = await res.json()
-    if (!res.ok) { ElMessage.error(data.error); return }
-    startPolling()
+    await libraryStore.rescanFolder(folder.id)
   } catch (e) {
     if (e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '扫描失败')
-  } finally {
-    rescanning.value = null
+  }
+}
+
+async function handleRescanAll() {
+  try {
+    await modal.confirm({
+      title: '重新扫描全部',
+      message: `将按添加顺序依次重新扫描全部 ${folders.value.length} 个文件夹。`,
+      confirmText: '开始扫描',
+    })
+    await libraryStore.rescanAllFolders()
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '扫描启动失败')
   }
 }
 
 async function handleRemove(folder) {
+  if (libraryStore.isScanning) {
+    ElMessage.warning('扫描进行中，暂不可移除文件夹')
+    return
+  }
   try {
     await modal.confirm({
       title: '确认移除',
@@ -194,6 +175,9 @@ async function handleRemove(folder) {
 }
 
 onMounted(loadFolders)
+
+// 扫描结束后重新拉取文件夹统计（曲目数/时长）
+watch(() => libraryStore.foldersVersion, loadFolders)
 </script>
 
 <style scoped>
@@ -204,6 +188,22 @@ onMounted(loadFolders)
   margin-bottom: 28px;
 }
 .folders-view__header h1 { font-size: 28px; font-weight: 700; margin: 0; letter-spacing: -0.3px; }
+.folders-view__actions { display: flex; align-items: center; gap: 10px; }
+
+/* 「重新扫描全部」：描边按钮（与顶栏同规格）；与主操作同高保证一行对齐 */
+.rescan-all-btn {
+  --el-button-bg-color: transparent;
+  --el-button-border-color: var(--border-color);
+  --el-button-text-color: var(--text-secondary);
+  --el-button-hover-bg-color: var(--hover-bg-strong);
+  --el-button-hover-border-color: var(--border-color);
+  --el-button-hover-text-color: var(--text-primary);
+  --el-button-active-bg-color: var(--hover-bg-strong);
+  --el-button-active-border-color: var(--border-color);
+  height: 34px;
+  border-radius: 8px;
+}
+.add-folder-btn { height: 34px; border-radius: 8px; }
 
 .tip { font-size: 13px; color: var(--text-tertiary); margin: -16px 0 24px; }
 

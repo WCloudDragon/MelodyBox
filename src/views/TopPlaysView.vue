@@ -4,13 +4,8 @@
       title="播放次数"
       :count="filtered.length"
       :list-tracks="filtered"
-      show-sort
       :show-multi-select="true"
       :multi-select-active="multiSelectMode"
-      :sort-options="sortOptionsList"
-      :sort-key="sortKey"
-      :sort-order="sortOrder"
-      @sort="onSort"
       @toggle-multi-select="toggleSelectMode"
     >
       <el-button @click="refresh" :loading="loading">
@@ -138,16 +133,6 @@ const list = ref([])
 const loading = ref(false)
 const sortKey = ref('play_count')
 const sortOrder = ref('desc')
-const sortOptionsList = [
-  { label: '播放次数', value: 'play_count' },
-  { label: '歌名', value: 'title' },
-  { label: '歌手', value: 'artist' },
-  { label: '最近播放', value: 'last_played' }
-]
-function onSort({ key, order }) {
-  sortKey.value = key
-  sortOrder.value = order
-}
 
 function rankClass(index) {
   if (index === 0) return 'rank--gold'

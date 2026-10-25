@@ -4,13 +4,8 @@
       title="播放历史"
       :count="filtered.length"
       :list-tracks="filtered"
-      show-sort
       :show-multi-select="true"
       :multi-select-active="multiSelectMode"
-      :sort-options="sortOptionsList"
-      :sort-key="sortKey"
-      :sort-order="sortOrder"
-      @sort="onSort"
       @toggle-multi-select="toggleSelectMode"
     >
       <el-button @click="refresh" :loading="loading">
@@ -136,15 +131,6 @@ const list = ref([])
 const loading = ref(false)
 const sortKey = ref('played_at')
 const sortOrder = ref('desc')
-const sortOptionsList = [
-  { label: '播放时间', value: 'played_at' },
-  { label: '歌名', value: 'title' },
-  { label: '歌手', value: 'artist' }
-]
-function onSort({ key, order }) {
-  sortKey.value = key
-  sortOrder.value = order
-}
 
 function formatPlayedTime(raw) {
   if (!raw) return ''
