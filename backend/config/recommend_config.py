@@ -8,7 +8,7 @@ MelodyBox 推荐引擎统一配置
 # ==================== 向量版本 ====================
 # 模型或向量结构变化时 +1，旧版本向量会被标记为待重新生成
 TEXT_VECTOR_VERSION = 2
-AUDIO_VECTOR_VERSION = 2
+AUDIO_VECTOR_VERSION = 3
 
 # ==================== 用户画像 ====================
 PROFILE_VERSION = 1

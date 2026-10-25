@@ -722,8 +722,14 @@ _AUDIO_MODEL = None         # ONNX Runtime InferenceSession
 _AUDIO_MODEL_DIM = 768
 _AUDIO_MODEL_NAME = 'm-a-p/MERT-v1-95M'
 _AUDIO_SAMPLE_RATE = 24000  # MERT 输入采样率
-_AUDIO_CLIP_SECONDS = 5     # 只取 5 秒（30秒处，更代表歌曲主体）
-_AUDIO_OFFSET_SECONDS = 30  # 从第 30 秒开始取（跳过 intro）
+_AUDIO_CLIP_SECONDS = 4     # 每段取 4 秒
+# 取样中心按可播放时长的百分比分布：多点覆盖主歌/副歌/后段，避免只代表单个时间点
+_AUDIO_POSITION_SETS = {
+    1: (0.5,),
+    2: (0.25, 0.75),
+    3: (0.2, 0.5, 0.8),
+}
+_AUDIO_MAX_CLIPS = 3
 _AUDIO_ONNX_FILENAME = 'mert-v1-95m-audio.onnx'
 
 
@@ -766,27 +772,39 @@ def _get_audio_duration(file_path):
         return librosa.get_duration(path=file_path)
 
 
-def _load_audio_clip(file_path):
-    """
-    加载音频文件的指定片段，转为 24kHz 单声道 float32。
-    优先从第 30 秒处取 5 秒（代表歌曲主体），不足 35 秒的歌曲回退到开头。
-    返回 numpy array，失败返回 None。
-    """
+def _clip_offsets(duration):
+    """按百分比取样中心计算起点；短歌自动减少段数并尽量错开。"""
+    clip = _AUDIO_CLIP_SECONDS
+    if duration is None or duration <= 0:
+        return [0.0]
+    if duration <= clip:
+        return [0.0]
+    # 仅按可容纳的不重叠段数决定取样点（避免短歌强制取 3 段导致重叠）
+    n = min(_AUDIO_MAX_CLIPS, max(1, int(duration // clip)))
+    # 时长刚好容得下 n 段时，均匀铺满，避免中心点取样造成重叠
+    if n > 1 and duration <= n * clip + 1.0:
+        step = (duration - clip) / (n - 1)
+        return [round(i * step, 3) for i in range(n)]
+    centers = _AUDIO_POSITION_SETS[n]
+    offsets = []
+    for center in centers:
+        start = center * duration - clip / 2
+        start = max(0.0, min(duration - clip, start))
+        # 起点过近的段只保留一个（例如刚超过一段长度时）
+        if all(abs(start - s) > 0.1 for s in offsets):
+            offsets.append(round(start, 3))
+    return offsets or [0.0]
+
+
+def _load_audio_segment(file_path, offset, duration):
+    """加载指定片段并转为 24kHz 单声道 float32，失败返回 None。"""
     try:
         import librosa
-        # 先获取音频总时长
-        duration = _get_audio_duration(file_path)
-        # 决定 offset：优先 30 秒处，短歌曲回退到开头
-        if duration >= _AUDIO_OFFSET_SECONDS + _AUDIO_CLIP_SECONDS:
-            offset = _AUDIO_OFFSET_SECONDS
-        else:
-            offset = 0
-
         waveform, sr = librosa.load(
             file_path,
             sr=None,               # 保持原始采样率
             mono=True,             # 单声道
-            duration=_AUDIO_CLIP_SECONDS,
+            duration=duration,
             offset=offset,
             res_type='kaiser_fast'  # 快速重采样（比 kaiser_best 快 2-3 倍）
         )
@@ -795,14 +813,40 @@ def _load_audio_clip(file_path):
                 waveform, orig_sr=sr, target_sr=_AUDIO_SAMPLE_RATE
             )
         # 确保足够长度（不足则零填充，过长则截断）
-        target_samples = _AUDIO_SAMPLE_RATE * _AUDIO_CLIP_SECONDS
+        target_samples = _AUDIO_SAMPLE_RATE * duration
         if len(waveform) < target_samples:
             waveform = np.pad(waveform, (0, target_samples - len(waveform)))
         else:
             waveform = waveform[:target_samples]
         return waveform.astype(np.float32)
-    except Exception as e:
+    except Exception:
         return None
+
+
+def _load_audio_clips(file_path):
+    """加载一首歌的多个取样片段，返回 list[np.ndarray]（失败/无音频返回空列表）。"""
+    try:
+        duration = _get_audio_duration(file_path)
+    except Exception:
+        return []
+    clips = []
+    for offset in _clip_offsets(duration):
+        waveform = _load_audio_segment(file_path, offset, _AUDIO_CLIP_SECONDS)
+        if waveform is not None:
+            clips.append(waveform)
+    return clips
+
+
+def _average_audio_embeddings(embeddings):
+    """逐段 L2 归一化后取平均，再归一化（避免某段能量过大主导）。"""
+    if not embeddings:
+        return None
+    stack = np.stack(embeddings).astype(np.float32)
+    norms = np.linalg.norm(stack, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    mean = (stack / norms).mean(axis=0)
+    norm = np.linalg.norm(mean)
+    return mean / norm if norm > 0 else mean
 
 
 _pytorch_cache_cleaned = False  # 仅清理一次
@@ -1032,12 +1076,12 @@ def _init_audio_model():
 
 def encode_audio_batch(clips, batch_size=8, progress_callback=None):
     """
-    批量生成音频 embedding。
+    批量生成音频 embedding（每首歌取多段，归一化后平均）。
 
     Args:
         clips: list of (song_id, file_path) tuples
-        batch_size: 每批处理的歌曲数
-        progress_callback: callable(done, total) 进度回调
+        batch_size: 每批处理的歌曲数（每首歌内部再取多段）
+        progress_callback: callable(done, total) 进度回调（按歌曲计数）
 
     Returns:
         list of (song_id, embedding_numpy_array_or_None)
@@ -1046,25 +1090,24 @@ def encode_audio_batch(clips, batch_size=8, progress_callback=None):
     if model is None:
         return [(sid, None) for sid, _ in clips]
 
-    batch_size = max(1, min(batch_size, len(clips)))
-    results = []
     total = len(clips)
+    if total == 0:
+        return []
+    batch_size = max(1, min(batch_size, total))
+    results = []
 
     _audio_gpu_failed = False
 
     for offset in range(0, total, batch_size):
         batch = clips[offset:offset + batch_size]
 
-        # 加载音频波形
+        # 加载音频波形：一首歌可能对应多个取样片段
         waveforms = []
-        batch_ids = []
-        for song_id, file_path in batch:
-            waveform = _load_audio_clip(file_path)
-            if waveform is not None:
+        per_song_indices = {i: [] for i in range(len(batch))}
+        for i, (song_id, file_path) in enumerate(batch):
+            for waveform in _load_audio_clips(file_path):
+                per_song_indices[i].append(len(waveforms))
                 waveforms.append(waveform)
-                batch_ids.append(song_id)
-            else:
-                results.append((song_id, None))
 
         if waveforms:
             stacked = np.stack(waveforms, axis=0)
@@ -1091,21 +1134,33 @@ def encode_audio_batch(clips, batch_size=8, progress_callback=None):
                     raise
 
             embeddings = outputs[0]
-            for i, sid in enumerate(batch_ids):
-                emb = embeddings[i].astype(np.float32)
-                results.append((sid, emb))
+            for i, (song_id, _file_path) in enumerate(batch):
+                indices = per_song_indices.get(i) or []
+                if not indices:
+                    results.append((song_id, None))
+                    continue
+                clip_embs = [embeddings[j].astype(np.float32) for j in indices]
+                results.append((song_id, _average_audio_embeddings(clip_embs)))
                 # 逐首上报，前端轮询到就是最新完成数，不必等整批结束
                 if progress_callback:
                     progress_callback(min(offset + i + 1, total), total)
+        else:
+            for song_id, _file_path in batch:
+                results.append((song_id, None))
 
     return results
 
 
 def encode_single_audio(file_path):
-    """编码单首歌曲的音频，返回 numpy array 或 None"""
-    waveform = _load_audio_clip(file_path)
-    if waveform is None:
-        return None
+    """编码单首歌曲的音频（多段平均），返回 numpy array 或 None"""
     model = _get_audio_model()
-    outputs = model.run(None, {'input_values': waveform[np.newaxis, :]})
-    return outputs[0][0].astype(np.float32)
+    if model is None:
+        return None
+    song_clips = _load_audio_clips(file_path)
+    if not song_clips:
+        return None
+    stacked = np.stack(song_clips, axis=0)
+    outputs = model.run(None, {'input_values': stacked})
+    return _average_audio_embeddings(
+        [emb.astype(np.float32) for emb in outputs[0]]
+    )
