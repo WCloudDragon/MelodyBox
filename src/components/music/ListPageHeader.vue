@@ -2,7 +2,10 @@
   <div class="list-page-header" ref="headerEl" :class="{ 'fog-on': fogOn, 'title-follows-fog': fogTitle }">
     <!-- 返回按钮（下钻页）：置于标题左侧，标题随 flex 自然右移；顶层页不渲染保持现状 -->
     <button v-if="showBack" class="lph-btn lph-btn--back" title="返回" @click="onBack">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="20" y1="12" x2="4" y2="12"/>
+        <polyline points="8.5 16.5 4 12 8.5 7.5"/>
+      </svg>
     </button>
     <h1 class="list-page-header__title">{{ title }}</h1>
     <span v-if="count != null" class="list-page-header__count">{{ count }}</span>
@@ -24,12 +27,12 @@
     </button>
 
     <!-- 排序 -->
-    <button v-if="showSort" class="lph-btn" :class="{ active: sortOpen }" title="排序" @click.stop="sortOpen = !sortOpen">
+    <button v-if="showSort" class="lph-btn" :class="{ active: sortOpen }" title="排序" @click.stop="toggleSort($event)">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2v9H2l3 3 3-3H6V2H4zm8 0h-2v12h-2l3 3 3-3h-2V2z"/></svg>
     </button>
 
     <!-- 筛选 -->
-    <button v-if="showFilter" class="lph-btn" :class="{ active: filterOpen }" title="筛选" @click.stop="filterOpen = !filterOpen">
+    <button v-if="showFilter" class="lph-btn" :class="{ active: filterOpen }" title="筛选" @click.stop="toggleFilter($event)">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 2h14l-5.5 7v4.5L6.5 14V9L1 2z"/></svg>
     </button>
 
@@ -53,23 +56,27 @@
 
     <!-- 排序面板 -->
     <Transition name="lph-panel">
-      <div v-if="sortOpen" class="lph-panel" @click.stop>
+      <div v-if="sortOpen" class="lph-panel" :style="{ right: panelRight + 'px' }" @click.stop>
       <div class="lph-panel__title">排序</div>
-      <button v-for="opt in sortOptions" :key="opt.value" class="lph-panel__item" :class="{ active: sortKey === opt.value }" @click="chooseSort(opt.value)">
+      <button v-for="opt in sortOptions" :key="opt.value" class="lph-panel__item" v-ripple :class="{ active: sortKey === opt.value }" @click="chooseSort(opt.value)">
         <span>{{ opt.label }}</span>
         <span v-if="sortKey === opt.value" class="lph-panel__arrow">{{ sortOrder === 'asc' ? '↑' : '↓' }}</span>
       </button>
       <div class="lph-panel__divider"></div>
-        <div class="lph-panel__row">
-        <button class="lph-panel__item lph-panel__dir" :class="{ active: sortOrder === 'asc' }" @click="setSortOrder('asc')">升序</button>
-        <button class="lph-panel__item lph-panel__dir" :class="{ active: sortOrder === 'desc' }" @click="setSortOrder('desc')">降序</button>
-      </div>
+      <button class="lph-panel__item" v-ripple :class="{ active: sortOrder === 'asc' }" @click="setSortOrder('asc')">
+        <span>升序</span>
+        <span v-if="sortOrder === 'asc'" class="lph-panel__arrow">↑</span>
+      </button>
+      <button class="lph-panel__item" v-ripple :class="{ active: sortOrder === 'desc' }" @click="setSortOrder('desc')">
+        <span>降序</span>
+        <span v-if="sortOrder === 'desc'" class="lph-panel__arrow">↓</span>
+      </button>
     </div>
       </Transition>
 
     <!-- 筛选面板 -->
     <Transition name="lph-panel">
-      <div v-if="filterOpen" class="lph-panel lph-panel--filter" @click.stop>
+      <div v-if="filterOpen" class="lph-panel lph-panel--filter" :style="{ right: panelRight + 'px' }" @click.stop>
         <div v-for="group in filterGroups" :key="group.key" class="lph-panel__group">
           <div class="lph-panel__title">{{ group.label }}</div>
           <div class="lph-panel__options">
@@ -77,6 +84,7 @@
               v-for="opt in group.options"
               :key="opt.value"
               class="lph-panel__item lph-panel__opt"
+              v-ripple
               :class="{ active: filterValues[group.key] === opt.value }"
               @click="chooseFilter(group.key, opt.value)"
             >{{ opt.label }}</button>
@@ -194,6 +202,30 @@ watch(fogOn, (v) => {
 const sortOpen = ref(false)
 const filterOpen = ref(false)
 const modeMenu = ref({ visible: false, x: 0, y: 0 })
+
+// 排序/筛选浮层锚定到触发按钮右缘（absolute 相对页头 padding box），
+// 不再按「距右侧第几个按钮」写死偏移，按钮数量变化时也不会错位
+const panelRight = ref(58)
+
+function _anchorPanel(e) {
+  const header = headerEl.value
+  if (!header) return
+  const headerRect = header.getBoundingClientRect()
+  const btnRect = e.currentTarget.getBoundingClientRect()
+  panelRight.value = Math.max(8, Math.round(headerRect.right - btnRect.right))
+}
+
+function toggleSort(e) {
+  _anchorPanel(e)
+  filterOpen.value = false
+  sortOpen.value = !sortOpen.value
+}
+
+function toggleFilter(e) {
+  _anchorPanel(e)
+  sortOpen.value = false
+  filterOpen.value = !filterOpen.value
+}
 
 // 按钮短标签：注册表 label 去掉「播放」尾字（顺序播放→顺序）
 const playModeLabel = computed(() => {
@@ -411,24 +443,32 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border-color);
   font-size: 13px;
 }
-/* 返回按钮：标题左侧左箭头，交互语言与右侧操作按钮一致 */
+/* 返回按钮：纯箭头，无背景块；hover 仅让箭头提亮/变淡，不出现底色 */
 .lph-btn--back {
-  width: 34px;
+  width: 24px;
+  height: 24px;
+  margin-left: -2px;
   padding: 0;
   justify-content: center;
   color: var(--text-primary);
+  transition: color 0.2s;
+}
+.lph-btn--back:hover {
+  background: transparent;
+  color: var(--text-tertiary);
 }
 
 .lph-backdrop {
   position: fixed; inset: 0; z-index: 25;
 }
+/* 浮层：与全局右键菜单（.ctx-menu）同一规格——圆角 8、通栏条目、玻璃材质 */
 .lph-panel {
   position: absolute;
   top: calc(100% + 6px);
   right: 58px;
-  min-width: 170px;
-  padding: 8px;
-  border-radius: 12px;
+  min-width: 160px;
+  padding: 4px 0;
+  border-radius: 8px;
   background: var(--glass-bg-strong, rgba(30, 30, 38, 0.92));
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -462,26 +502,32 @@ onBeforeUnmount(() => {
   transform: scale(0.85);
 }
 .lph-panel--filter { min-width: 220px; right: 96px; }
-.lph-panel--filter .lph-panel__options { display: flex; flex-wrap: wrap; gap: 4px; }
-.lph-panel__title { font-size: 11px; color: var(--text-tertiary); padding: 4px 8px; }
+.lph-panel__group { padding: 2px 0 4px; }
+.lph-panel__group + .lph-panel__group { border-top: 1px solid var(--border-color); }
+.lph-panel__options { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 6px; }
+.lph-panel__title { font-size: 11px; color: var(--text-tertiary); padding: 6px 16px 2px; letter-spacing: 1px; }
 .lph-panel__item {
   display: flex;
   width: 100%;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 8px;
+  padding: 8px 16px;
   border: none;
-  border-radius: 8px;
+  border-radius: 0;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: 13px;
+  text-align: left;
   cursor: pointer;
 }
-.lph-panel__item:hover { background: var(--hover-bg-strong); color: var(--text-primary); }
+.lph-panel__item:hover { background: var(--hover-bg-strong); }
 .lph-panel__item.active { color: var(--accent-color); }
 .lph-panel__arrow { color: var(--accent-color); }
-.lph-panel__divider { height: 1px; background: var(--border-color); margin: 6px 4px; }
-.lph-panel__row { display: flex; gap: 6px; }
-.lph-panel__dir { justify-content: center; }
-.lph-panel__opt { width: auto; }
+.lph-panel__divider { height: 1px; background: var(--border-color); margin: 4px 0; }
+.lph-panel__opt {
+  width: auto; padding: 5px 10px; border-radius: 8px;
+  color: var(--text-secondary);
+}
+.lph-panel__opt:hover { background: var(--hover-bg-strong); }
+.lph-panel__opt.active { background: var(--accent-bg); color: var(--accent-color); }
 </style>

@@ -284,8 +284,9 @@ button, input, textarea, select, optgroup, option {
   --el-button-bg-color: var(--accent-color);
   --el-button-border-color: var(--accent-color);
   --el-button-text-color: #fff;
-  --el-button-hover-bg-color: #5558e6;
-  --el-button-hover-border-color: #5558e6;
+  /* hover 由主题色派生，跟随用户自定义主题色（此前写死靛蓝会跳色） */
+  --el-button-hover-bg-color: color-mix(in srgb, var(--accent-color) 88%, #fff);
+  --el-button-hover-border-color: color-mix(in srgb, var(--accent-color) 88%, #fff);
   --el-button-hover-text-color: #fff;
 }
 
@@ -303,6 +304,23 @@ button, input, textarea, select, optgroup, option {
 .el-button.is-text {
   --el-button-text-color: var(--text-secondary);
   --el-button-hover-text-color: var(--text-primary);
+}
+
+/* 顶栏内的 el-button 统一为"描边按钮"（与页面顶栏播放模式按钮同规格）：
+   透明底 + 1px 描边 + 圆角 8 + 高 34；仅图标时 34×34 */
+.list-page-header .el-button {
+  --el-button-bg-color: transparent;
+  --el-button-border-color: var(--border-color);
+  --el-button-text-color: var(--text-secondary);
+  --el-button-hover-bg-color: var(--hover-bg-strong);
+  --el-button-hover-border-color: var(--border-color);
+  --el-button-hover-text-color: var(--text-primary);
+  --el-button-active-bg-color: var(--hover-bg-strong);
+  --el-button-active-border-color: var(--border-color);
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 8px;
 }
 
 /* 输入框 */

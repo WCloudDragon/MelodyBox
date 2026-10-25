@@ -33,7 +33,7 @@
           </div>
           <svg class="menu-item__arrow" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
         </button>
-        <button class="menu-item" @click="page = 'desktopLyric'">
+        <button class="menu-item" v-ripple @click="page = 'desktopLyric'">
           <div class="menu-item__left">
             <span class="menu-item__icon" style="color: #a855f7">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -48,7 +48,7 @@
         </button>
       </div>
       <div class="menu-list">
-        <button class="menu-item" @click="page = 'system'">
+        <button class="menu-item" v-ripple @click="page = 'system'">
           <div class="menu-item__left">
             <span class="menu-item__icon" style="color: #94a3b8">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -100,7 +100,7 @@
       <div class="settings-group">
         <div class="settings-group__title">主题</div>
         <section class="settings-card">
-          <button class="setting-row setting-row--click" @click="openPick($event, THEME_OPTIONS, setTheme, settingsStore.theme)">
+          <button class="setting-row setting-row--click" v-ripple @click="openPick($event, THEME_OPTIONS, setTheme, settingsStore.theme)">
             <span class="setting-title">主题模式</span>
             <span class="setting-value setting-value--pick">
               {{ labelOf(THEME_OPTIONS, settingsStore.theme) }}
@@ -111,9 +111,9 @@
             <span class="setting-title">主题色</span>
             <el-color-picker v-model="settingsStore.accentColor" @change="settingsStore.saveSettings()" />
           </div>
-          <div class="setting-row">
+          <div class="setting-row setting-row--click" v-ripple @click="toggleSwitch('followSystemTheme')">
             <span class="setting-title">跟随系统主题色</span>
-            <el-switch v-model="settingsStore.followSystemTheme" @change="settingsStore.saveSettings()" />
+            <el-switch v-model="settingsStore.followSystemTheme" />
           </div>
         </section>
       </div>
@@ -188,25 +188,25 @@
       <div class="settings-group">
         <div class="settings-group__title">歌词动画</div>
         <section class="settings-card">
-          <div class="setting-row">
+          <div class="setting-row setting-row--click" v-ripple @click="toggleSwitch('enableDynamicBg')">
             <span class="setting-title">动态流光背景</span>
-            <el-switch v-model="settingsStore.enableDynamicBg" @change="settingsStore.saveSettings()" />
+            <el-switch v-model="settingsStore.enableDynamicBg" />
           </div>
-          <div class="setting-row">
+          <div class="setting-row setting-row--click" v-ripple @click="toggleSwitch('enableAudioRhythm')">
             <span class="setting-title">音频律动</span>
-            <el-switch v-model="settingsStore.enableAudioRhythm" @change="settingsStore.saveSettings()" />
+            <el-switch v-model="settingsStore.enableAudioRhythm" />
           </div>
-          <div class="setting-row">
+          <div class="setting-row setting-row--click" v-ripple @click="toggleSwitch('enableLyricsBlur')">
             <span class="setting-title">歌词行模糊</span>
-            <el-switch v-model="settingsStore.enableLyricsBlur" @change="settingsStore.saveSettings()" />
+            <el-switch v-model="settingsStore.enableLyricsBlur" />
           </div>
-          <div class="setting-row">
+          <div class="setting-row setting-row--click" v-ripple @click="toggleSwitch('enableDominoScroll')">
             <span class="setting-title">多米诺滚动动画</span>
-            <el-switch v-model="settingsStore.enableDominoScroll" @change="settingsStore.saveSettings()" />
+            <el-switch v-model="settingsStore.enableDominoScroll" />
           </div>
-          <div class="setting-row">
+          <div class="setting-row setting-row--click" v-ripple @click="toggleSwitch('enableWordLift')">
             <span class="setting-title">逐字上浮动画</span>
-            <el-switch v-model="settingsStore.enableWordLift" @change="settingsStore.saveSettings()" />
+            <el-switch v-model="settingsStore.enableWordLift" />
           </div>
           <div class="setting-row setting-row--slider">
             <div class="setting-row__head">
@@ -225,14 +225,14 @@
               @change="onFpsChange"
             />
           </div>
-          <button class="setting-row setting-row--click" @click="openPick($event, KARAOKE_OPTIONS, setKaraokeMode, settingsStore.lyricKaraokeMode)">
+          <button class="setting-row setting-row--click" v-ripple @click="openPick($event, KARAOKE_OPTIONS, setKaraokeMode, settingsStore.lyricKaraokeMode)">
             <span class="setting-title">卡拉OK模式</span>
             <span class="setting-value setting-value--pick">
               {{ labelOf(KARAOKE_OPTIONS, settingsStore.lyricKaraokeMode) }}
               <svg class="setting-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             </span>
           </button>
-          <button class="setting-row setting-row--click" @click="openPick($event, RHYTHM_FPS_OPTIONS, setRhythmFps, settingsStore.rhythmFps)">
+          <button class="setting-row setting-row--click" v-ripple @click="openPick($event, RHYTHM_FPS_OPTIONS, setRhythmFps, settingsStore.rhythmFps)">
             <span class="setting-title">律动响应帧率</span>
             <span class="setting-value setting-value--pick">
               {{ labelOf(RHYTHM_FPS_OPTIONS, settingsStore.rhythmFps) }}
@@ -245,7 +245,7 @@
       <div class="settings-group">
         <div class="settings-group__title">画质与性能</div>
         <section class="settings-card">
-          <button class="setting-row setting-row--click" @click="openPick($event, QUALITY_OPTIONS, setQualityPreset, settingsStore.qualityPreset)">
+          <button class="setting-row setting-row--click" v-ripple @click="openPick($event, QUALITY_OPTIONS, setQualityPreset, settingsStore.qualityPreset)">
             <span class="setting-title">画质档位</span>
             <span class="setting-value setting-value--pick">
               {{ labelOf(QUALITY_OPTIONS, settingsStore.qualityPreset) }}
@@ -256,12 +256,12 @@
             <span class="setting-title">屏幕刷新率</span>
             <div class="setting-row__tail">
               <span class="setting-value">{{ settingsStore.measuredRefresh }} Hz</span>
-              <el-button size="small" @click="redetectRefresh">重新检测</el-button>
+              <el-button size="small" v-ripple @click="redetectRefresh">重新检测</el-button>
             </div>
           </div>
           <div class="setting-row">
             <span class="setting-title">性能基准测试</span>
-            <el-button size="small" type="primary" :loading="perf.status === 'running'" @click="startBenchmark">
+            <el-button size="small" type="primary" v-ripple :loading="perf.status === 'running'" @click="startBenchmark">
               {{ perf.status === 'running' ? '测试中' : '运行测试' }}
             </el-button>
           </div>
@@ -273,7 +273,7 @@
             <span class="setting-value">平均 {{ perf.result.fps }} FPS · 长任务 {{ perf.result.longMs }} ms · 性能分 {{ perf.result.score }}</span>
             <div class="setting-row__tail">
               <span class="setting-value">推荐 {{ tierLabel(perf.result.tier) }}</span>
-              <el-button size="small" type="primary" @click="applyBenchmarkTier">应用</el-button>
+              <el-button size="small" type="primary" v-ripple @click="applyBenchmarkTier">应用</el-button>
             </div>
           </div>
           <div v-else-if="cachedBench" class="setting-row setting-row--stack">
@@ -325,7 +325,7 @@
               @change="settingsStore.saveSettings()"
             />
           </div>
-          <button class="setting-row setting-row--click" @click="openPick($event, VIEW_LINES_OPTIONS, setViewLines, settingsStore.desktopLyricsViewLines)">
+          <button class="setting-row setting-row--click" v-ripple @click="openPick($event, VIEW_LINES_OPTIONS, setViewLines, settingsStore.desktopLyricsViewLines)">
             <span class="setting-title">视口行数</span>
             <span class="setting-value setting-value--pick">
               {{ labelOf(VIEW_LINES_OPTIONS, settingsStore.desktopLyricsViewLines) }}
@@ -351,9 +351,9 @@
       <div class="settings-group">
         <div class="settings-group__title">音乐库</div>
         <section class="settings-card">
-          <div class="setting-row">
+          <div class="setting-row setting-row--click" v-ripple @click="toggleSwitch('autoScan')">
             <span class="setting-title">启动时自动扫描</span>
-            <el-switch v-model="settingsStore.autoScan" @change="settingsStore.saveSettings()" />
+            <el-switch v-model="settingsStore.autoScan" />
           </div>
         </section>
       </div>
@@ -369,9 +369,9 @@
             <span class="setting-title">模型缓存路径</span>
             <span class="setting-value model-path-text">{{ modelDirInput || '默认 · ' + modelDefaultPath }}</span>
             <div class="setting-row__tail">
-              <el-button size="small" @click="pickModelDir">选择文件夹</el-button>
-              <el-button v-if="modelDirInput" size="small" link type="danger" @click="modelDirInput = ''">清除</el-button>
-              <el-button size="small" type="primary" :loading="savingModelDir" @click="saveModelDir">保存</el-button>
+              <el-button size="small" v-ripple @click="pickModelDir">选择文件夹</el-button>
+              <el-button v-if="modelDirInput" size="small" link type="danger" v-ripple @click="modelDirInput = ''">清除</el-button>
+              <el-button size="small" type="primary" v-ripple :loading="savingModelDir" @click="saveModelDir">保存</el-button>
             </div>
             <span v-if="modelDirSaved" class="setting-value setting-value--success">
               {{ needRestart ? '已保存，下次启动生效' : '已保存' }}
@@ -411,11 +411,11 @@
       <div class="settings-group">
         <div class="settings-group__title">其他</div>
         <section class="settings-card">
-          <button class="setting-row setting-row--click" @click="page = 'licenses'">
+          <button class="setting-row setting-row--click" v-ripple @click="page = 'licenses'">
             <span class="setting-title">使用开源项目</span>
             <span class="setting-value">{{ licenseTotal }} 项 ›</span>
           </button>
-          <div class="setting-row">
+          <div class="setting-row setting-row--click" v-ripple @click="toggleSwitch('debugMode', false)">
             <span class="setting-title">调试模式</span>
             <el-switch v-model="settingsStore.debugMode" />
           </div>
@@ -555,6 +555,11 @@ function setViewLines(v) {
 function setQualityPreset(v) {
   settingsStore.qualityPreset = v
   onPresetChange(v)
+}
+// 开关类设置项：整行可点，点行即翻转（persist=false 用于仅前端生效的调试模式）
+function toggleSwitch(key, persist = true) {
+  settingsStore[key] = !settingsStore[key]
+  if (persist) settingsStore.saveSettings()
 }
 
 // ==================== 使用开源项目 ====================
@@ -767,7 +772,9 @@ useScrollMemory('settings', () => document.querySelector('.main-content'))
 .setting-row {
   display: flex; align-items: center; justify-content: space-between;
   width: 100%; height: 48px; gap: 16px; padding: 0 18px;
+  transition: background 0.15s ease;
 }
+.setting-row:hover { background: var(--hover-bg); }
 .setting-row--stack {
   height: auto; min-height: 48px; padding: 12px 18px;
   flex-direction: column; align-items: stretch; justify-content: center; gap: 10px;
@@ -781,12 +788,14 @@ useScrollMemory('settings', () => document.querySelector('.main-content'))
   text-align: left; cursor: pointer; transition: background 0.15s ease;
 }
 .setting-row--click:hover { background: var(--hover-bg-strong); }
+/* 开关交给整行处理，避免点开关时触发两次翻转 */
+.setting-row--click :deep(.el-switch) { pointer-events: none; }
 .setting-row__head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
 }
 .setting-row__tail { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
-.setting-title { font-size: 15px; font-weight: 500; color: var(--text-primary); }
+.setting-title { font-size: 15px; font-weight: 400; color: var(--text-primary); }
 .setting-value { font-size: 13px; color: var(--text-tertiary); }
 .setting-value--success { color: #22c55e; }
 

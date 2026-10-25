@@ -5,6 +5,9 @@
       :show-play-mode="false"
       show-back
       back-fallback="/artists"
+      :show-multi-select="true"
+      :multi-select-active="multiSelectMode"
+      @toggle-multi-select="toggleSelectMode"
       fog-title
     />
 
@@ -22,10 +25,6 @@
           <!-- 操作按钮在信息列内：靠左下贴底、横向排布 -->
           <div class="artist-header__actions">
             <el-button type="primary" @click="playAll">播放全部</el-button>
-            <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
-              <el-icon><Select /></el-icon>
-              {{ multiSelectMode ? '退出多选' : '多选' }}
-            </el-button>
           </div>
         </div>
       </div>

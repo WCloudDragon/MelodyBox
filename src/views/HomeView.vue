@@ -364,7 +364,7 @@ const recentAlbums = computed(() => libraryStore.albums.slice(0, 8))
 
 async function handleImport() {
   if (window.electronAPI) {
-    await libraryStore.selectAndScan()
+    await libraryStore.addFolders()
   } else {
     // 浏览器模式：提示
     alert('请使用 Electron 桌面版以获得完整功能。\n\n当前浏览器模式仅支持示例体验。')

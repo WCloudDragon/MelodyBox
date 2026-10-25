@@ -7,6 +7,8 @@ import {
   coverUrl,
   initAudioPort,
 } from '@/config/api'
+import { showScanNotify, updateScanNotify, closeScanNotify } from '@/utils/scanNotify'
+import { ElMessage } from '@/utils/toast'
 
 // 本地文件路径 → HTTP 音频流 URL（保留原导出名，内部也使用）
 export function pathToUrlSync(filePath) {
@@ -177,40 +179,59 @@ export const useLibraryStore = defineStore('library', () => {
   function bumpThumbVersion() { thumbVersion.value++ }
   let _scanPollTimer = null
 
-  async function selectAndScan() {
+  /**
+   * 添加音乐文件夹并扫描
+   * 与「文件夹管理」页的添加按钮共用同一条路径：
+   * 选择目录 → 逐个 POST /api/folders（重复/失败给出提示）→ 全局扫描进度 → 完成后刷新
+   */
+  async function addFolders() {
     if (!window.electronAPI) {
-      alert('请使用 Electron 桌面版打开本应用')
+      ElMessage.warning('请使用桌面版操作')
       return
     }
     const dirs = await window.electronAPI.selectFolder()
     if (!dirs || dirs.length === 0) return
 
     const FOLDERS_API = apiUrl('/api/folders')
-    isScanning.value = true
+    let added = 0
 
     for (const d of dirs) {
       try {
-        await fetch(FOLDERS_API, {
+        const res = await fetch(FOLDERS_API, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: d })
         })
-      } catch (e) { console.error('[store] 添加文件夹出错:', e) }
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          if (res.status === 409) ElMessage.warning('该文件夹已存在，跳过')
+          else ElMessage.error(data.error || '添加失败')
+          continue
+        }
+        added++
+      } catch (e) {
+        ElMessage.error(e.message || '添加失败')
+      }
     }
+    if (!added) return
 
-    // 轮询进度
+    // 扫描进度走全局进度面板（与文件夹管理页一致）
+    isScanning.value = true
+    showScanNotify()
     if (_scanPollTimer) clearInterval(_scanPollTimer)
     _scanPollTimer = setInterval(async () => {
       try {
         const res = await fetch(`${FOLDERS_API}/scan-progress`)
         const p = await res.json()
         scanProgress.value = p
+        if (p.total > 0) updateScanNotify(p.current, p.total, p.path)
         if (!p.scanning) {
           clearInterval(_scanPollTimer)
           _scanPollTimer = null
           isScanning.value = false
           await loadFoldersList()
           await loadFromApi()
+          closeScanNotify(p, () => {})
         }
       } catch {}
     }, 250)
@@ -372,7 +393,7 @@ export const useLibraryStore = defineStore('library', () => {
     albums, artists, genres, filteredTracks, totalDuration,
     isScanning, scanProgress,
     thumbVersion, bumpThumbVersion,
-    scanMusic, selectAndScan, refreshLibrary,
+    scanMusic, addFolders, refreshLibrary,
     getTrackByPath, getAlbum, getArtist,
     loadFromApi, loadCloudSongs, setSourceFilter
   }

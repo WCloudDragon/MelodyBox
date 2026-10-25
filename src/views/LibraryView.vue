@@ -17,9 +17,6 @@
       @filter="onFilter"
       @toggle-multi-select="toggleSelectMode"
     >
-      <el-button @click="handleImport" :loading="libraryStore.isScanning" v-if="isElectron">
-        <el-icon><FolderOpened /></el-icon>
-      </el-button>
       <el-button @click="libraryStore.refreshLibrary" :loading="libraryStore.isLoading" v-if="isElectron && libraryStore.scanDirs.length > 0">
         <el-icon><Refresh /></el-icon>
       </el-button>
@@ -278,7 +275,7 @@ const detailVisible = ref(false)
 const detailTrack = ref(null)
 
 function handleImport() {
-  libraryStore.selectAndScan()
+  libraryStore.addFolders()
 }
 
 function toggleSortOrder() {

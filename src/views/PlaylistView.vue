@@ -5,6 +5,9 @@
       :show-play-mode="false"
       show-back
       back-fallback="/library"
+      :show-multi-select="true"
+      :multi-select-active="multiSelectMode"
+      @toggle-multi-select="toggleSelectMode"
       fog-title
     />
 
@@ -24,10 +27,6 @@
           <div class="playlist-actions">
             <el-button type="primary" @click="playAll" :disabled="playlist.tracks.length === 0">
               播放全部
-            </el-button>
-            <el-button @click="toggleSelectMode" :type="multiSelectMode ? 'primary' : 'default'">
-              <el-icon><Select /></el-icon>
-              {{ multiSelectMode ? '退出多选' : '多选' }}
             </el-button>
             <!-- 系统歌单（我的收藏）不可重命名/删除 -->
             <template v-if="!playlistStore.isSystemPlaylist(playlist.id)">

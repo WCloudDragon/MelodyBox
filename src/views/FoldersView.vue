@@ -146,38 +146,10 @@ async function loadFolders() {
 }
 
 async function handleAddFolder() {
-  if (!window.electronAPI) {
-    ElMessage.warning('请使用桌面版操作')
-    return
-  }
+  adding.value = true
   try {
-    const dirs = await window.electronAPI.selectFolder()
-    if (!dirs || dirs.length === 0) return
-
-    adding.value = true
-    let anyAdded = false
-    for (const d of dirs) {
-      const res = await fetch(apiUrl('/api/folders'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: d })
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        if (res.status === 409) {
-          ElMessage.warning('该文件夹已存在，跳过')
-        } else {
-          ElMessage.error(data.error || '添加失败')
-        }
-        continue
-      }
-      anyAdded = true
-    }
-    if (anyAdded) {
-      startPolling()
-    }
-  } catch (e) {
-    ElMessage.error(e.message || '操作失败')
+    // 与音乐库空态共用同一条添加路径（选择目录 → 入库 → 全局扫描进度）
+    await libraryStore.addFolders()
   } finally {
     adding.value = false
   }
