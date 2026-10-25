@@ -19,7 +19,6 @@ D:\flask_env\Scripts\pyinstaller.exe --onedir --name melodybox-api ^
 
 if errorlevel 1 (
   echo 打包失败!
-  pause
   exit /b 1
 )
 
@@ -44,5 +43,3 @@ echo   2. npm run electron:build  - 完整打包
 echo.
 echo 开发模式一键启动:
 echo   npm run dev:all
-echo.
-pause
