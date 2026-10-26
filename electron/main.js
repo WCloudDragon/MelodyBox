@@ -34,6 +34,8 @@ function getDevServerUrl() {
 // ==================== Flask 后端管理 ====================
 
 let flaskProcess = null
+let flaskStopping = false
+let flaskRestarts = 0
 
 function getFlaskPath() {
   // app.isPackaged 是 Electron 官方 API，打包后为 true，开发模式为 false
@@ -51,6 +53,7 @@ function startFlask() {
     console.error('[flask] 未找到 Flask 可执行文件:', flaskPath)
     return Promise.resolve()
   }
+  flaskStopping = false
 
   const internalDir = path.join(path.dirname(flaskPath), '_internal')
   // 后端日志落盘：打包版无控制台，stdout/stderr 必须写文件才能排查启动/扫描问题
@@ -85,6 +88,18 @@ function startFlask() {
     try { logStream.end() } catch {}
     logStream = null
     flaskProcess = null
+    // 异常退出自动重启（如模型卸载时的原生崩溃 0xC0000005）：
+    // 向量已分批入库，重启后状态端点回到空闲，前端横幅自行消失
+    if (!flaskStopping) {
+      if (flaskRestarts < 10) {
+        flaskRestarts += 1
+        const delay = Math.min(2000 * flaskRestarts, 10000)
+        writeLog(`[flask] unexpected exit, restarting in ${delay}ms (attempt ${flaskRestarts})\n`)
+        setTimeout(() => { startFlask().catch(() => {}) }, delay)
+      } else {
+        writeLog('[flask] restart limit reached, giving up\n')
+      }
+    }
   })
 
   // 等待 Flask 就绪
@@ -92,6 +107,7 @@ function startFlask() {
     const check = () => {
       const req = http.get(FLASK_HEALTH_URL, (res) => {
         if (res.statusCode === 200) {
+          flaskRestarts = 0
           resolve()
         } else {
           setTimeout(check, 500)
@@ -105,6 +121,7 @@ function startFlask() {
 }
 
 function stopFlask() {
+  flaskStopping = true
   if (flaskProcess) {
     if (process.platform === 'win32') {
       spawn('taskkill', ['/pid', String(flaskProcess.pid), '/f', '/t'])

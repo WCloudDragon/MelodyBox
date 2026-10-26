@@ -470,16 +470,21 @@ def _run_generation(flask_app, pending_songs, audio_pending, include_audio=True)
                     db.close()
         except Exception:
             pass
-        finally:
+
+        def _unload_safely():
             try:
                 from services.embedding import unload_models
                 unload_models()
             except Exception:
                 pass
-            # 情绪分数与模型释放都完成，才认为整个生成流程结束
-            set_generation_active(False)
-            with _generation_guard:
-                _generation_running = False
+
+        # 先结束生成态（前端横幅即刻解锁），模型释放放后台线程：
+        # 卸载 ONNX/DirectML 会话偶发原生崩溃（0xC0000005），不能卡住收尾流程；
+        # 即使 Flask 被带崩，Electron 会自动重启，向量已在库中，用户无感
+        set_generation_active(False)
+        with _generation_guard:
+            _generation_running = False
+        threading.Thread(target=_unload_safely, daemon=True).start()
 
         # 画像只用库里的向量，不需要模型，异步执行
         def _profile():

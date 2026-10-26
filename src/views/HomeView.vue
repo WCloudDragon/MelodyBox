@@ -438,8 +438,13 @@ const e5DisplayText = computed(() => {
   if (dl && (dl.status === 'downloading' || dl.status === 'checking' || dl.status === 'preparing' || dl.status === 'retrying'))
     return dl.message || ''
   if (dl && dl.status === 'error') return dl.message || '文本分析模型加载失败'
-  if (dl && dl.status === 'completed' && !aiStore.embeddingStatus.text_processing)
+  if (dl && dl.status === 'completed' && !aiStore.embeddingStatus.text_processing) {
+    const st = aiStore.embeddingStatus
+    // 文本已全部编码完成（本轮或上一轮），显示已完成；否则仍在加载引擎
+    if (st.text_done === st.text_total && st.text_total > 0)
+      return '✅ 已完成'
     return '正在加载文本分析引擎...'
+  }
   const base = textStatusText.value
   const eta = formatEta(aiStore.embeddingStatus.text_eta_sec)
   return eta ? `${base} · ${eta}` : base
