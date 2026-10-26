@@ -83,6 +83,22 @@
         <p class="card__hint">购买为模拟支付，用于演示会员权益与到期降级流程</p>
       </section>
 
+      <!-- 管理后台（仅管理员可见） -->
+      <section v-if="auth.isAdmin" class="card">
+        <h3 class="card__title">管理后台</h3>
+        <div class="info-grid">
+          <div class="info-row info-row--action">
+            <div class="info-row__text">
+              <span class="info-row__label">进入管理后台</span>
+              <span class="info-row__hint">云端曲库上架与管理 · 会员套餐与订单管理</span>
+            </div>
+            <button class="action-btn action-btn--primary" v-ripple @click="$router.push('/admin')">
+              进入
+            </button>
+          </div>
+        </div>
+      </section>
+
       <!-- 账户安全 -->
       <section class="card">
         <h3 class="card__title">账户安全</h3>

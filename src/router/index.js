@@ -80,6 +80,12 @@ const routes = [
     meta: { title: '用户中心', requiresAuth: true }
   },
   {
+    path: '/admin',
+    name: 'admin',
+    component: () => import('@/views/AdminView.vue'),
+    meta: { title: '管理后台', requiresAuth: true, requiresAdmin: true }
+  },
+  {
     path: '/folders',
     name: 'folders',
     component: () => import('@/views/FoldersView.vue'),
