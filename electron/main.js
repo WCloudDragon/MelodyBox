@@ -894,25 +894,85 @@ ipcMain.handle('shell:openExternal', (_event, rawUrl) => {
 app.whenReady().then(async () => {
   // 注册 thumb:// 协议 — 绕过 Flask，Chromium 直接读本地缩略图
   const THUMBS_BASE = path.join(DATA_DIR, 'thumbs')
+  const COVERS_BASE = path.join(DATA_DIR, 'covers')
+  const _thumbBuilding = new Set()
+
+  function _mimeOf(fp) {
+    const ext = path.extname(fp).toLowerCase()
+    return ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
+  }
+
+  function _serveImage(fp, immutable) {
+    return new Response(fs.readFileSync(fp), {
+      headers: {
+        'Content-Type': _mimeOf(fp),
+        'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'public, max-age=300',
+        'Access-Control-Allow-Origin': '*'
+      }
+    })
+  }
+
+  // 用 Electron 内置 nativeImage 补生成缩略图（零额外依赖）
+  function _writeThumb(srcPath, dstPath, size) {
+    const { nativeImage } = require('electron')
+    const img = nativeImage.createFromPath(srcPath)
+    if (img.isEmpty()) return
+    const ext = path.extname(dstPath).toLowerCase()
+    const { width, height } = img.getSize()
+    if (!width || !height) return
+    const scale = Math.min(size / width, size / height)
+    const tmp = dstPath + '.tmp'
+    fs.mkdirSync(path.dirname(dstPath), { recursive: true })
+    // 原图比目标尺寸小、或 webp（nativeImage 无法编码 webp）→ 直接复制原图
+    if (scale >= 1 || ext === '.webp') {
+      fs.copyFileSync(srcPath, tmp)
+    } else {
+      const out = img.resize({
+        width: Math.max(1, Math.round(width * scale)),
+        height: Math.max(1, Math.round(height * scale)),
+        quality: 'good'
+      })
+      fs.writeFileSync(tmp, ext === '.png' ? out.toPNG() : out.toJPEG(82))
+    }
+    fs.renameSync(tmp, dstPath)
+  }
+
+  function _scheduleThumbBuild(srcPath, dstPath, size) {
+    if (_thumbBuilding.has(dstPath)) return
+    _thumbBuilding.add(dstPath)
+    setImmediate(() => {
+      try {
+        _writeThumb(srcPath, dstPath, size)
+      } catch {
+        // 生成失败不影响本次请求（已回退原图）
+      } finally {
+        _thumbBuilding.delete(dstPath)
+      }
+    })
+  }
+
   protocol.handle('thumb', (request) => {
     try {
       const u = new URL(request.url)
       const size = u.hostname
-      const filename = u.pathname.slice(1)
+      let filename = ''
+      try {
+        filename = decodeURIComponent(u.pathname.slice(1))
+      } catch {
+        return new Response('', { status: 400 })
+      }
       if (!/^\d+$/.test(size) || /[/\\]/.test(filename) || filename === '') {
         return new Response('', { status: 400 })
       }
       const fp = path.join(THUMBS_BASE, size, filename)
-      if (!fs.existsSync(fp)) return new Response('', { status: 404 })
-      const ext = path.extname(fp).toLowerCase()
-      const mime = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
-      return new Response(fs.readFileSync(fp), {
-        headers: {
-          'Content-Type': mime,
-          'Cache-Control': 'public, max-age=31536000, immutable',
-          'Access-Control-Allow-Origin': '*'
-        }
-      })
+      if (fs.existsSync(fp)) return _serveImage(fp, true)
+
+      // 缩略图缺失（首次访问 / thumbs 被清理）：回退 covers 原图先保证画面，
+      // 同时后台补生成该尺寸缩略图，下次请求即命中。
+      const original = path.join(COVERS_BASE, filename)
+      if (!fs.existsSync(original)) return new Response('', { status: 404 })
+      _scheduleThumbBuild(original, fp, Number(size))
+      return _serveImage(original, false)
     } catch {
       return new Response('', { status: 500 })
     }
