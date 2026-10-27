@@ -813,7 +813,17 @@ def get_recommend_previews():
                 return pick
             cover = pick['cover']
             if cover in used_covers:
-                return None
+                # 候选封面已被其他卡片占用（如同歌手同专辑）：换 DB 保底
+                # 再挑一首不同封面的；仍重复则宁可重复也不留空白占位符
+                try:
+                    db = get_db()
+                    alt = _pick_cover_fallback(db, mode, mood_key)
+                    db.close()
+                except Exception:
+                    alt = None
+                if alt and alt.get('cover') and alt['cover'] not in used_covers:
+                    used_covers.add(alt['cover'])
+                    return alt
             used_covers.add(cover)
             return pick
 

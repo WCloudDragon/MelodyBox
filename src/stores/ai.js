@@ -315,8 +315,9 @@ export const useAiStore = defineStore('ai', () => {
     _embeddingPollTimer = setInterval(async () => {
       await loadEmbeddingStatus()
       const st = embeddingStatus.value
-      // 生成流程包含“情绪分数计算 + 模型释放”，generating 仍为 true 时继续轮询
-      if (st.pending === 0 && !st.audio_processing && !st.generating) {
+      // 生成流程包含"情绪分数计算 + 模型释放"，generating 仍为 true 时继续轮询；
+      // text_processing 也必须纳入判断，否则文本线程收尾期会被误判为已完成而提前停止轮询
+      if (st.pending === 0 && !st.text_processing && !st.audio_processing && !st.generating) {
         clearInterval(_embeddingPollTimer)
         _embeddingPollTimer = null
         if (onDone) onDone()

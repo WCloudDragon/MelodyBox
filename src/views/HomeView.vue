@@ -757,6 +757,23 @@ const isGeneratingVectors = computed(() =>
 )
 const showRecCards = computed(() => hasVectors.value && !isGeneratingVectors.value)
 
+// 后端空闲态（与是否正在生成本地标志无关）
+const statusIdle = computed(() => {
+  const st = aiStore.embeddingStatus
+  return (st.pending || 0) === 0 && !st.text_processing && !st.audio_processing && !st.generating
+})
+
+// 自愈：轮询是单实例的，切换页面时 onActivated 新建轮询会顶掉带复位回调的旧轮询，
+// 导致 generatingEmbeddings 永久为 true（横幅常驻 ✅已完成、推荐卡永久隐藏）。
+// 因此只要后端回到空闲态，就强制复位本地标志并刷新推荐数据。
+watch(statusIdle, (idle) => {
+  if (!idle || !generatingEmbeddings.value) return
+  generatingEmbeddings.value = false
+  aiStore.stopPolls()
+  aiStore.loadRecommendations()
+  aiStore.loadPreviews(true)
+})
+
 // 骨架 → 真实卡片时播放一次性入场动画：动画结束后移除类，
 // 避免 keep-alive 切回首页时 DOM 重挂导致动画重播
 const cardsRevealed = ref(false)
@@ -919,6 +936,7 @@ onActivated(async () => {
   // 自动补齐正在后台跑：启动 1 秒轮询，保证进度与剩余时间可见
   if (aiStore.embeddingStatus.text_processing || aiStore.embeddingStatus.audio_processing || aiStore.embeddingStatus.generating) {
     aiStore.pollEmbeddingStatus(1000, async () => {
+      generatingEmbeddings.value = false
       await aiStore.loadEmbeddingStatus()
       await aiStore.loadRecommendations()
       aiStore.loadPreviews(true)
