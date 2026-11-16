@@ -90,10 +90,96 @@
           </div>
       </div>
 
-      <!-- 右侧：音量按钮 + 弹出面板（hover 可见） -->
+      <!-- 右侧：更多设置 + 音量按钮 + 弹出面板（hover 可见） -->
       <div class="player-bar__right">
+        <!-- 更多：播放界面设置（右键菜单同款材质与动画，多列布局） -->
+        <div class="more-area" ref="moreAreaRef">
+          <button class="ctrl-btn" :class="{ active: showMore }" v-ripple @click="toggleMore"
+                  :title="showMore ? '收起播放界面设置' : '播放界面设置'">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M4 6.5h8v1.8H4V6.5zm12 0h4v1.8h-4V6.5zM4 11.1h4v1.8H4v-1.8zm8 0h8v1.8h-8v-1.8zM4 15.7h10v1.8H4v-1.8zm14 0h2v1.8h-2v-1.8z"/>
+              <circle cx="14" cy="7.4" r="2.1"/><circle cx="10" cy="12" r="2.1"/><circle cx="16" cy="16.6" r="2.1"/>
+            </svg>
+          </button>
+
+          <transition name="ctx-menu-blur">
+            <div v-if="showMore" class="more-pop" @click.stop>
+              <div class="more-pop__head">
+                <span class="more-pop__title">播放界面</span>
+                <span class="more-pop__hint">改动即时生效</span>
+              </div>
+
+              <div class="more-pop__grid">
+                <!-- 歌词排版 -->
+                <section class="more-group">
+                  <h4 class="more-group__title">歌词排版</h4>
+                  <div class="more-item">
+                    <div class="more-item__head"><span>歌词字号</span><em>{{ settingsStore.lyricsFontSize }} px</em></div>
+                    <el-slider v-model="settingsStore.lyricsFontSize" :min="12" :max="60" :step="1" size="small" @change="saveNow" />
+                  </div>
+                  <div class="more-item">
+                    <div class="more-item__head"><span>歌词字重</span><em>{{ settingsStore.lyricsFontWeight }}</em></div>
+                    <el-slider v-model="settingsStore.lyricsFontWeight" :min="250" :max="900" :step="50" size="small" @change="saveNow" />
+                  </div>
+                  <div class="more-item">
+                    <div class="more-item__head"><span>翻译词比例</span><em>{{ settingsStore.lyricsTransScale }}%</em></div>
+                    <el-slider v-model="settingsStore.lyricsTransScale" :min="50" :max="100" :step="5" size="small" @change="saveNow" />
+                  </div>
+                  <div class="more-item">
+                    <div class="more-item__head"><span>活跃行放大</span><em>{{ settingsStore.lyricsActiveScale }}%</em></div>
+                    <el-slider v-model="settingsStore.lyricsActiveScale" :min="100" :max="130" :step="5" size="small" @change="saveNow" />
+                  </div>
+                </section>
+
+                <!-- 歌词动画 -->
+                <section class="more-group">
+                  <h4 class="more-group__title">歌词动画</h4>
+                  <label class="more-switch">
+                    <span>逐字上浮</span>
+                    <el-switch v-model="settingsStore.enableWordLift" size="small" @change="saveNow" />
+                  </label>
+                  <label class="more-switch">
+                    <span>多米诺滚动</span>
+                    <el-switch v-model="settingsStore.enableDominoScroll" size="small" @change="saveNow" />
+                  </label>
+                  <label class="more-switch">
+                    <span>歌词行模糊</span>
+                    <el-switch v-model="settingsStore.enableLyricsBlur" size="small" @change="saveNow" />
+                  </label>
+                  <label class="more-switch">
+                    <span>动态流光背景</span>
+                    <el-switch v-model="settingsStore.enableDynamicBg" size="small" @change="saveNow" />
+                  </label>
+                  <label class="more-switch">
+                    <span>音频律动</span>
+                    <el-switch v-model="settingsStore.enableAudioRhythm" size="small" @change="saveNow" />
+                  </label>
+                </section>
+
+                <!-- 显示与画质 -->
+                <section class="more-group">
+                  <h4 class="more-group__title">显示与画质</h4>
+                  <label class="more-switch more-switch--accent">
+                    <span>显示翻译行</span>
+                    <el-switch v-model="settingsStore.showLyricsTranslation" size="small" @change="saveNow" />
+                  </label>
+                  <div class="more-item">
+                    <div class="more-item__head"><span>画质档位</span></div>
+                    <div class="more-chips">
+                      <button v-for="q in qualityOptions" :key="q.value" class="more-chip"
+                              :class="{ active: settingsStore.qualityPreset === q.value }"
+                              @click="setQuality(q.value)">{{ q.label }}</button>
+                    </div>
+                  </div>
+                  <button class="more-reset" @click="resetLyrics">恢复歌词默认</button>
+                </section>
+              </div>
+            </div>
+          </transition>
+        </div>
+
         <div class="volume-area">
-            <div class="volume-btn" v-ripple @click="showVolumePop = !showVolumePop" @wheel.prevent="onVolumeWheel" ref="volumeBtnRef" title="滚轮调节音量">
+            <div class="volume-btn" v-ripple @click="toggleVolumePop" @wheel.prevent="onVolumeWheel" ref="volumeBtnRef" title="滚轮调节音量">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                 <template v-if="isMuted || volume === 0">
                   <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0014 8.5v7a4.47 4.47 0 002.5-3.5zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
@@ -147,6 +233,7 @@ import { ref, computed, inject, watch, nextTick, onMounted, onBeforeUnmount } fr
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { usePlayerStore, PLAY_MODES } from '@/stores/player'
+import { useSettingsStore } from '@/stores/settings'
 import { formatDuration } from '@/utils/format'
 import QueuePanel from '@/components/player/QueuePanel.vue'
 import ContextMenu from '@/components/music/ContextMenu.vue'
@@ -161,6 +248,7 @@ const props = defineProps({
 })
 const toggleNowPlaying = inject('toggleNowPlaying')
 const player = usePlayerStore()
+const settingsStore = useSettingsStore()
 const router = useRouter()
 const { currentTrack, isPlaying, currentTime, duration, volume, isMuted,
         playMode, progress, bufferedPercent, queue, hasNext, hasPrev, showDesktopLyrics, songChangeDirection } = storeToRefs(player)
@@ -205,6 +293,58 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', updateCenterShift)
 })
 const showVolumePop = ref(false)
+
+// ==================== 更多：播放界面设置面板 ====================
+const showMore = ref(false)
+const moreAreaRef = ref(null)
+const qualityOptions = [
+  { value: 'high', label: '高' },
+  { value: 'medium', label: '中' },
+  { value: 'low', label: '低' }
+]
+
+function saveNow() {
+  settingsStore.saveSettings()
+}
+
+function toggleMore() {
+  showMore.value = !showMore.value
+  if (showMore.value) showVolumePop.value = false
+}
+
+function toggleVolumePop() {
+  showVolumePop.value = !showVolumePop.value
+  if (showVolumePop.value) showMore.value = false
+}
+
+function setQuality(preset) {
+  settingsStore.applyQualityPreset(preset)
+}
+
+function resetLyrics() {
+  settingsStore.resetLyricsDefaults()
+}
+
+// 其它浮层打开时收起本面板，避免两层浮层叠在一起
+watch(showQueue, (open) => { if (open) showMore.value = false })
+watch(() => props.panelOpen, (open) => { if (open) showMore.value = false })
+
+// 点击面板外部收起；Esc 同样收起
+function onMoreOutside(e) {
+  if (!showMore.value) return
+  if (moreAreaRef.value && !moreAreaRef.value.contains(e.target)) showMore.value = false
+}
+function onMoreEsc(e) {
+  if (e.key === 'Escape' && showMore.value) showMore.value = false
+}
+onMounted(() => {
+  document.addEventListener('mousedown', onMoreOutside)
+  document.addEventListener('keydown', onMoreEsc)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', onMoreOutside)
+  document.removeEventListener('keydown', onMoreEsc)
+})
 const progressRef = ref(null)
 const volumeRef = ref(null)
 const volumeBtnRef = ref(null)
@@ -602,6 +742,143 @@ function onVolumeWheel(e) {
   display: flex;
   align-items: center;
   position: relative;
+}
+
+/* ===== 更多：播放界面设置面板 =====
+   与右键菜单/音量面板同一套液态玻璃材质与弹性入场动画，
+   但尺寸放大为多列设置面板，锚点固定在右下（向上展开） */
+.more-area {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+.more-pop {
+  position: absolute;
+  right: 0;
+  bottom: 58px;
+  width: 668px;
+  max-width: calc(100vw - 64px);
+  padding: 14px 18px 14px;
+  background: var(--glass-bg-strong, rgba(30, 30, 38, 0.92));
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+  transform-origin: bottom right;
+  z-index: 90;
+}
+.more-pop__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 2px 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+.more-pop__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.3px;
+}
+.more-pop__hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.more-pop__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.more-group {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+.more-group + .more-group {
+  border-left: 1px solid var(--border-color);
+  padding-left: 18px;
+}
+.more-group__title {
+  margin: 0 0 1px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  color: var(--text-tertiary);
+}
+.more-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.more-item__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.more-item__head em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.more-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: default;
+}
+.more-switch--accent span { color: var(--accent-color); }
+.more-chips {
+  display: flex;
+  gap: 6px;
+  margin-top: 3px;
+}
+.more-chip {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+}
+.more-chip:hover { background: var(--hover-bg-strong); color: var(--text-primary); }
+.more-chip.active {
+  border-color: var(--accent-color);
+  background: var(--accent-bg);
+  color: var(--accent-color);
+}
+.more-reset {
+  margin-top: auto;
+  padding: 6px 0;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px dashed var(--border-color);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.more-reset:hover { color: var(--text-secondary); border-color: var(--text-tertiary); }
+
+/* 面板内 Element Plus 控件压缩到设置面板的密度 */
+.more-pop :deep(.el-slider) {
+  --el-slider-height: 4px;
+  --el-slider-button-size: 12px;
+  margin: 0;
+}
+.more-pop :deep(.el-switch) {
+  flex: none;
 }
 
 /* 音量按钮 */

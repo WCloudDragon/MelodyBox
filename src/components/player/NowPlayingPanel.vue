@@ -101,7 +101,7 @@
                       </span>
                     </p>
                     <p v-else class="lyric-line__original">{{ line.original }}</p>
-                    <p v-if="line.translation" class="lyric-line__translation">{{ line.translation }}</p>
+                    <p v-if="line.translation && settings.showLyricsTranslation" class="lyric-line__translation">{{ line.translation }}</p>
                   </div>
                 </div>
                 <!-- 句中空区：三点插在刚结束的上一行之后（上一行保留显示） -->

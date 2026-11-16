@@ -45,7 +45,7 @@
                 </p>
                   <!-- 普通行 / 活跃但无逐字数据 -->
                   <p v-else class="dl-line__original"><span class="dl-line__text">{{ line.original }}</span></p>
-                  <p v-if="line.translation" class="dl-line__translation"><span class="dl-line__text">{{ line.translation }}</span></p>
+                  <p v-if="line.translation && desktopSettings.showTranslation !== false" class="dl-line__translation"><span class="dl-line__text">{{ line.translation }}</span></p>
                   <!-- 常驻注释槽：活跃块内预留，有对白/注释时淡入 -->
                   <p v-if="index === currentLineIndex" class="dl-line__annotation">
                     <template v-for="(ol, oi) in overlap" :key="oi">
@@ -88,7 +88,7 @@ import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 const parsedLyrics = ref([])
 const currentLineIndex = ref(-1)
 const overlap = ref([])
-const desktopSettings = ref({ fontSize: 24, activeScale: 120, transScale: 60, viewLines: 2 })
+const desktopSettings = ref({ fontSize: 24, activeScale: 120, transScale: 60, viewLines: 2, showTranslation: true })
 const hasData = ref(false)
 const upcoming = ref({ visible: false, remaining: 0, prevIndex: -1, nextIndex: -1, hasSongInfo: false })
 const latestTime = ref(0)

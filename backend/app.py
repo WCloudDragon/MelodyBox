@@ -305,6 +305,7 @@ def init_db(app):
             blur_strength TEXT DEFAULT '10px',
             follow_system_theme INTEGER DEFAULT 0,
             show_lyrics INTEGER DEFAULT 1,
+            show_lyrics_translation INTEGER DEFAULT 1,
             lyrics_font_size INTEGER DEFAULT 32,
             lyrics_font_weight INTEGER DEFAULT 700,
             lyrics_trans_scale INTEGER DEFAULT 60,
@@ -340,6 +341,7 @@ def init_db(app):
         "ALTER TABLE settings ADD COLUMN weather_project_id TEXT DEFAULT ''",
         "ALTER TABLE settings ADD COLUMN weather_api_host TEXT DEFAULT 'api.qweather.com'",
         'ALTER TABLE settings ADD COLUMN auto_generate_vectors INTEGER DEFAULT 0',
+        'ALTER TABLE settings ADD COLUMN show_lyrics_translation INTEGER DEFAULT 1',
     ]:
         try: conn.executescript(mig)
         except sqlite3.OperationalError: pass

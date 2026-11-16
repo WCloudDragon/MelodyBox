@@ -80,7 +80,8 @@ function buildSettings() {
     fontSize: desktopLyricsFontSize.value,
     activeScale: desktopLyricsActiveScale.value,
     transScale: desktopLyricsTransScale.value,
-    viewLines: desktopLyricsViewLines.value
+    viewLines: desktopLyricsViewLines.value,
+    showTranslation: settings.showLyricsTranslation
   }
 }
 
@@ -290,7 +291,8 @@ watch(() => settings.lyricKaraokeMode, () => {
 })
 
 // 桌面歌词设置变化时推送
-watch([desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale, desktopLyricsViewLines], () => {
+watch([desktopLyricsFontSize, desktopLyricsActiveScale, desktopLyricsTransScale, desktopLyricsViewLines,
+       () => settings.showLyricsTranslation], () => {
   if (showDesktopLyrics.value && isElectron.value && !isInLyricsWindow.value) {
     send(buildStatePayload())
   }

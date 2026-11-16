@@ -6,6 +6,7 @@ import { apiUrl } from '@/config/api'
 const SNAKE_TO_CAMEL = {
   accent_color: 'accentColor', blur_strength: 'blurStrength',
   follow_system_theme: 'followSystemTheme', show_lyrics: 'showLyrics',
+  show_lyrics_translation: 'showLyricsTranslation',
   lyrics_font_size: 'lyricsFontSize', lyrics_font_weight: 'lyricsFontWeight',
   lyrics_trans_scale: 'lyricsTransScale', lyrics_active_scale: 'lyricsActiveScale',
   enable_lyrics_blur: 'enableLyricsBlur', enable_domino_scroll: 'enableDominoScroll',
@@ -43,6 +44,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const lyricsFontWeight = ref(700)
   const lyricsTransScale = ref(60)
   const lyricsActiveScale = ref(115)
+  // 歌词双语对里的翻译行是否显示（关掉后只保留原文行）
+  const showLyricsTranslation = ref(true)
 
   // 动画效果开关
   const enableLyricsBlur = ref(true)
@@ -191,6 +194,7 @@ export const useSettingsStore = defineStore('settings', () => {
       lyricsFontWeight.value = data.lyricsFontWeight ?? 700
       lyricsTransScale.value = data.lyricsTransScale ?? 60
       lyricsActiveScale.value = data.lyricsActiveScale ?? 115
+      showLyricsTranslation.value = data.showLyricsTranslation !== false
       enableLyricsBlur.value = !!data.enableLyricsBlur
       enableDominoScroll.value = !!data.enableDominoScroll
       enableWordLift.value = !!data.enableWordLift
@@ -228,6 +232,7 @@ export const useSettingsStore = defineStore('settings', () => {
         body.lyricsFontWeight = lyricsFontWeight.value
         body.lyricsTransScale = lyricsTransScale.value
         body.lyricsActiveScale = lyricsActiveScale.value
+        body.showLyricsTranslation = showLyricsTranslation.value ? 1 : 0
         body.enableLyricsBlur = enableLyricsBlur.value ? 1 : 0
         body.enableDominoScroll = enableDominoScroll.value ? 1 : 0
         body.enableWordLift = enableWordLift.value ? 1 : 0
@@ -325,6 +330,7 @@ export const useSettingsStore = defineStore('settings', () => {
     theme, accentColor, customAccentColor, blurStrength, followSystemTheme,
     lyricsFontSize, lyricsFontWeight,
     lyricsTransScale, lyricsActiveScale,
+    showLyricsTranslation,
     enableLyricsBlur, enableDominoScroll, enableWordLift, wordAnimFps,
     showVisualizer,
     lyricKaraokeMode,
