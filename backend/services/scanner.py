@@ -1,7 +1,10 @@
 import os
 import hashlib
+import json
 import logging
+import pathlib
 import re
+import sqlite3
 import threading
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -947,19 +950,123 @@ def scan_and_store(db_conn, dir_paths, progress_callback=None):
     }
 
 
+# ==================== 封面 GC：跨库引用并集 ====================
+# covers/ 与 thumbs/ 是所有 MelodyBox 数据库共享的（开发版、便携版、多份安装
+# 各自有 melodybox.db，却指向同一个 %LOCALAPPDATA%/melodybox 缓存目录）。
+# 只按"当前连接的库"判定孤儿，会把其它库仍在引用的封面删掉——云端曲库尤其
+# 容易中招（开发库 cloud_songs 为 0 时，便携版的云端封面会被整批清空）。
+# 因此孤儿判定改为：当前库 ∪ 注册表中登记过的其它数据库。
+
+_DB_REGISTRY_FILENAME = 'db_registry.json'
+# 引用封面的表：缺表的旧库自动跳过
+_COVER_SOURCE_TABLES = ('songs', 'albums', 'cloud_songs', 'orphaned_playlist_songs')
+
+
+def _get_shared_data_dir():
+    base = os.environ.get('LOCALAPPDATA',
+                          os.path.join(os.path.expanduser('~'), 'AppData', 'Local'))
+    return os.path.join(base, 'melodybox')
+
+
+def _db_registry_path():
+    return os.path.join(_get_shared_data_dir(), _DB_REGISTRY_FILENAME)
+
+
+def _load_registered_dbs():
+    """读取登记过的数据库路径列表（文件缺失/损坏时返回空列表）"""
+    try:
+        with open(_db_registry_path(), 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        return []
+    dbs = data.get('databases') if isinstance(data, dict) else data
+    if not isinstance(dbs, list):
+        return []
+    return [p for p in dbs if isinstance(p, str) and p.strip()]
+
+
+def _register_db(db_path):
+    """把当前数据库登记进共享注册表（原子写；失败不影响扫描）"""
+    if not db_path:
+        return
+    target = os.path.abspath(db_path)
+    known = _load_registered_dbs()
+    existing = {os.path.normcase(os.path.abspath(p)) for p in known}
+    if os.path.normcase(target) in existing:
+        return
+    known.append(target)
+    try:
+        os.makedirs(_get_shared_data_dir(), exist_ok=True)
+        tmp = _db_registry_path() + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump({'databases': known}, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, _db_registry_path())
+    except Exception:
+        logger.warning('封面GC: 数据库注册表写入失败\n%s', traceback.format_exc())
+
+
+def _current_db_path(cursor):
+    """从连接自身取主库路径，不依赖配置，测试与多库场景同样适用"""
+    try:
+        for row in cursor.execute('PRAGMA database_list').fetchall():
+            name = row['name'] if isinstance(row, sqlite3.Row) else row[1]
+            path = row['file'] if isinstance(row, sqlite3.Row) else row[2]
+            if name == 'main' and path:
+                return os.path.abspath(path)
+    except Exception:
+        pass
+    return ''
+
+
+def _cover_names_from_db(db_path):
+    """只读打开另一个数据库，返回其引用的封面文件名集合。
+
+    读取失败返回 None（与"确实没有引用"的空集合区分）——调用方据此放弃
+    本轮清理，避免在拿不到其它库引用时误删。
+    """
+    names = set()
+    conn = None
+    try:
+        conn = sqlite3.connect(pathlib.Path(db_path).as_uri() + '?mode=ro',
+                               uri=True, timeout=1.5)
+        for table in _COVER_SOURCE_TABLES:
+            try:
+                rows = conn.execute(
+                    f"SELECT DISTINCT cover_url FROM {table} WHERE cover_url != ''")
+            except Exception:
+                continue  # 旧库缺表
+            for row in rows:
+                url = row[0]
+                if url:
+                    names.add(os.path.basename(url))
+    except Exception:
+        return None
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return names
+
+
 def _gc_orphan_covers(cursor, keep_tmp=False):
-    """删除 covers/ 与 thumbs/ 中不被 songs.cover_url / albums.cover_url 引用的文件。
+    """清理 covers/ 与 thumbs/ 中不被任何 MelodyBox 数据库引用的文件。
+
+    引用集合 = 当前库 ∪ 注册表中登记过的其它数据库（同一台机器上的开发版、
+    便携版等共享同一份缓存目录）。只按当前库判定会误删其它库仍在使用的封面。
 
     cursor 须来自已提交全部写事务的连接（扫描末尾调用）。返回删除的文件数，
     出错返回 -1。
     """
     removed = 0
     try:
+        keep = set()
         cursor.execute(
             "SELECT DISTINCT cover_url FROM songs WHERE cover_url != '' "
             "UNION SELECT DISTINCT cover_url FROM albums WHERE cover_url != ''"
         )
-        keep = {os.path.basename(row['cover_url']) for row in cursor.fetchall()}
+        keep |= {os.path.basename(row['cover_url']) for row in cursor.fetchall()}
         # 云端歌曲封面与本地共用同一缓存目录，必须纳入引用集合
         try:
             cursor.execute(
@@ -975,13 +1082,40 @@ def _gc_orphan_covers(cursor, keep_tmp=False):
         except Exception:
             pass
 
+        local_keep = len(keep)
+        current_db = _current_db_path(cursor)
+        _register_db(current_db)
+        current_norm = os.path.normcase(current_db) if current_db else ''
+        foreign_dbs = 0
+        for db_path in _load_registered_dbs():
+            try:
+                abs_path = os.path.abspath(db_path)
+            except Exception:
+                continue
+            if not os.path.isfile(abs_path):
+                continue
+            if current_norm and os.path.normcase(abs_path) == current_norm:
+                continue
+            names = _cover_names_from_db(abs_path)
+            if names is None:
+                # 拿不到其它库的引用就不清理：宁可留下孤儿文件，也不能误删
+                logger.warning('封面GC: 无法读取 %s，本轮跳过清理', abs_path)
+                return -1
+            keep |= names
+            foreign_dbs += 1
+        logger.info('封面GC: 当前库引用 %d 个，跨库并集 %d 个（其它库 %d 个）',
+                    local_keep, len(keep), foreign_dbs)
+
         cover_dir = _get_cover_dir()
         if os.path.isdir(cover_dir):
             for name in os.listdir(cover_dir):
+                full = os.path.join(cover_dir, name)
+                if os.path.isdir(full):
+                    continue
                 if name in keep or (keep_tmp and name.endswith('.tmp')):
                     continue
                 try:
-                    os.remove(os.path.join(cover_dir, name))
+                    os.remove(full)
                     removed += 1
                 except Exception:
                     pass
@@ -993,10 +1127,13 @@ def _gc_orphan_covers(cursor, keep_tmp=False):
                 if not os.path.isdir(size_dir):
                     continue
                 for name in os.listdir(size_dir):
+                    full = os.path.join(size_dir, name)
+                    if os.path.isdir(full):
+                        continue
                     if name in keep or (keep_tmp and name.endswith('.tmp')):
                         continue
                     try:
-                        os.remove(os.path.join(size_dir, name))
+                        os.remove(full)
                         removed += 1
                     except Exception:
                         pass
