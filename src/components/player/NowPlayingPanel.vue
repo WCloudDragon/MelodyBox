@@ -36,7 +36,7 @@
 
       <!-- Apple Music 风格布局 -->
       <template v-else>
-        <div class="np-layout" :style="lyricsVars">
+        <div class="np-layout" :class="{ 'is-resizing': isResizing }" :style="lyricsVars">
           <!-- 左半屏：封面 — 切歌时方向感知动画（出入同时执行） -->
           <div class="np-layout__cover">
             <Transition :name="coverAnimName">
@@ -482,18 +482,12 @@ async function repositionToCurrent() {
 
 function onResize() {
   windowWidth.value = window.innerWidth
-  // 强制触发歌词行换行重新计算（CSS 变量依赖窗口宽度）
-  requestAnimationFrame(() => {
-    if (scrollRef.value) {
-      void scrollRef.value.offsetHeight
-    }
-    // 布局重算后重新定位当前行/空区，避免偏移出视口
-    nextTick(async () => {
-      if (!props.visible) return
-      if (isUserScrolling.value) exitUserScrollMode()
-      await repositionToCurrent()
-    })
-  })
+  // 冻结会改变行高/换行的过渡，让几何立即收敛到终值；
+  // 随后按新几何重新居中，避免校正读到过渡中间态
+  freezeLayoutFor(180)
+  // 拖动窗口同样算一次交互：持续拖动期间不断顺延回位计时
+  armUserScrollIdle()
+  scheduleRecenter()
 }
 onMounted(() => window.addEventListener('resize', onResize))
 onBeforeUnmount(() => window.removeEventListener('resize', onResize))
@@ -519,6 +513,239 @@ let dominoCascadeActive = false // 多米诺级联进行中：新定位请求可
 const isUserScrolling = ref(false)   // 用户正在手动滚动歌词
 const isScrubbing = ref(false)       // 进度条拖拽预览中：跟随滚动但不高亮、不模糊
 let userScrollTimer = null           // 5秒空闲定时器
+// 用户手动滚动时记住"视口中心落在哪一行、行内比例多少"。
+// 窗口尺寸变化会让同一个 scrollY 对应到不同内容，只有这种内容坐标锚点
+// 才能在几何变化后把用户正在看的位置重新对回中心（且反复变化不累积误差）
+let userScrollAnchor = null
+
+// ==================== 布局变化自动重居中 ====================
+// 歌词滚动是「内容整体 transform」模式：居中位置由行几何一次算出后缓存。
+// 容器尺寸、行高或换行位置一旦变化，缓存即失效，活跃行随之偏离中心。
+// 这里在布局变化时做一次幂等校正——几何变化期间先冻结排版过渡（避免测到
+// 过渡中间态），再取消进行中的滚动动画，最后按当前活跃行重新落位。
+const isResizing = ref(false)
+let layoutFreezeTimer = null
+let recenterFrame = 0
+let layoutObserver = null
+let observedWidth = 0
+let observedHeight = 0
+
+// 冻结会改变排版的过渡（字号 / 换行宽度 / 内边距 / 最小高度），
+// 让几何立即收敛；颜色、透明度、滤镜等不影响布局的过渡保持不变
+function freezeLayoutFor(ms) {
+  isResizing.value = true
+  if (layoutFreezeTimer) clearTimeout(layoutFreezeTimer)
+  layoutFreezeTimer = setTimeout(() => {
+    layoutFreezeTimer = null
+    isResizing.value = false
+    scheduleRecenter()
+    // 校正写入使用的是 transition:none，恢复后不影响后续切句动画；
+    // 用户滚动模式下要恢复滚轮滚动自己的过渡，否则下一次滚动会变生硬
+    requestAnimationFrame(() => {
+      if (!scrollRef.value) return
+      scrollRef.value.style.transition = isUserScrolling.value ? 'transform 0.15s ease-out' : ''
+    })
+  }, ms)
+}
+
+function scheduleRecenter() {
+  if (recenterFrame) return
+  recenterFrame = requestAnimationFrame(() => {
+    recenterFrame = 0
+    recenterNow()
+  })
+}
+
+// 当前应居中的滚动目标：活跃行组 → 三点提示 → 空区锚点。
+// 三套口径分别对齐 scrollToActiveGroup / scrollToDots / repositionToEmptyZoneAnchor
+function computeCenteredTarget() {
+  if (!mainRef.value || !scrollRef.value) return null
+  const H = mainRef.value.clientHeight
+  const act = activeIndexes.value
+
+  if (act.length > 0) {
+    const firstEl = lineRefs.value[act[0]]
+    const lastEl = lineRefs.value[act[act.length - 1]]
+    if (!firstEl || !lastEl) return null
+    if (act.length === 1) {
+      return { y: firstEl.offsetTop - H / 2 + firstEl.offsetHeight / 2, index: act[0] }
+    }
+    const top = firstEl.offsetTop
+    const bottom = lastEl.offsetTop + lastEl.offsetHeight
+    // 异常大组（罕见）：退化为以第一行居中，保证可读
+    const y = bottom - top > H * 0.6
+      ? top - H / 2 + firstEl.offsetHeight / 2
+      : (top + bottom) / 2 - H / 2
+    return { y, index: act[act.length - 1] }
+  }
+
+  if (hintVisible.value) {
+    const anchorIndex = hintAnchorIndex.value >= 0 ? hintAnchorIndex.value + 1 : 0
+    const anchorEl = lineRefs.value[anchorIndex]
+    if (!anchorEl) return null
+    const dotsEl = scrollRef.value.querySelector('.upcoming-hint-line')
+    const dotsH = dotsEl ? dotsEl.offsetHeight : 0
+    let y = Math.max(0, anchorEl.offsetTop - dotsH - H / 2 + anchorEl.offsetHeight / 2)
+    // 句中空区：上一行仍从活跃字号收缩，预留其剩余位移
+    if (hintAnchorIndex.value >= 0) {
+      const prevEl = lineRefs.value[hintAnchorIndex.value]
+      if (prevEl) y = Math.max(0, y - Math.max(0, prevEl.offsetHeight - anchorEl.offsetHeight))
+    }
+    return { y, index: anchorIndex }
+  }
+
+  const list = parsedLyrics.value
+  if (!list.length) return null
+  const now = player.getLiveTime()
+  const target = now < list[0].time ? 0 : hintLineIndex.value
+  if (target < 0 || target >= list.length) return null
+  const el = lineRefs.value[target]
+  if (!el) return null
+  return { y: el.offsetTop - H / 2 + el.offsetHeight / 2, index: target }
+}
+
+function applyCenteredScroll(target) {
+  if (!scrollRef.value) return
+  // 取消进行中的级联 / 平滑动画，避免两套位移叠加
+  if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
+  smoothAnimTarget = -1
+  dominoCascadeActive = false
+  scrollRef.value.style.transition = 'none'
+  scrollRef.value.style.transform = `translate3d(0, ${-target.y}px, 0)`
+  currentScrollY = -target.y
+  targetScrollPos = target.y
+  prevLineIndex = target.index
+  if (jumpPending.value >= 0) jumpPending.value = -1
+}
+
+// 记录用户滚动模式的中心锚点：index = 中心落在哪一行，ratio = 行内比例。
+// 用内容坐标而非 scrollY，几何变化后才能把同一处内容重新对回中心
+function captureUserScrollAnchor(scrollY, containerHeight) {
+  const list = parsedLyrics.value
+  if (!list.length) { userScrollAnchor = null; return }
+  const centerY = -scrollY + containerHeight / 2
+  let nearest = null
+  let nearestDist = Infinity
+  for (let i = 0; i < list.length; i++) {
+    const el = lineRefs.value[i]
+    if (!el) continue
+    const top = el.offsetTop
+    const h = el.offsetHeight || 1
+    if (centerY >= top && centerY <= top + h) {
+      userScrollAnchor = { index: i, ratio: (centerY - top) / h, count: list.length }
+      return
+    }
+    // 中心落在行间空隙（三点提示行 / 内边距）时，取最近一行并钳到边界
+    const dist = centerY < top ? top - centerY : centerY - (top + h)
+    if (dist < nearestDist) {
+      nearestDist = dist
+      nearest = { index: i, ratio: centerY < top ? 0 : 1 }
+    }
+  }
+  userScrollAnchor = nearest ? { ...nearest, count: list.length } : null
+}
+
+// 按锚点推算当前应居中的滚动量；行列表变化或元素丢失时放弃（退回不处理）
+function computeUserScrollTarget() {
+  const anchor = userScrollAnchor
+  if (!anchor || !mainRef.value) return null
+  if (anchor.count !== parsedLyrics.value.length) { userScrollAnchor = null; return null }
+  const el = lineRefs.value[anchor.index]
+  if (!el) { userScrollAnchor = null; return null }
+  const H = mainRef.value.clientHeight
+  const y = el.offsetTop + anchor.ratio * el.offsetHeight - H / 2
+  return Number.isFinite(y) ? { y } : null
+}
+
+// 用户滚动模式下的重居中：只改位置，不改滚动状态、不重置 5 秒回位计时
+function applyUserScrollRecenter(y) {
+  if (!scrollRef.value || !mainRef.value) return
+  // 中断可能残留的级联动画，避免两套位移叠加
+  if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
+  smoothAnimTarget = -1
+  dominoCascadeActive = false
+  const contentHeight = scrollRef.value.scrollHeight
+  const H = mainRef.value.clientHeight
+  // 与滚轮同一套边界钳制，避免把内容推到可视区之外
+  const minY = -(contentHeight - H) - 20
+  const maxY = 20
+  const ty = Math.max(minY, Math.min(maxY, -y))
+  scrollRef.value.style.transition = 'none'
+  scrollRef.value.style.transform = `translate3d(0, ${ty}px, 0)`
+  currentScrollY = ty
+  // 恢复滚轮滚动应有的过渡，否则下一次滚动会变得生硬
+  requestAnimationFrame(() => {
+    if (scrollRef.value) scrollRef.value.style.transition = 'transform 0.15s ease-out'
+  })
+}
+
+function recenterNow() {
+  if (!props.visible || !hasLyrics.value) return
+  // 进度条拖拽预览期间由 scrollToLinePreview 接管，不与它抢
+  if (isScrubbing.value) return
+
+  // 用户手动滚动中：以「视口中心当前对应的那处内容」为锚点重新居中，
+  // 而不是跳回正在播放的行——此时用户关注的是自己滚到的位置
+  if (isUserScrolling.value) {
+    const anchorTarget = computeUserScrollTarget()
+    if (!anchorTarget) return
+    // currentScrollY 是 transform 值（向下为负），换算成正向滚动量比较
+    if (Math.abs(anchorTarget.y + currentScrollY) < 0.5) return
+    applyUserScrollRecenter(anchorTarget.y)
+    return
+  }
+
+  const target = computeCenteredTarget()
+  if (!target || !Number.isFinite(target.y)) return
+  // 已对准就什么都不做，避免打断正常播放中的级联动画
+  if (Math.abs(target.y - targetScrollPos) < 0.5) return
+  applyCenteredScroll(target)
+}
+
+// 容器尺寸变化的权威来源：覆盖窗口缩放、侧栏开合、内边距变化等
+// window.resize 看不到的情况。只观察容器，不观察内容——内容高度在每次
+// 切句时都会随活跃行字号过渡变化，观察它会误触发校正、打断多米诺
+function syncLayoutObserver() {
+  if (layoutObserver) { layoutObserver.disconnect(); layoutObserver = null }
+  if (typeof ResizeObserver === 'undefined') return
+  if (!props.visible || !currentTrack.value || !mainRef.value) return
+  observedWidth = mainRef.value.clientWidth
+  observedHeight = mainRef.value.clientHeight
+  layoutObserver = new ResizeObserver((entries) => {
+    const rect = entries[0] && entries[0].contentRect
+    if (!rect) return
+    const w = Math.round(rect.width)
+    const h = Math.round(rect.height)
+    if (w === observedWidth && h === observedHeight) return
+    observedWidth = w
+    observedHeight = h
+    freezeLayoutFor(180)
+    // 容器尺寸变化同样视为一次交互（拖动窗口会连续触发，回位计时被持续顺延）
+    armUserScrollIdle()
+    scheduleRecenter()
+  })
+  layoutObserver.observe(mainRef.value)
+}
+
+// 设置项改动同样会改变行高（字号 / 字重 / 翻译行 / 活跃放大 / 逐字模式）
+watch(
+  [lyricsFontSize, lyricsFontWeight, lyricsTransScale, lyricsActiveScale,
+   () => settings.showLyricsTranslation, () => settings.lyricKaraokeMode],
+  () => {
+    freezeLayoutFor(320)
+    nextTick(scheduleRecenter)
+  }
+)
+
+// Web 字体就绪后度量变化，换行位置可能整体改变（触发点由 fontsReady 处统一处理）
+
+watch([() => props.visible, () => currentTrack.value?.path], () => nextTick(syncLayoutObserver))
+onMounted(() => nextTick(syncLayoutObserver))
+onBeforeUnmount(() => {
+  if (layoutObserver) { layoutObserver.disconnect(); layoutObserver = null }
+  if (layoutFreezeTimer) { clearTimeout(layoutFreezeTimer); layoutFreezeTimer = null }
+  if (recenterFrame) { cancelAnimationFrame(recenterFrame); recenterFrame = 0 }
+})
 
 
 function removeFlyer() {
@@ -962,8 +1189,22 @@ function seekToLine(time) {
 // ==================== 用户滚轮滚动歌词 ====================
 function exitUserScrollMode() {
   isUserScrolling.value = false
+  userScrollAnchor = null
   if (scrollRef.value) scrollRef.value.style.transition = ''
   if (userScrollTimer) { clearTimeout(userScrollTimer); userScrollTimer = null }
+}
+
+// 重置/顺延「手动滚动自动回位」计时。滚轮与窗口拖动都算交互：
+// 拖动窗口会持续数秒，期间反复调用即可保证松手前不会被拉回播放行
+function armUserScrollIdle() {
+  if (!isUserScrolling.value) return
+  if (userScrollTimer) clearTimeout(userScrollTimer)
+  userScrollTimer = setTimeout(() => {
+    userScrollTimer = null
+    // 仍在拖动窗口（resize 尚未落定）时继续顺延，避免中途跳回
+    if (isResizing.value) { armUserScrollIdle(); return }
+    resetUserScroll()
+  }, 5000)
 }
 
 function resetUserScroll() {
@@ -982,7 +1223,6 @@ function onLyricsWheel(e) {
     isUserScrolling.value = true
     scrollRef.value.style.transition = 'transform 0.15s ease-out'
   }
-  if (userScrollTimer) clearTimeout(userScrollTimer)
 
   // 从当前 computed transform 读取位置
   const currentTransform = getComputedStyle(scrollRef.value).transform
@@ -1000,9 +1240,11 @@ function onLyricsWheel(e) {
 
   scrollRef.value.style.transform = `translate3d(0, ${newY}px, 0)`
   currentScrollY = newY
+  // 记录视口中心的内容锚点：窗口尺寸变化后据此把同一处内容重新对回中心
+  captureUserScrollAnchor(newY, containerHeight)
 
   // 5秒无操作后自动回位
-  userScrollTimer = setTimeout(resetUserScroll, 5000)
+  armUserScrollIdle()
 }
 
 function lineStyle(index) {
@@ -1239,7 +1481,12 @@ function measureAdvance(fontPx, weight) {
 }
 const fontsReady = ref(false)
 if (typeof document !== 'undefined' && document.fonts) {
-  document.fonts.ready.then(() => { fontsReady.value = true })
+  document.fonts.ready.then(() => {
+    fontsReady.value = true
+    // 字体度量生效后换行位置会整体变化，冻结过渡并重新居中
+    freezeLayoutFor(320)
+    nextTick(scheduleRecenter)
+  })
 }
 
 // 从设置中按比例计算各字号级别，利用 MiSans VF 可变轴字重
@@ -2253,6 +2500,19 @@ onBeforeUnmount(() => {
 }
 .lyrics-scroll {
   padding: 50vh 0 40vh;
+}
+/* 布局尺寸变化期间：冻结会改变行高 / 换行位置的过渡，
+   让几何立即收敛到终值，避免重新居中时读到过渡中间态。
+   颜色、透明度、滤镜等不影响布局的过渡保持不变。 */
+.np-layout.is-resizing .lyric-line {
+  transition: opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              filter 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.0),
+              background 0.15s ease,
+              transform 0.12s ease;
+}
+.np-layout.is-resizing .lyric-line__original,
+.np-layout.is-resizing .lyric-line__translation {
+  transition: color 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.0);
 }
 /* 拖拽进度条时锁住歌词行 hover：鼠标划过行不触发背景，避免干扰预览引导 */
 .lyrics-scroll.is-scrubbing .lyric-line {
