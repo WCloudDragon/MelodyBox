@@ -132,6 +132,14 @@ import { usePlayerStore } from '@/stores/player'
 import { useSettingsStore } from '@/stores/settings'
 import { parseLRC, computeActiveSet, LYRIC_GAP_FILL_LIMIT, applyLyricKaraokeMode, getCurrentLyricIndex } from '@/utils/format'
 import { extractCoverColors } from '@/utils/coverColorExtractor'
+import {
+  lineCenteredScroll,
+  activeGroupScroll,
+  dotsCenteredScroll,
+  dotsCascadeShifts,
+  clampManualScroll,
+  anchorScrollForLine
+} from '@/utils/lyricLayout'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -568,15 +576,10 @@ function computeCenteredTarget() {
     const lastEl = lineRefs.value[act[act.length - 1]]
     if (!firstEl || !lastEl) return null
     if (act.length === 1) {
-      return { y: firstEl.offsetTop - H / 2 + firstEl.offsetHeight / 2, index: act[0] }
+      return { y: lineCenteredScroll(firstEl, H), index: act[0] }
     }
-    const top = firstEl.offsetTop
-    const bottom = lastEl.offsetTop + lastEl.offsetHeight
-    // 异常大组（罕见）：退化为以第一行居中，保证可读
-    const y = bottom - top > H * 0.6
-      ? top - H / 2 + firstEl.offsetHeight / 2
-      : (top + bottom) / 2 - H / 2
-    return { y, index: act[act.length - 1] }
+    // 异常大组由 activeGroupScroll 内部退化为以第一行居中，保证可读
+    return { y: activeGroupScroll(firstEl, lastEl, H), index: act[act.length - 1] }
   }
 
   if (hintVisible.value) {
@@ -584,14 +587,9 @@ function computeCenteredTarget() {
     const anchorEl = lineRefs.value[anchorIndex]
     if (!anchorEl) return null
     const dotsEl = scrollRef.value.querySelector('.upcoming-hint-line')
-    const dotsH = dotsEl ? dotsEl.offsetHeight : 0
-    let y = Math.max(0, anchorEl.offsetTop - dotsH - H / 2 + anchorEl.offsetHeight / 2)
-    // 句中空区：上一行仍从活跃字号收缩，预留其剩余位移
-    if (hintAnchorIndex.value >= 0) {
-      const prevEl = lineRefs.value[hintAnchorIndex.value]
-      if (prevEl) y = Math.max(0, y - Math.max(0, prevEl.offsetHeight - anchorEl.offsetHeight))
-    }
-    return { y, index: anchorIndex }
+    // 句中空区：上一行仍从活跃字号收缩，由 dotsCenteredScroll 预留其剩余位移
+    const prevEl = hintAnchorIndex.value >= 0 ? lineRefs.value[hintAnchorIndex.value] : null
+    return { y: dotsCenteredScroll(anchorEl, dotsEl, prevEl, H), index: anchorIndex }
   }
 
   const list = parsedLyrics.value
@@ -601,7 +599,7 @@ function computeCenteredTarget() {
   if (target < 0 || target >= list.length) return null
   const el = lineRefs.value[target]
   if (!el) return null
-  return { y: el.offsetTop - H / 2 + el.offsetHeight / 2, index: target }
+  return { y: lineCenteredScroll(el, H), index: target }
 }
 
 function applyCenteredScroll(target) {
@@ -652,8 +650,7 @@ function computeUserScrollTarget() {
   if (anchor.count !== parsedLyrics.value.length) { userScrollAnchor = null; return null }
   const el = lineRefs.value[anchor.index]
   if (!el) { userScrollAnchor = null; return null }
-  const H = mainRef.value.clientHeight
-  const y = el.offsetTop + anchor.ratio * el.offsetHeight - H / 2
+  const y = anchorScrollForLine(el, anchor.ratio, mainRef.value.clientHeight)
   return Number.isFinite(y) ? { y } : null
 }
 
@@ -664,12 +661,8 @@ function applyUserScrollRecenter(y) {
   if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
   smoothAnimTarget = -1
   dominoCascadeActive = false
-  const contentHeight = scrollRef.value.scrollHeight
-  const H = mainRef.value.clientHeight
   // 与滚轮同一套边界钳制，避免把内容推到可视区之外
-  const minY = -(contentHeight - H) - 20
-  const maxY = 20
-  const ty = Math.max(minY, Math.min(maxY, -y))
+  const ty = clampManualScroll(-y, scrollRef.value.scrollHeight, mainRef.value.clientHeight)
   scrollRef.value.style.transition = 'none'
   scrollRef.value.style.transform = `translate3d(0, ${ty}px, 0)`
   currentScrollY = ty
@@ -1232,11 +1225,8 @@ function onLyricsWheel(e) {
   let newY = currentY - e.deltaY * 2
 
   // 边界钳制
-  const contentHeight = scrollRef.value.scrollHeight
   const containerHeight = mainRef.value.clientHeight
-  const minY = -(contentHeight - containerHeight) - 20
-  const maxY = 20
-  newY = Math.max(minY, Math.min(maxY, newY))
+  newY = clampManualScroll(newY, scrollRef.value.scrollHeight, containerHeight)
 
   scrollRef.value.style.transform = `translate3d(0, ${newY}px, 0)`
   currentScrollY = newY
@@ -1793,20 +1783,11 @@ function scrollToDots(animate = true) {
   const anchorEl = lineRefs.value[anchorIndex]
   if (!anchorEl) return
   const dotsEl = scrollRef.value.querySelector('.upcoming-hint-line')
-  const dotsH = dotsEl ? dotsEl.offsetHeight : 0
   const containerHeight = mainRef.value.clientHeight
-  let targetScroll = Math.max(0,
-    anchorEl.offsetTop - dotsH - containerHeight / 2 + anchorEl.offsetHeight / 2)
-  // 句中空区：上一行正从活跃字号收缩回基础字号，会带动三点继续上移。
-  // 用“上一行当前高度 - 下一行高度(≈收缩后高度)”预估剩余位移，提前补偿，
-  // 避免三点滚到中心后又因上一行收缩而偏上。
-  if (hintAnchorIndex.value >= 0) {
-    const prevEl = lineRefs.value[hintAnchorIndex.value]
-    if (prevEl) {
-      const drift = Math.max(0, prevEl.offsetHeight - anchorEl.offsetHeight)
-      if (drift > 0) targetScroll = Math.max(0, targetScroll - drift)
-    }
-  }
+  // 句中空区：上一行正从活跃字号收缩回基础字号，会带动三点继续上移，
+  // 由 dotsCenteredScroll 用「上一行当前高度 - 下一行高度」预估剩余位移并提前补偿
+  const prevEl = hintAnchorIndex.value >= 0 ? lineRefs.value[hintAnchorIndex.value] : null
+  const targetScroll = dotsCenteredScroll(anchorEl, dotsEl, prevEl, containerHeight)
   targetScrollPos = targetScroll
   currentScrollY = -targetScroll
   if (!animate) {
@@ -1827,13 +1808,10 @@ function runDotsCascade(nextIndex) {
   const nextEl = lineRefs.value[nextIndex]
   if (!nextEl) return
   const containerHeight = mainRef.value.clientHeight
-  const targetScroll = Math.max(0,
-    nextEl.offsetTop - containerHeight / 2 + nextEl.offsetHeight / 2)
-  const scrollDelta = targetScroll - targetScrollPos
   const totalLines = parsedLyrics.value.length
   // 下方行：三点行移除的布局位移 + 滚动差；上方行：仅滚动差（通常≈0）
-  const belowShift = _dotsH - scrollDelta
-  const aboveShift = -scrollDelta
+  const { targetScroll, belowShift, aboveShift } = dotsCascadeShifts(
+    nextEl, containerHeight, targetScrollPos, _dotsH)
 
   if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
   smoothAnimTarget = -1
@@ -1924,7 +1902,7 @@ function scrollToLine(index, animate = true) {
   if (!lineEl) return
 
   const containerHeight = mainRef.value.clientHeight
-  const targetScroll = lineEl.offsetTop - containerHeight / 2 + lineEl.offsetHeight / 2
+  const targetScroll = lineCenteredScroll(lineEl, containerHeight)
   animateScrollTo(targetScroll, index, animate)
 }
 
@@ -1943,7 +1921,7 @@ function scrollToLinePreview(index) {
     if (el) { el.style.transition = ''; el.style.transform = '' }
   }
   const containerHeight = mainRef.value.clientHeight
-  const targetScroll = lineEl.offsetTop - containerHeight / 2 + lineEl.offsetHeight / 2
+  const targetScroll = lineCenteredScroll(lineEl, containerHeight)
   scrollRef.value.style.transition = 'transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1.0)'
   scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
   currentScrollY = -targetScroll
@@ -1966,15 +1944,7 @@ function scrollToActiveGroup(animate = true) {
   if (!firstEl || !lastEl) return
 
   const containerHeight = mainRef.value.clientHeight
-  const top = firstEl.offsetTop
-  const bottom = lastEl.offsetTop + lastEl.offsetHeight
-  let targetScroll
-  if (bottom - top > containerHeight * 0.6) {
-    // 异常大组（罕见）：退化为以第一行居中，保证可读
-    targetScroll = top - containerHeight / 2 + firstEl.offsetHeight / 2
-  } else {
-    targetScroll = (top + bottom) / 2 - containerHeight / 2
-  }
+  const targetScroll = activeGroupScroll(firstEl, lastEl, containerHeight)
   animateScrollTo(targetScroll, active[active.length - 1], animate)
 }
 
@@ -1989,7 +1959,7 @@ async function repositionToEmptyZoneAnchor() {
   const el = lineRefs.value[targetIndex]
   if (!el) return
   const containerHeight = mainRef.value.clientHeight
-  const desired = el.offsetTop - containerHeight / 2 + el.offsetHeight / 2
+  const desired = lineCenteredScroll(el, containerHeight)
   if (Math.abs(desired - targetScrollPos) <= containerHeight * 0.5) return
   await nextTick()
   scrollToLine(targetIndex, true)
