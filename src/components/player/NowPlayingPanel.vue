@@ -526,6 +526,16 @@ let userScrollTimer = null           // 5秒空闲定时器
 // 才能在几何变化后把用户正在看的位置重新对回中心（且反复变化不累积误差）
 let userScrollAnchor = null
 
+// 容器滚动位置的唯一写入入口：transform 与 currentScrollY 永远同步落值。
+// transition 传 undefined 表示沿用当前过渡（滚轮模式或调用方已自行设置）。
+// 例外：大跨度跳转的 WAAPI 仍由 animate() 驱动，但落值同样走这里。
+function commitContainerScroll(transformY, transition) {
+  if (!scrollRef.value) return
+  if (transition !== undefined) scrollRef.value.style.transition = transition
+  scrollRef.value.style.transform = `translate3d(0, ${transformY}px, 0)`
+  currentScrollY = transformY
+}
+
 // ==================== 布局变化自动重居中 ====================
 // 歌词滚动是「内容整体 transform」模式：居中位置由行几何一次算出后缓存。
 // 容器尺寸、行高或换行位置一旦变化，缓存即失效，活跃行随之偏离中心。
@@ -608,9 +618,7 @@ function applyCenteredScroll(target) {
   if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
   smoothAnimTarget = -1
   dominoCascadeActive = false
-  scrollRef.value.style.transition = 'none'
-  scrollRef.value.style.transform = `translate3d(0, ${-target.y}px, 0)`
-  currentScrollY = -target.y
+  commitContainerScroll(-target.y, 'none')
   targetScrollPos = target.y
   prevLineIndex = target.index
   if (jumpPending.value >= 0) jumpPending.value = -1
@@ -663,9 +671,7 @@ function applyUserScrollRecenter(y) {
   dominoCascadeActive = false
   // 与滚轮同一套边界钳制，避免把内容推到可视区之外
   const ty = clampManualScroll(-y, scrollRef.value.scrollHeight, mainRef.value.clientHeight)
-  scrollRef.value.style.transition = 'none'
-  scrollRef.value.style.transform = `translate3d(0, ${ty}px, 0)`
-  currentScrollY = ty
+  commitContainerScroll(ty, 'none')
   // 恢复滚轮滚动应有的过渡，否则下一次滚动会变得生硬
   requestAnimationFrame(() => {
     if (scrollRef.value) scrollRef.value.style.transition = 'transform 0.15s ease-out'
@@ -1228,8 +1234,7 @@ function onLyricsWheel(e) {
   const containerHeight = mainRef.value.clientHeight
   newY = clampManualScroll(newY, scrollRef.value.scrollHeight, containerHeight)
 
-  scrollRef.value.style.transform = `translate3d(0, ${newY}px, 0)`
-  currentScrollY = newY
+  commitContainerScroll(newY)
   // 记录视口中心的内容锚点：窗口尺寸变化后据此把同一处内容重新对回中心
   captureUserScrollAnchor(newY, containerHeight)
 
@@ -1789,14 +1794,11 @@ function scrollToDots(animate = true) {
   const prevEl = hintAnchorIndex.value >= 0 ? lineRefs.value[hintAnchorIndex.value] : null
   const targetScroll = dotsCenteredScroll(anchorEl, dotsEl, prevEl, containerHeight)
   targetScrollPos = targetScroll
-  currentScrollY = -targetScroll
   if (!animate) {
-    scrollRef.value.style.transition = 'none'
-    scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
+    commitContainerScroll(-targetScroll, 'none')
     return
   }
-  scrollRef.value.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
-  scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
+  commitContainerScroll(-targetScroll, 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)')
   setTimeout(() => { if (scrollRef.value) scrollRef.value.style.transition = '' }, 550)
 }
 
@@ -1817,9 +1819,7 @@ function runDotsCascade(nextIndex) {
   smoothAnimTarget = -1
 
   // 容器瞬跳到目标位
-  scrollRef.value.style.transition = 'none'
-  scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
-  currentScrollY = -targetScroll
+  commitContainerScroll(-targetScroll, 'none')
   targetScrollPos = targetScroll
   void scrollRef.value.offsetHeight
 
@@ -1922,9 +1922,7 @@ function scrollToLinePreview(index) {
   }
   const containerHeight = mainRef.value.clientHeight
   const targetScroll = lineCenteredScroll(lineEl, containerHeight)
-  scrollRef.value.style.transition = 'transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1.0)'
-  scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
-  currentScrollY = -targetScroll
+  commitContainerScroll(-targetScroll, 'transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1.0)')
   targetScrollPos = targetScroll
 }
 
@@ -2056,8 +2054,7 @@ function animateScrollTo(targetScroll, index, animate = true) {
     && totalLines > 1 && Math.abs(scrollDelta) <= containerHeight && !shortLine
   if (animate && useDomino) {
     // 多米诺分支：先瞬跳 scrollRef，再由行级联动画接管视觉效果
-    scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
-    currentScrollY = -targetScroll
+    commitContainerScroll(-targetScroll)
     const forward = index > prevLineIndex
 
     // 所有行偏移到反向位置（只禁用 transform 过渡，保留 opacity/filter 过渡）。
@@ -2119,9 +2116,8 @@ function animateScrollTo(targetScroll, index, animate = true) {
         { duration: 800, easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.0)', fill: 'forwards' }
       )
       anim.onfinish = () => {
-        scrollRef.value.style.transform = toTransform
+        commitContainerScroll(-targetScroll)
         anim.cancel()
-        currentScrollY = -targetScroll
         smoothAnimTarget = -1
         if (jumpPending.value >= 0) jumpPending.value = -1
         scrollRef.value.style.willChange = ''
@@ -2135,9 +2131,7 @@ function animateScrollTo(targetScroll, index, animate = true) {
     } else {
       // 关闭多米诺 / 密集短句：CSS transition 简单平滑滚动，零 JS 动画开销；
       // 时长跟随句时间戳长度，使下一次切句到来时本次滚动刚好走完
-      scrollRef.value.style.transition = `transform ${matchedMs}ms cubic-bezier(0.2, 0.9, 0.3, 1.0)`
-      scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
-      currentScrollY = -targetScroll
+      commitContainerScroll(-targetScroll, `transform ${matchedMs}ms cubic-bezier(0.2, 0.9, 0.3, 1.0)`)
       const cleanup = () => {
         if (scrollRef.value) scrollRef.value.style.transition = ''
         if (jumpPending.value >= 0) jumpPending.value = -1
@@ -2147,8 +2141,7 @@ function animateScrollTo(targetScroll, index, animate = true) {
       lyricsScrollCleanup = () => { clearTimeout(timer); cleanup() }
     }
   } else {
-    scrollRef.value.style.transform = `translate3d(0, ${-targetScroll}px, 0)`
-    currentScrollY = -targetScroll
+    commitContainerScroll(-targetScroll)
     if (jumpPending.value >= 0) jumpPending.value = -1
     for (let i = 0; i < totalLines; i++) {
       const el = lineRefs.value[i]
@@ -2223,7 +2216,7 @@ watch(() => currentTrack.value?.path, () => {
   stopWordAnimLoop()
   targetScrollPos = 0
   prevLineIndex = -1
-  if (scrollRef.value) { scrollRef.value.style.transform = 'translate3d(0, 0, 0)'; currentScrollY = 0 }
+  commitContainerScroll(0)
   // 首句前长空区：三点与切歌同帧渲染（不依赖 currentTime——切歌瞬间它仍是上一首位置，
   // 用旧时间判定会让三点延迟 1~2 帧才插入，插入时把下方行瞬移让位）
   // 播放总是从 0 开始，只要新歌首句时间达到空区阈值，切歌后必然处于首句前
