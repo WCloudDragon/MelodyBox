@@ -145,6 +145,7 @@ import { useAudioRhythm } from '@/composables/useAudioRhythm'
 import { computeLineStyle } from '@/utils/lyricLineStyle'
 import { useKaraokeLyrics } from '@/composables/useKaraokeLyrics'
 import { useLyricHintTiming } from '@/composables/useLyricHintTiming'
+import { useLyricHintScroll } from '@/composables/useLyricHintScroll'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -1465,89 +1466,20 @@ watch(seekPreviewPercent, async (pct) => {
   scrollToLinePreview(idx)
 })
 
-// 三点显示：滚动到“三点收起后下一句恰好居中”的位置。
-// 该位置下三点块也正好位于中心线（三点行高≈歌词行高），
-// 三点收起后下一句已居中，激活滚动成为零位移，不会出现第二次滚动。
-// 首行前与句中空区统一处理（句中锚定下一句，并用上一行剩余收缩量预补偿）。
-function scrollToDots(animate = true) {
-  if (!scrollRef.value || !mainRef.value) return
-  const anchorIndex = hintAnchorIndex.value >= 0 ? hintAnchorIndex.value + 1 : 0
-  const anchorEl = lineRefs.value[anchorIndex]
-  if (!anchorEl) return
-  const dotsEl = scrollRef.value.querySelector('.upcoming-hint-line')
-  const containerHeight = lyricContainerHeight()
-  // 句中空区：上一行正从活跃字号收缩回基础字号，会带动三点继续上移，
-  // 由 dotsCenteredScroll 用「上一行当前高度 - 下一行高度」预估剩余位移并提前补偿
-  const prevEl = hintAnchorIndex.value >= 0 ? lineRefs.value[hintAnchorIndex.value] : null
-  const targetScroll = dotsCenteredScroll(anchorEl, dotsEl, prevEl, containerHeight)
-  scrollState.targetScrollPos = targetScroll
-  if (!animate) {
-    commitContainerScroll(-targetScroll, 'none')
-    return
-  }
-  commitContainerScroll(-targetScroll, 'transform 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.0)')
-  setTimeout(() => { if (scrollRef.value) scrollRef.value.style.transition = '' }, 550)
-}
-
-// 三点自然结束后：用多米诺级联滚动完成“下一行上移到中心”的位移。
-// 三点行在激活瞬间被移除（此时点已全部淡出），移除造成的布局位移（_dotsH）
-// 通过行级反向偏移吸收，再按序错峰归位，形成与普通切句一致的多米诺波浪。
-function runDotsCascade(nextIndex) {
-  if (!scrollRef.value || !mainRef.value) return
-  const nextEl = lineRefs.value[nextIndex]
-  if (!nextEl) return
-  const containerHeight = lyricContainerHeight()
-  const totalLines = parsedLyrics.value.length
-  // 下方行：三点行移除的布局位移 + 滚动差；上方行：仅滚动差（通常≈0）
-  const { targetScroll, belowShift, aboveShift } = dotsCascadeShifts(
-    nextEl, containerHeight, scrollState.targetScrollPos, _dotsH)
-
-  if (scrollState.lyricsScrollCleanup) { scrollState.lyricsScrollCleanup(); scrollState.lyricsScrollCleanup = null }
-  scrollState.smoothAnimTarget = -1
-
-  // 容器瞬跳到目标位
-  commitContainerScroll(-targetScroll, 'none')
-  scrollState.targetScrollPos = targetScroll
-  void scrollRef.value.offsetHeight
-
-  // 各行偏移到反向位置（下方行多偏一个三点行高，抵消移除瞬间的布局位移）
-  for (let i = 0; i < totalLines; i++) {
-    const el = lineRefs.value[i]
-    if (!el) continue
-    const shift = i >= nextIndex ? belowShift : aboveShift
-    el.style.transition = 'transform 0s, opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0), filter 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0)'
-    el.style.transform = `translate3d(0, ${shift}px, 0)`
-  }
-  // 读 computedStyle 强制浏览器 commit transform 起始值
-  const csAfterOffset = getComputedStyle(nextEl).transform
-  void csAfterOffset
-
-  // 归位：固定每行 STAGGER_STEP 的触发间隔（三点结束恒向下播放，由视口首行起推进）
-  const viewportTop = targetScroll
-  const viewportH = Math.max(1, containerHeight)
-  const { delays, totalStagger } = staggerDelays(totalLines, viewportTop, viewportH, true, nextIndex)
-  for (let i = 0; i < totalLines; i++) {
-    const el = lineRefs.value[i]
-    if (!el) continue
-    el.style.transition = `transform ${STAGGER_DURATION}ms cubic-bezier(0.2, 0.9, 0.3, 1.0) ${delays[i]}s, opacity 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0), filter 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.0)`
-    el.style.transform = 'translate3d(0, 0, 0)'
-  }
-
-  const totalDuration = STAGGER_DURATION + totalStagger * 1000 + 60
-  scrollState.dominoCascadeActive = true
-  const cleanup = () => {
-    for (let i = 0; i < totalLines; i++) {
-      const el = lineRefs.value[i]
-      if (el) { el.style.transform = ''; el.style.transition = '' }
-    }
-    if (scrollRef.value) { scrollRef.value.style.willChange = ''; scrollRef.value.style.transition = '' }
-    if (jumpPending.value >= 0) jumpPending.value = -1
-    scrollState.dominoCascadeActive = false
-    scrollState.lyricsScrollCleanup = null
-  }
-  const timer = setTimeout(cleanup, totalDuration)
-  scrollState.lyricsScrollCleanup = () => { clearTimeout(timer); cleanup() }
-}
+// 三点的滚动与交接在 useLyricHintScroll；组件保留显示状态与 watch 编排
+const { scrollToDots, runDotsCascade } = useLyricHintScroll({
+  mainRef,
+  scrollRef,
+  lineRefs,
+  jumpPending,
+  getLines: () => parsedLyrics.value,
+  getHintAnchorIndex: () => hintAnchorIndex.value,
+  getDotsHeight: () => _dotsH,
+  scrollState,
+  commitContainerScroll,
+  lyricContainerHeight,
+  staggerDelays
+})
 
 
 
