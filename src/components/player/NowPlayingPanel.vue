@@ -143,6 +143,7 @@ import {
 import { useLyricScroll, STAGGER_DURATION } from '@/composables/useLyricScroll'
 import { useAudioRhythm } from '@/composables/useAudioRhythm'
 import { computeLineStyle } from '@/utils/lyricLineStyle'
+import { useKaraokeLyrics } from '@/composables/useKaraokeLyrics'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -405,7 +406,6 @@ function setLineRef(el, index) {
 // 全局唯一飞行代理：{ wrapper, clipEl, shadowEl, rafId, resolve, cur }
 // cur 记录当前视觉状态 { l, t, w, h, br, sh }，供打断时无缝接续
 let flyer = null
-let wordAnimRaf = null
 
 // 歌词滚动引擎：状态、容器 transform 写入、动画策略均收敛在 useLyricScroll 内
 const {
@@ -923,155 +923,23 @@ async function flyCoverOut() {
 
 // ==================== 逐字歌词（RAF 驱动：卡拉 OK + 时间戳同步抬升） ====================
 
-const WORD_LIFT_PX = 3
 
 // 已播行逐字歌词从全白渐变回暗淡色（CSS transition 驱动，零 JS 动画开销）
-function fadeOutWordSegs(lineIndex) {
-  const line = parsedLyrics.value[lineIndex]
-  if (!line) return
-  if (!line._wordSegEls) {
-    const lineEl = lineRefs.value[lineIndex]
-    if (!lineEl) return
-    line._wordSegEls = [...lineEl.querySelectorAll('.word-seg')]
-  }
-  const els = line._wordSegEls
-  if (!els || els.length === 0) return
+// 逐字歌词渲染：扫过、上浮、淡出的全部逻辑在 useKaraokeLyrics，这里保持原调用名
+const {
+  start: startWordAnimLoop,
+  stop: stopWordAnimLoop,
+  fadeOutLine: fadeOutWordSegs
+} = useKaraokeLyrics({
+  lineRefs,
+  getLines: () => parsedLyrics.value,
+  getActiveIndexes: () => activeIndexes.value,
+  getLiveTime: () => player.getLiveTime(),
+  getWordFps: () => settings.effectiveWordAnimFps.value,
+  getWordLift: () => enableWordLift.value,
+  visible: () => props.visible
+})
 
-  els.forEach(el => {
-    el.classList.remove('word-seg--singing', 'word-seg--sung')
-    el.style.removeProperty('--word-pct')
-    el.style.color = 'rgba(255,255,255,0.25)'
-    el.style.transform = ''
-  })
-  delete line._wordSegEls
-}
-
-function segProgress(segments, idx, time, nextLineTime = 0) {
-  const seg = segments[idx]
-  if (!seg) return 0
-  if (time < seg.time) return 0
-  const next = segments[idx + 1]
-  let duration
-  if (next) {
-    duration = next.time - seg.time
-  } else if (nextLineTime > seg.time) {
-    duration = nextLineTime - seg.time
-  } else {
-    duration = 0.8
-  }
-  const raw = ((time - seg.time) / Math.max(duration, 0.08)) * 100
-  return Math.max(0, Math.min(100, raw))
-}
-
-function updateWordSegStyles(lineIndex, time) {
-  const line = parsedLyrics.value[lineIndex]
-  if (!line?.segments) return
-
-  const nextLine = parsedLyrics.value[lineIndex + 1]
-  // 末字卡拉OK的结束基准：本行自己的结束时间（缺失时回退到下一行开始）
-  const nextLineTime = line.end != null ? line.end : (nextLine ? nextLine.time : line.time + 5)
-
-  for (let i = 0; i < line.segments.length; i++) {
-    const el = line._wordSegEls?.[i]
-    if (!el) continue
-    const state = segState(line.segments, i, time, nextLineTime)
-    const pct = segProgress(line.segments, i, time, nextLineTime)
-
-    if (state === 'sung') {
-      el.classList.remove('word-seg--singing')
-      el.classList.add('word-seg--sung')
-      el.style.removeProperty('--word-pct')
-      el.style.transform = enableWordLift.value ? `translate3d(0, ${-WORD_LIFT_PX}px, 0)` : ''
-    } else if (state === 'singing') {
-      el.classList.add('word-seg--singing')
-      el.classList.remove('word-seg--sung')
-      el.style.setProperty('--word-pct', Math.round(pct))
-      const lift = enableWordLift.value ? -WORD_LIFT_PX * (pct / 100) : 0
-      el.style.transform = lift ? `translate3d(0, ${lift}px, 0)` : ''
-    } else {
-      el.classList.remove('word-seg--singing', 'word-seg--sung')
-      el.style.removeProperty('--word-pct')
-      el.style.transform = ''
-    }
-  }
-}
-
-/** 仅更新 transform 上浮位移，每帧调用确保平滑；class/CSS var 走 updateWordSegStyles 降频 */
-function updateWordSegTransforms(lineIndex, time) {
-  const line = parsedLyrics.value[lineIndex]
-  if (!line?.segments || !line._wordSegEls) return
-
-  const nextLine = parsedLyrics.value[lineIndex + 1]
-  // 末字上浮结束基准同样以本行结束时间为准
-  const nextLineTime = line.end != null ? line.end : (nextLine ? nextLine.time : line.time + 5)
-
-  for (let i = 0; i < line.segments.length; i++) {
-    const el = line._wordSegEls[i]
-    if (!el) continue
-    const state = segState(line.segments, i, time, nextLineTime)
-    if (state === 'sung') {
-      el.style.transform = `translate3d(0, ${-WORD_LIFT_PX}px, 0)`
-    } else if (state === 'singing') {
-      const pct = segProgress(line.segments, i, time, nextLineTime)
-      const lift = -WORD_LIFT_PX * (pct / 100)
-      el.style.transform = `translate3d(0, ${lift}px, 0)`
-    }
-  }
-}
-
-function startWordAnimLoop() {
-  if (wordAnimRaf) return
-  let lastStyleTime = 0
-  const loop = () => {
-    // 多行同播时可能同时有多个逐字行（duet 重叠句），逐行全部驱动
-    const wordLines = activeIndexes.value.filter(i => parsedLyrics.value[i]?.wordLevel)
-    const fpz = Number(settings.effectiveWordAnimFps.value) || 60
-    if (!props.visible || !wordLines.length || fpz <= 0) {
-      wordAnimRaf = null
-      return
-    }
-    const now = performance.now()
-    const interval = 1000 / fpz
-    // CSS var / class（卡拉OK扫过）按用户设定帧率节流
-    const shouldStyle = now - lastStyleTime >= interval
-    if (shouldStyle) lastStyleTime = now
-    const time = player.getLiveTime()
-    for (const idx of wordLines) {
-      const line = parsedLyrics.value[idx]
-      // 逐字元素缓存：仅在切句（活跃逐字行变化）或旧引用已脱离 DOM 时重建，
-      // 避免每帧 querySelectorAll 重新遍历整行字符
-      const lineEl = lineRefs.value[idx]
-      if (!line._wordSegEls?.length || !line._wordSegEls[0].isConnected) {
-        line._wordSegEls = lineEl ? [...lineEl.querySelectorAll('.word-seg')] : []
-      }
-      if (shouldStyle) updateWordSegStyles(idx, time)
-      // transform 上浮位移每 RAF 帧更新，与显示器刷新率同步，保证丝滑
-      if (enableWordLift.value) updateWordSegTransforms(idx, time)
-    }
-    wordAnimRaf = requestAnimationFrame(loop)
-  }
-  wordAnimRaf = requestAnimationFrame(loop)
-}
-
-function stopWordAnimLoop() {
-  if (wordAnimRaf) { cancelAnimationFrame(wordAnimRaf); wordAnimRaf = null }
-}
-
-function segState(segments, idx, time, nextLineTime = 0) {
-  const seg = segments[idx]
-  if (!seg) return ''
-  if (time < seg.time) return ''
-  const next = segments[idx + 1]
-  let endTime
-  if (next) {
-    endTime = next.time
-  } else if (nextLineTime > seg.time) {
-    endTime = nextLineTime
-  } else {
-    endTime = seg.time + 1.5
-  }
-  return time >= endTime ? 'sung' : 'singing'
-}
 
 // 跳转到指定歌词行的播放时间
 // 点击跳转标记：目标行就在视口内（用户刚点击它），放大高亮不必等滚动落地
