@@ -538,6 +538,11 @@ let userScrollTimer = null           // 5秒空闲定时器
 // 才能在几何变化后把用户正在看的位置重新对回中心（且反复变化不累积误差）
 let userScrollAnchor = null
 
+// 歌词可视区高度的唯一读取点：容器结构/内边距若调整，只需改这一处
+function lyricContainerHeight() {
+  return mainRef.value ? mainRef.value.clientHeight : 0
+}
+
 // 容器滚动位置的唯一写入入口：transform 与 scrollState.currentScrollY 永远同步落值。
 // transition 传 undefined 表示沿用当前过渡（滚轮模式或调用方已自行设置）。
 // 例外：大跨度跳转的 WAAPI 仍由 animate() 驱动，但落值同样走这里。
@@ -590,7 +595,7 @@ function scheduleRecenter() {
 // 三套口径分别对齐 scrollToActiveGroup / scrollToDots / repositionToEmptyZoneAnchor
 function computeCenteredTarget() {
   if (!mainRef.value || !scrollRef.value) return null
-  const H = mainRef.value.clientHeight
+  const H = lyricContainerHeight()
   const act = activeIndexes.value
 
   if (act.length > 0) {
@@ -670,7 +675,7 @@ function computeUserScrollTarget() {
   if (anchor.count !== parsedLyrics.value.length) { userScrollAnchor = null; return null }
   const el = lineRefs.value[anchor.index]
   if (!el) { userScrollAnchor = null; return null }
-  const y = anchorScrollForLine(el, anchor.ratio, mainRef.value.clientHeight)
+  const y = anchorScrollForLine(el, anchor.ratio, lyricContainerHeight())
   return Number.isFinite(y) ? { y } : null
 }
 
@@ -682,7 +687,7 @@ function applyUserScrollRecenter(y) {
   scrollState.smoothAnimTarget = -1
   scrollState.dominoCascadeActive = false
   // 与滚轮同一套边界钳制，避免把内容推到可视区之外
-  const ty = clampManualScroll(-y, scrollRef.value.scrollHeight, mainRef.value.clientHeight)
+  const ty = clampManualScroll(-y, scrollRef.value.scrollHeight, lyricContainerHeight())
   commitContainerScroll(ty, 'none')
   // 恢复滚轮滚动应有的过渡，否则下一次滚动会变得生硬
   requestAnimationFrame(() => {
@@ -721,7 +726,7 @@ function syncLayoutObserver() {
   if (typeof ResizeObserver === 'undefined') return
   if (!props.visible || !currentTrack.value || !mainRef.value) return
   observedWidth = mainRef.value.clientWidth
-  observedHeight = mainRef.value.clientHeight
+  observedHeight = lyricContainerHeight()
   layoutObserver = new ResizeObserver((entries) => {
     const rect = entries[0] && entries[0].contentRect
     if (!rect) return
@@ -1243,7 +1248,7 @@ function onLyricsWheel(e) {
   let newY = currentY - e.deltaY * 2
 
   // 边界钳制
-  const containerHeight = mainRef.value.clientHeight
+  const containerHeight = lyricContainerHeight()
   newY = clampManualScroll(newY, scrollRef.value.scrollHeight, containerHeight)
 
   commitContainerScroll(newY)
@@ -1800,7 +1805,7 @@ function scrollToDots(animate = true) {
   const anchorEl = lineRefs.value[anchorIndex]
   if (!anchorEl) return
   const dotsEl = scrollRef.value.querySelector('.upcoming-hint-line')
-  const containerHeight = mainRef.value.clientHeight
+  const containerHeight = lyricContainerHeight()
   // 句中空区：上一行正从活跃字号收缩回基础字号，会带动三点继续上移，
   // 由 dotsCenteredScroll 用「上一行当前高度 - 下一行高度」预估剩余位移并提前补偿
   const prevEl = hintAnchorIndex.value >= 0 ? lineRefs.value[hintAnchorIndex.value] : null
@@ -1821,7 +1826,7 @@ function runDotsCascade(nextIndex) {
   if (!scrollRef.value || !mainRef.value) return
   const nextEl = lineRefs.value[nextIndex]
   if (!nextEl) return
-  const containerHeight = mainRef.value.clientHeight
+  const containerHeight = lyricContainerHeight()
   const totalLines = parsedLyrics.value.length
   // 下方行：三点行移除的布局位移 + 滚动差；上方行：仅滚动差（通常≈0）
   const { targetScroll, belowShift, aboveShift } = dotsCascadeShifts(
@@ -1913,7 +1918,7 @@ function scrollToLine(index, animate = true) {
   const lineEl = lineRefs.value[index]
   if (!lineEl) return
 
-  const containerHeight = mainRef.value.clientHeight
+  const containerHeight = lyricContainerHeight()
   const targetScroll = lineCenteredScroll(lineEl, containerHeight)
   animateScrollTo(targetScroll, index, animate)
 }
@@ -1932,7 +1937,7 @@ function scrollToLinePreview(index) {
     const el = lineRefs.value[i]
     if (el) { el.style.transition = ''; el.style.transform = '' }
   }
-  const containerHeight = mainRef.value.clientHeight
+  const containerHeight = lyricContainerHeight()
   const targetScroll = lineCenteredScroll(lineEl, containerHeight)
   commitContainerScroll(-targetScroll, 'transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1.0)')
   scrollState.targetScrollPos = targetScroll
@@ -1953,7 +1958,7 @@ function scrollToActiveGroup(animate = true) {
   const lastEl = lineRefs.value[active[active.length - 1]]
   if (!firstEl || !lastEl) return
 
-  const containerHeight = mainRef.value.clientHeight
+  const containerHeight = lyricContainerHeight()
   const targetScroll = activeGroupScroll(firstEl, lastEl, containerHeight)
   animateScrollTo(targetScroll, active[active.length - 1], animate)
 }
@@ -1968,7 +1973,7 @@ async function repositionToEmptyZoneAnchor() {
   const targetIndex = anchor + 1 < list.length ? anchor + 1 : anchor
   const el = lineRefs.value[targetIndex]
   if (!el) return
-  const containerHeight = mainRef.value.clientHeight
+  const containerHeight = lyricContainerHeight()
   const desired = lineCenteredScroll(el, containerHeight)
   if (Math.abs(desired - scrollState.targetScrollPos) <= containerHeight * 0.5) return
   await nextTick()
@@ -2038,7 +2043,7 @@ function measureAnchorLineSpan(index) {
 function animateScrollTo(targetScroll, index, animate = true) {
   const lineEl = lineRefs.value[index]
   if (!lineEl) return
-  const containerHeight = mainRef.value.clientHeight
+  const containerHeight = lyricContainerHeight()
   const scrollDelta = targetScroll - scrollState.targetScrollPos
 
   // 平滑动画进行中：跳过相邻位置的小范围滚动，避免打断大跨度动画
