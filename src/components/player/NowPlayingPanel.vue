@@ -511,13 +511,25 @@ function setLineRef(el, index) {
 // 全局唯一飞行代理：{ wrapper, clipEl, shadowEl, rafId, resolve, cur }
 // cur 记录当前视觉状态 { l, t, w, h, br, sh }，供打断时无缝接续
 let flyer = null
-let lyricsScrollCleanup = null
 let wordAnimRaf = null
-let prevLineIndex = -1
-let targetScrollPos = 0   // 追踪上一次目标位置，避免从 CSS transform（含 translateZ(0)）读脏值
-let currentScrollY = 0    // 追踪 scrollRef 当前的 transform Y 值，避免解析 computedStyle（2D/3D matrix 格式不一致）
-let smoothAnimTarget = -1 // 正在执行的平滑动画目标行；-1 表示无动画
-let dominoCascadeActive = false // 多米诺级联进行中：新定位请求可中途接续（FLIP），不再掐断重放
+
+// 歌词滚动的动画状态机：唯一持有目标/当前位置、方向缓冲与在跑动画的取消句柄。
+// 不变量：任何一次落位都必须同时更新 currentScrollY 与 targetScrollPos；
+// 有动画在跑时 lyricsScrollCleanup 非空，取消后必须置空。
+const scrollState = {
+  // 上一次设定的目标滚动量（内容坐标，不是视觉位置）
+  targetScrollPos: 0,
+  // 容器 transform 的 Y 值（向下为负）
+  currentScrollY: 0,
+  // 上一个锚定行，只用于判断方向与「是否首次定位」
+  prevLineIndex: -1,
+  // 正在执行的大跨度平滑动画目标行；-1 表示无动画
+  smoothAnimTarget: -1,
+  // 多米诺级联进行中：新定位请求可中途接续（FLIP）
+  dominoCascadeActive: false,
+  // 当前动画的取消函数；非空表示有动画在跑
+  lyricsScrollCleanup: null
+}
 const isUserScrolling = ref(false)   // 用户正在手动滚动歌词
 const isScrubbing = ref(false)       // 进度条拖拽预览中：跟随滚动但不高亮、不模糊
 let userScrollTimer = null           // 5秒空闲定时器
@@ -526,14 +538,14 @@ let userScrollTimer = null           // 5秒空闲定时器
 // 才能在几何变化后把用户正在看的位置重新对回中心（且反复变化不累积误差）
 let userScrollAnchor = null
 
-// 容器滚动位置的唯一写入入口：transform 与 currentScrollY 永远同步落值。
+// 容器滚动位置的唯一写入入口：transform 与 scrollState.currentScrollY 永远同步落值。
 // transition 传 undefined 表示沿用当前过渡（滚轮模式或调用方已自行设置）。
 // 例外：大跨度跳转的 WAAPI 仍由 animate() 驱动，但落值同样走这里。
 function commitContainerScroll(transformY, transition) {
   if (!scrollRef.value) return
   if (transition !== undefined) scrollRef.value.style.transition = transition
   scrollRef.value.style.transform = `translate3d(0, ${transformY}px, 0)`
-  currentScrollY = transformY
+  scrollState.currentScrollY = transformY
 }
 
 // ==================== 布局变化自动重居中 ====================
@@ -615,12 +627,12 @@ function computeCenteredTarget() {
 function applyCenteredScroll(target) {
   if (!scrollRef.value) return
   // 取消进行中的级联 / 平滑动画，避免两套位移叠加
-  if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
-  smoothAnimTarget = -1
-  dominoCascadeActive = false
+  if (scrollState.lyricsScrollCleanup) { scrollState.lyricsScrollCleanup(); scrollState.lyricsScrollCleanup = null }
+  scrollState.smoothAnimTarget = -1
+  scrollState.dominoCascadeActive = false
   commitContainerScroll(-target.y, 'none')
-  targetScrollPos = target.y
-  prevLineIndex = target.index
+  scrollState.targetScrollPos = target.y
+  scrollState.prevLineIndex = target.index
   if (jumpPending.value >= 0) jumpPending.value = -1
 }
 
@@ -666,9 +678,9 @@ function computeUserScrollTarget() {
 function applyUserScrollRecenter(y) {
   if (!scrollRef.value || !mainRef.value) return
   // 中断可能残留的级联动画，避免两套位移叠加
-  if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
-  smoothAnimTarget = -1
-  dominoCascadeActive = false
+  if (scrollState.lyricsScrollCleanup) { scrollState.lyricsScrollCleanup(); scrollState.lyricsScrollCleanup = null }
+  scrollState.smoothAnimTarget = -1
+  scrollState.dominoCascadeActive = false
   // 与滚轮同一套边界钳制，避免把内容推到可视区之外
   const ty = clampManualScroll(-y, scrollRef.value.scrollHeight, mainRef.value.clientHeight)
   commitContainerScroll(ty, 'none')
@@ -688,8 +700,8 @@ function recenterNow() {
   if (isUserScrolling.value) {
     const anchorTarget = computeUserScrollTarget()
     if (!anchorTarget) return
-    // currentScrollY 是 transform 值（向下为负），换算成正向滚动量比较
-    if (Math.abs(anchorTarget.y + currentScrollY) < 0.5) return
+    // scrollState.currentScrollY 是 transform 值（向下为负），换算成正向滚动量比较
+    if (Math.abs(anchorTarget.y + scrollState.currentScrollY) < 0.5) return
     applyUserScrollRecenter(anchorTarget.y)
     return
   }
@@ -697,7 +709,7 @@ function recenterNow() {
   const target = computeCenteredTarget()
   if (!target || !Number.isFinite(target.y)) return
   // 已对准就什么都不做，避免打断正常播放中的级联动画
-  if (Math.abs(target.y - targetScrollPos) < 0.5) return
+  if (Math.abs(target.y - scrollState.targetScrollPos) < 0.5) return
   applyCenteredScroll(target)
 }
 
@@ -1209,7 +1221,7 @@ function armUserScrollIdle() {
 function resetUserScroll() {
   exitUserScrollMode()
   // 同步用户滚动到的实际位置，使 scrollToLine 感知真实距离从而走平滑动画分支
-  targetScrollPos = -currentScrollY
+  scrollState.targetScrollPos = -scrollState.currentScrollY
   scrollToActiveGroup(true)
 }
 
@@ -1226,7 +1238,7 @@ function onLyricsWheel(e) {
   // 从当前 computed transform 读取位置
   const currentTransform = getComputedStyle(scrollRef.value).transform
   const match = currentTransform.match(/matrix\(1,\s*0,\s*0,\s*1,\s*0,\s*(-?[\d.]+)\)/)
-  const currentY = match ? parseFloat(match[1]) : -targetScrollPos
+  const currentY = match ? parseFloat(match[1]) : -scrollState.targetScrollPos
 
   let newY = currentY - e.deltaY * 2
 
@@ -1550,10 +1562,10 @@ watch(() => props.visible, async (val) => {
     for (const line of parsedLyrics.value) {
       delete line._wordSegEls
     }
-    if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
+    if (scrollState.lyricsScrollCleanup) { scrollState.lyricsScrollCleanup(); scrollState.lyricsScrollCleanup = null }
     exitUserScrollMode()
-    targetScrollPos = 0
-    prevLineIndex = -1
+    scrollState.targetScrollPos = 0
+    scrollState.prevLineIndex = -1
     _dotsHandoff = false
     _dotsCascadePending = false
     _dotsH = 0
@@ -1697,7 +1709,7 @@ async function handleTimeUpdate(time) {
     } else {
       scrollToLine(nextFirst, true)
     }
-    prevLineIndex = nextFirst
+    scrollState.prevLineIndex = nextFirst
     if (jumpPending.value >= 0) jumpPending.value = -1
     if (nextWord >= 0) startWordAnimLoop()
     return
@@ -1793,7 +1805,7 @@ function scrollToDots(animate = true) {
   // 由 dotsCenteredScroll 用「上一行当前高度 - 下一行高度」预估剩余位移并提前补偿
   const prevEl = hintAnchorIndex.value >= 0 ? lineRefs.value[hintAnchorIndex.value] : null
   const targetScroll = dotsCenteredScroll(anchorEl, dotsEl, prevEl, containerHeight)
-  targetScrollPos = targetScroll
+  scrollState.targetScrollPos = targetScroll
   if (!animate) {
     commitContainerScroll(-targetScroll, 'none')
     return
@@ -1813,14 +1825,14 @@ function runDotsCascade(nextIndex) {
   const totalLines = parsedLyrics.value.length
   // 下方行：三点行移除的布局位移 + 滚动差；上方行：仅滚动差（通常≈0）
   const { targetScroll, belowShift, aboveShift } = dotsCascadeShifts(
-    nextEl, containerHeight, targetScrollPos, _dotsH)
+    nextEl, containerHeight, scrollState.targetScrollPos, _dotsH)
 
-  if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
-  smoothAnimTarget = -1
+  if (scrollState.lyricsScrollCleanup) { scrollState.lyricsScrollCleanup(); scrollState.lyricsScrollCleanup = null }
+  scrollState.smoothAnimTarget = -1
 
   // 容器瞬跳到目标位
   commitContainerScroll(-targetScroll, 'none')
-  targetScrollPos = targetScroll
+  scrollState.targetScrollPos = targetScroll
   void scrollRef.value.offsetHeight
 
   // 各行偏移到反向位置（下方行多偏一个三点行高，抵消移除瞬间的布局位移）
@@ -1847,7 +1859,7 @@ function runDotsCascade(nextIndex) {
   }
 
   const totalDuration = STAGGER_DURATION + totalStagger * 1000 + 60
-  dominoCascadeActive = true
+  scrollState.dominoCascadeActive = true
   const cleanup = () => {
     for (let i = 0; i < totalLines; i++) {
       const el = lineRefs.value[i]
@@ -1855,11 +1867,11 @@ function runDotsCascade(nextIndex) {
     }
     if (scrollRef.value) { scrollRef.value.style.willChange = ''; scrollRef.value.style.transition = '' }
     if (jumpPending.value >= 0) jumpPending.value = -1
-    dominoCascadeActive = false
-    lyricsScrollCleanup = null
+    scrollState.dominoCascadeActive = false
+    scrollState.lyricsScrollCleanup = null
   }
   const timer = setTimeout(cleanup, totalDuration)
-  lyricsScrollCleanup = () => { clearTimeout(timer); cleanup() }
+  scrollState.lyricsScrollCleanup = () => { clearTimeout(timer); cleanup() }
 }
 
 // 每行多米诺滚动动画时长（固定值，不随位移距离/行数/视口变化）
@@ -1913,9 +1925,9 @@ function scrollToLinePreview(index) {
   const lineEl = lineRefs.value[index]
   if (!lineEl) return
   // 清理正在运行的级联/平滑动画，防止状态串扰
-  if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
-  smoothAnimTarget = -1
-  dominoCascadeActive = false
+  if (scrollState.lyricsScrollCleanup) { scrollState.lyricsScrollCleanup(); scrollState.lyricsScrollCleanup = null }
+  scrollState.smoothAnimTarget = -1
+  scrollState.dominoCascadeActive = false
   for (let i = 0; i < parsedLyrics.value.length; i++) {
     const el = lineRefs.value[i]
     if (el) { el.style.transition = ''; el.style.transform = '' }
@@ -1923,7 +1935,7 @@ function scrollToLinePreview(index) {
   const containerHeight = mainRef.value.clientHeight
   const targetScroll = lineCenteredScroll(lineEl, containerHeight)
   commitContainerScroll(-targetScroll, 'transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1.0)')
-  targetScrollPos = targetScroll
+  scrollState.targetScrollPos = targetScroll
 }
 
 // 滚动到当前活跃行组：多行同时播放时，以这些行的中心点为滚动中心
@@ -1958,7 +1970,7 @@ async function repositionToEmptyZoneAnchor() {
   if (!el) return
   const containerHeight = mainRef.value.clientHeight
   const desired = lineCenteredScroll(el, containerHeight)
-  if (Math.abs(desired - targetScrollPos) <= containerHeight * 0.5) return
+  if (Math.abs(desired - scrollState.targetScrollPos) <= containerHeight * 0.5) return
   await nextTick()
   scrollToLine(targetIndex, true)
 }
@@ -1988,9 +2000,9 @@ function captureHandoverStarts(totalLines, dominoHandover) {
 // 取消上一次未完成的清理定时器，并重置行级 transform
 // （不清除 opacity/filter transition，保留 CSS 中的过渡）
 function resetLineTransformsAndAnimations(totalLines) {
-  if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
-  smoothAnimTarget = -1
-  dominoCascadeActive = false
+  if (scrollState.lyricsScrollCleanup) { scrollState.lyricsScrollCleanup(); scrollState.lyricsScrollCleanup = null }
+  scrollState.smoothAnimTarget = -1
+  scrollState.dominoCascadeActive = false
   for (let i = 0; i < totalLines; i++) {
     const el = lineRefs.value[i]
     if (el) { el.style.transform = '' }
@@ -2027,19 +2039,19 @@ function animateScrollTo(targetScroll, index, animate = true) {
   const lineEl = lineRefs.value[index]
   if (!lineEl) return
   const containerHeight = mainRef.value.clientHeight
-  const scrollDelta = targetScroll - targetScrollPos
+  const scrollDelta = targetScroll - scrollState.targetScrollPos
 
   // 平滑动画进行中：跳过相邻位置的小范围滚动，避免打断大跨度动画
-  // 不更新 targetScrollPos（保持为平滑动画起点），动画完成后由下次自然播放触发多米诺过渡
+  // 不更新 scrollState.targetScrollPos（保持为平滑动画起点），动画完成后由下次自然播放触发多米诺过渡
   // 但仅差1行时不跳过：如 seek 到 A 句尾部 → A 即播完切 B → B 应马上多米诺到位
-  if (smoothAnimTarget >= 0 && Math.abs(scrollDelta) <= containerHeight && animate
-      && Math.abs(index - smoothAnimTarget) > 1) {
-    prevLineIndex = index
+  if (scrollState.smoothAnimTarget >= 0 && Math.abs(scrollDelta) <= containerHeight && animate
+      && Math.abs(index - scrollState.smoothAnimTarget) > 1) {
+    scrollState.prevLineIndex = index
     return
   }
 
   const totalLines = parsedLyrics.value.length
-  const dominoHandover = dominoCascadeActive && animate
+  const dominoHandover = scrollState.dominoCascadeActive && animate
   const handoverStarts = captureHandoverStarts(totalLines, dominoHandover)
   resetLineTransformsAndAnimations(totalLines)
 
@@ -2048,8 +2060,8 @@ function animateScrollTo(targetScroll, index, animate = true) {
   // 大跨度已由平滑动画接管，多米诺仅处理 ≤容器高度的中小滚动，无需反转
   const sign = Math.sign(scrollDelta)
   const visualDelta = sign * Math.min(absScrollDelta, containerHeight * 0.3)
-  const isInitial = prevLineIndex < 0
-  targetScrollPos = targetScroll
+  const isInitial = scrollState.prevLineIndex < 0
+  scrollState.targetScrollPos = targetScroll
 
   const { shortLine, matchedMs } = measureAnchorLineSpan(index)
 
@@ -2070,7 +2082,7 @@ function animateScrollTo(targetScroll, index, animate = true) {
     applyInstantScroll(ctx)
   }
 
-  prevLineIndex = index
+  scrollState.prevLineIndex = index
 }
 
 // ==================== 滚动动画策略 ====================
@@ -2084,7 +2096,7 @@ function applyDominoScroll(ctx) {
     visualDelta, handoverStarts, dominoHandover, lineEl
   } = ctx
   commitContainerScroll(-targetScroll)
-  const forward = index > prevLineIndex
+  const forward = index > scrollState.prevLineIndex
 
   // 所有行偏移到反向位置（只禁用 transform 过渡，保留 opacity/filter 过渡）。
   // 级联接续时以捕获的当前插值偏移 + 本次位移为起点（不夹紧，连续性优先，
@@ -2118,7 +2130,7 @@ function applyDominoScroll(ctx) {
   }
 
   const totalDuration = STAGGER_DURATION + totalStagger * 1000 + 60
-  dominoCascadeActive = true
+  scrollState.dominoCascadeActive = true
 
   const cleanup = () => {
     for (let i = 0; i < totalLines; i++) {
@@ -2128,18 +2140,18 @@ function applyDominoScroll(ctx) {
     if (scrollRef.value) { scrollRef.value.style.willChange = ''; scrollRef.value.style.transition = '' }
     // 级联动画完成后再解除激活缓冲，目标行在可视位置放大/淡入
     if (jumpPending.value >= 0) jumpPending.value = -1
-    dominoCascadeActive = false
-    lyricsScrollCleanup = null
+    scrollState.dominoCascadeActive = false
+    scrollState.lyricsScrollCleanup = null
   }
   const timer = setTimeout(cleanup, totalDuration)
-  lyricsScrollCleanup = () => { clearTimeout(timer); cleanup() }
+  scrollState.lyricsScrollCleanup = () => { clearTimeout(timer); cleanup() }
 }
 
 // 大跨度跳转（> 容器高度）：Web Animations API，避免闪现
 function applySmoothJump(ctx) {
   const { targetScroll, index } = ctx
-  smoothAnimTarget = index
-  const fromTransform = `translate3d(0, ${currentScrollY}px, 0)`
+  scrollState.smoothAnimTarget = index
+  const fromTransform = `translate3d(0, ${scrollState.currentScrollY}px, 0)`
   const toTransform = `translate3d(0, ${-targetScroll}px, 0)`
   const anim = scrollRef.value.animate(
     [{ transform: fromTransform }, { transform: toTransform }],
@@ -2148,15 +2160,15 @@ function applySmoothJump(ctx) {
   anim.onfinish = () => {
     commitContainerScroll(-targetScroll)
     anim.cancel()
-    smoothAnimTarget = -1
+    scrollState.smoothAnimTarget = -1
     if (jumpPending.value >= 0) jumpPending.value = -1
     scrollRef.value.style.willChange = ''
-    lyricsScrollCleanup = null
+    scrollState.lyricsScrollCleanup = null
   }
-  lyricsScrollCleanup = () => {
+  scrollState.lyricsScrollCleanup = () => {
     anim.cancel()
-    smoothAnimTarget = -1
-    lyricsScrollCleanup = null
+    scrollState.smoothAnimTarget = -1
+    scrollState.lyricsScrollCleanup = null
   }
 }
 
@@ -2168,10 +2180,10 @@ function applyCssScroll(ctx) {
   const cleanup = () => {
     if (scrollRef.value) scrollRef.value.style.transition = ''
     if (jumpPending.value >= 0) jumpPending.value = -1
-    lyricsScrollCleanup = null
+    scrollState.lyricsScrollCleanup = null
   }
   const timer = setTimeout(cleanup, matchedMs + 50)
-  lyricsScrollCleanup = () => { clearTimeout(timer); cleanup() }
+  scrollState.lyricsScrollCleanup = () => { clearTimeout(timer); cleanup() }
 }
 
 // 立即落位：拖拽预览 / 面板重开等不需要动画的场景
@@ -2184,7 +2196,7 @@ function applyInstantScroll(ctx) {
     if (el) { el.style.transition = ''; el.style.transform = '' }
   }
   if (scrollRef.value) { scrollRef.value.style.willChange = ''; scrollRef.value.style.transition = '' }
-  lyricsScrollCleanup = null
+  scrollState.lyricsScrollCleanup = null
 }
 
 // 预加载封面到浏览器缓存并强制解码：decode() 确保图片完全就绪，不阻塞过渡动画
@@ -2244,11 +2256,11 @@ watch(() => currentTrack.value?.path, () => {
   _dotsH = 0
   stopDotsScaleLoop()
   if (_dotsLeaveTimer) { clearTimeout(_dotsLeaveTimer); _dotsLeaveTimer = null }
-  if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
+  if (scrollState.lyricsScrollCleanup) { scrollState.lyricsScrollCleanup(); scrollState.lyricsScrollCleanup = null }
   if (jumpPending.value >= 0) jumpPending.value = -1
   stopWordAnimLoop()
-  targetScrollPos = 0
-  prevLineIndex = -1
+  scrollState.targetScrollPos = 0
+  scrollState.prevLineIndex = -1
   commitContainerScroll(0)
   // 首句前长空区：三点与切歌同帧渲染（不依赖 currentTime——切歌瞬间它仍是上一首位置，
   // 用旧时间判定会让三点延迟 1~2 帧才插入，插入时把下方行瞬移让位）
@@ -2285,7 +2297,7 @@ onBeforeUnmount(() => {
   stopRhythmLoop()
   stopDotsScaleLoop()
   removeFlyer()
-  if (lyricsScrollCleanup) { lyricsScrollCleanup(); lyricsScrollCleanup = null }
+  if (scrollState.lyricsScrollCleanup) { scrollState.lyricsScrollCleanup(); scrollState.lyricsScrollCleanup = null }
 })
 </script>
 
