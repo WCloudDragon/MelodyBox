@@ -1,5 +1,8 @@
 import { nextTick, onBeforeUnmount, ref } from 'vue'
 import {
+    lineCenteredScroll,
+    activeGroupScroll,
+    dotsCenteredScroll,
     clampManualScroll,
     anchorScrollForLine
 } from '@/utils/lyricLayout'
