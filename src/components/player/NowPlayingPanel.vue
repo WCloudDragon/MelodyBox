@@ -1446,6 +1446,26 @@ async function handleTimeUpdate(time) {
   // 这里完全让位，避免把视口拉回真实播放位置
   if (isScrubbing.value) return
 
+  await syncHintTick()
+
+  const prevActive = activeIndexes.value
+  const nextActive = updateActiveSet(time)
+  if (!nextActive) return
+
+  const prevWord = _lastWordIndex(prevActive)
+  const nextWord = _lastWordIndex(nextActive)
+  syncWordTransitions(prevActive, nextActive, prevWord)
+  markJumpIfNeeded(prevActive, nextActive, prevWord)
+
+  if (nextActive.length === 0) {
+    await scrollForEmptyZone(time)
+    return
+  }
+  await scrollForActiveLines(nextActive, nextWord)
+}
+
+// 三点提示的每帧同步：空区锚点重定位 + 交接标记
+async function syncHintTick() {
   if (!showUpcomingHint.value) _dotsScrollDone = false
 
   // 进度条从一个长空区跳到另一个长空区：showUpcomingHint 全程为 true 不会触发
@@ -1470,20 +1490,25 @@ async function handleTimeUpdate(time) {
   if (hintVisible.value && !hintLeaving.value && upcomingRemaining.value <= 0.35) {
     _dotsHandoff = true
   }
+}
 
-  const { activeIndexes: nextActive } = computeActiveSet(parsedLyrics.value, time)
-  const prevActive = activeIndexes.value
-  if (JSON.stringify(prevActive) !== JSON.stringify(nextActive)) {
-    activeIndexes.value = nextActive
-  } else if (nextActive.length !== 0) {
-    return
+// 活跃集合更新：返回新集合；null 表示「未变化且非空」，调用方直接结束本帧
+function updateActiveSet(time) {
+  const { activeIndexes: next } = computeActiveSet(parsedLyrics.value, time)
+  const prev = activeIndexes.value
+  if (JSON.stringify(prev) !== JSON.stringify(next)) {
+    activeIndexes.value = next
+    return next
   }
+  if (next.length !== 0) return null
+  return next
+}
 
+// 逐字行的进入/退出：离开活跃集合的逐字行淡出；末行进入空区时保留 DOM 供字号收缩
+function syncWordTransitions(prevActive, nextActive, prevWord) {
   // 逐字行：多行同播时可有多个逐字行同时活跃（duet 重叠句）。
   // 只有真正离开活跃集合的逐字行才淡出收尾，仍活跃的行保持卡拉OK高亮；
   // 动画循环每帧重读活跃集合，行增减无需停止/重启
-  const prevWord = _lastWordIndex(prevActive)
-  const nextWord = _lastWordIndex(nextActive)
   const prevWordLines = prevActive.filter(i => parsedLyrics.value[i]?.wordLevel)
   for (const i of prevWordLines) {
     if (!nextActive.includes(i)) fadeOutWordSegs(i)
@@ -1495,7 +1520,10 @@ async function handleTimeUpdate(time) {
     fadingLineIndex.value = prevWord
     fadingTimer = setTimeout(() => { fadingLineIndex.value = -1 }, 400)
   }
+}
 
+// 远距离跳转标记：非自然演进时设置 jumpPending，并保留旧行淡出缓冲
+function markJumpIfNeeded(prevActive, nextActive, prevWord) {
   // 远距离跳转（seek）：保留旧行淡出缓冲。
   // 判定用「集合可达性」而非首元素差：双行重叠歌词（duet 曲目）轮转时，
   // 旧集合多行同时退役会让 nextFirst 一次前进 ≥2 行（如 [B,C]→[D]），
@@ -1528,31 +1556,34 @@ async function handleTimeUpdate(time) {
     fadingLineIndex.value = prevWord >= 0 ? prevWord : prevFirst
     fadingTimer = setTimeout(() => { fadingLineIndex.value = -1 }, 400)
   }
+}
 
-  if (nextActive.length === 0) {
-    if (jumpPending.value >= 0) jumpPending.value = -1
-    // 无活跃行（空区）
-    if (showUpcomingHint.value) {
-      // 三点显示：把三点滚到中心线（首行前与句中空区统一处理）
-      if (!_dotsScrollDone && !isUserScrolling.value) {
-        _dotsScrollDone = true
-        await nextTick()
-        scrollToDots(true)
-      }
-    } else if (time < parsedLyrics.value[0].time) {
-      // 无三点：回到第一句等待
+// 空区：三点 / 首行前 / 短空区 三套定位
+async function scrollForEmptyZone(time) {
+  if (jumpPending.value >= 0) jumpPending.value = -1
+  // 无活跃行（空区）
+  if (showUpcomingHint.value) {
+    // 三点显示：把三点滚到中心线（首行前与句中空区统一处理）
+    if (!_dotsScrollDone && !isUserScrolling.value) {
       _dotsScrollDone = true
       await nextTick()
-      if (!isUserScrolling.value) scrollToLine(0, true)
-    } else {
-      // 短空区 / 末尾空区（不触发三点提示）：进度条拖拽跳转后视口可能
-      // 停在很远的位置，这里补偿一次定位；自然播放时视口本就在附近，
-      // 偏差小于半屏不会触发，避免句间空隙来回抖动
-      await repositionToEmptyZoneAnchor()
+      scrollToDots(true)
     }
-    return
+  } else if (time < parsedLyrics.value[0].time) {
+    // 无三点：回到第一句等待
+    _dotsScrollDone = true
+    await nextTick()
+    if (!isUserScrolling.value) scrollToLine(0, true)
+  } else {
+    // 短空区 / 末尾空区（不触发三点提示）：进度条拖拽跳转后视口可能
+    // 停在很远的位置，这里补偿一次定位；自然播放时视口本就在附近，
+    // 偏差小于半屏不会触发，避免句间空隙来回抖动
+    await repositionToEmptyZoneAnchor()
   }
+}
 
+// 有活跃行：用户滚动让位 / 三点级联交接 / 普通组定位
+async function scrollForActiveLines(nextActive, nextWord) {
   if (isUserScrolling.value) {
     if (jumpPending.value >= 0) jumpPending.value = -1
     // 用户滚轮滚动中：不滚动面板，但需要为新行启动逐字动画
@@ -1561,6 +1592,7 @@ async function handleTimeUpdate(time) {
     return
   }
 
+  const nextFirst = nextActive.length ? nextActive[0] : -1
   await nextTick()
   // 三点自然结束后：用多米诺级联滚动完成位移（含三点行移除的布局位移）
   // 尊重设置项的多米诺开关：关闭时退回普通平滑滚动
@@ -1584,6 +1616,7 @@ async function handleTimeUpdate(time) {
   await nextTick()
   if (nextWord >= 0) startWordAnimLoop()
 }
+
 
 // 高频采样：每帧读取 audio.currentTime（绕过 timeupdate 节流），逐行捕捉密集切句；
 // 重入保护避免 await 期间堆积，暂停/隐藏时零开销
