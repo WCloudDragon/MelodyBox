@@ -1,4 +1,4 @@
-import { onBeforeUnmount, ref } from 'vue'
+import { nextTick, onBeforeUnmount, ref } from 'vue'
 import {
     clampManualScroll,
     anchorScrollForLine
@@ -27,6 +27,9 @@ export function useLyricViewport({
     commitContainerScroll,
     lyricContainerHeight,
     getShowHint,
+    getHintVisible,
+    getHasLyrics,
+    hasTrack,
     getHintAnchorIndex,
     getHintLineIndex,
     getLines,
@@ -98,7 +101,7 @@ export function useLyricViewport({
         return { y: activeGroupScroll(firstEl, lastEl, H), index: act[act.length - 1] }
       }
 
-      if (hintVisible.value) {
+      if (getHintVisible()) {
         const anchorIndex = getHintAnchorIndex() >= 0 ? getHintAnchorIndex() + 1 : 0
         const anchorEl = lineRefs.value[anchorIndex]
         if (!anchorEl) return null
@@ -185,7 +188,7 @@ export function useLyricViewport({
     }
 
     function recenterNow() {
-      if (!visible() || !hasLyrics.value) return
+      if (!visible() || !getHasLyrics()) return
       // 进度条拖拽预览期间由 scrollToLinePreview 接管，不与它抢
       if (isScrubbing.value) return
 
@@ -213,7 +216,7 @@ export function useLyricViewport({
     function syncLayoutObserver() {
       if (layoutObserver) { layoutObserver.disconnect(); layoutObserver = null }
       if (typeof ResizeObserver === 'undefined') return
-      if (!visible() || !currentTrack.value || !mainRef.value) return
+      if (!visible() || !hasTrack() || !mainRef.value) return
       observedWidth = mainRef.value.clientWidth
       observedHeight = lyricContainerHeight()
       layoutObserver = new ResizeObserver((entries) => {
